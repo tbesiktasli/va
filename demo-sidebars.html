@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Demo Discover Connections</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <div id="main">
+        <header>
+            <div class="header-left">Research Project in Diepsloot, South Africa</div>
+            <div class="header-center">Viral Atmospheres</div>
+            <div class="header-right">
+              <img src="img/burger-menu.svg" alt="Icon" />
+            </div>
+        </header>
+        <div id="content">
+
+            <div id="gallery-content" class="scroll-container-horizontal">
+                <div class="count-invisible-objects left"><span class="value">0</span> Elemente &uarr;</div>
+                <div class="count-invisible-objects right">&uarr; <span class="value">0</span> Elemente</div>
+                <div class="wide-content" id="canvas">
+                    <div class="title-box">
+                        <h2>Covid-19<br> in Diepsloot</h2>
+                        <h3>Paradoxies of State (Un-)Care<br> in Diepsloot, South Africa</h3>
+                        <!--<span class="project-type">Research project</span>-->
+                        <a id="scroll-on" class="button" href="#"><span class="text">Explore</span><span class="icon">&rarr;</span></a>
+                    </div>
+                    <div class="gallery-box">
+                        <div class="column">
+                            <img class="item" src="https://picsum.photos/200/300">
+                            <img class="item" src="https://picsum.photos/150/250?p=1">
+                            <div class="item text"><span class="scaling-text">We are like a wound that refuses to go</span></div>
+                        </div>
+                        <div class="column">
+                            <img class="item" src="https://picsum.photos/150/300?p=2">
+                            <div class="item text"><span class="scaling-text">We are like a wound that refuses to go</span></div>
+                            <img class="item" src="https://picsum.photos/120/190?p=3">
+                        </div>
+                        <div class="column">
+                            <div class="item text"><span class="scaling-text">We are like a wound that refuses to go</span></div>
+                            <img class="item" src="https://picsum.photos/150/220?p=4">
+                            <img class="item" src="https://picsum.photos/170/300?p=5">
+                        </div>
+                        <div class="column">
+                            <img class="item" src="https://picsum.photos/120/140?p=6">
+                            <div class="item text" style="width:200px;height:180px;font-size:0.8em;"><span class="scaling-text">Look at that, you can smell the shit from the sewage and from these toilets, don't you. Those kids you see are stepping on and playing with shit.</span></div>
+                            <img class="item" src="https://picsum.photos/140/300?p=7">
+                        </div>
+                        <div class="column">
+                            <img class="item" src="https://picsum.photos/150/300?p=8">
+                            <div class="item waveform" id="waveform_1"></div>
+                            <img class="item" src="https://picsum.photos/200/210?p=9">
+                        </div>
+                        <div class="column">
+                            <img class="item" src="https://picsum.photos/200/300?p=10">
+                            <img class="item" src="https://picsum.photos/200/300?p=18">
+                        </div>
+                        <div class="column">
+                            <img class="item" src="https://picsum.photos/50/150?p=12">
+                            <div class="item text"><span class="scaling-text">We are like a wound that refuses to go</span></div>
+                            <img class="item" src="https://picsum.photos/200/300?p=11">
+                        </div>
+                        <div class="column">
+                            <img class="item" src="https://picsum.photos/100/200?p=14">
+                            <img class="item" src="https://picsum.photos/150/50?p=15">
+                            <img class="item" src="https://picsum.photos/200/300?p=10">
+                        </div>
+                        <div class="column">
+                            <img class="item" src="https://picsum.photos/200/300?p=22">
+                            <img class="item" src="https://picsum.photos/120/150?p=20">
+                            <img class="item" src="https://picsum.photos/150/200?p=21">
+                        </div>
+                        <div class="column">
+                            <img class="item" src="https://picsum.photos/120/150?p=23">
+                            <img class="item" src="https://picsum.photos/150/200?p=24">
+                            <img class="item" src="https://picsum.photos/200/300?p=25">
+                        </div>
+                        <div class="column">
+                            <img class="item" src="https://picsum.photos/200/300?p=28">
+                            <img class="item" src="https://picsum.photos/120/150?p=26">
+                            <img class="item" src="https://picsum.photos/150/200?p=27">
+                        </div>
+
+                        <!--
+                        <div class="row">
+                            <img src="https://picsum.photos/200/300">
+                            <img src="https://picsum.photos/100/250?p=1">
+                            <img src="https://picsum.photos/150/300?p=2">
+                            <img src="https://picsum.photos/120/190?p=3">
+                            <img src="https://picsum.photos/150/220?p=4">
+                            <img src="https://picsum.photos/170/300?p=5">
+                            <img src="https://picsum.photos/90/140?p=6">
+                            <img src="https://picsum.photos/100/300?p=7">
+                            <img src="https://picsum.photos/150/300?p=8">
+                        </div>
+                        <div class="row">
+                            <img src="https://picsum.photos/200/210?p=9">
+                            <img src="https://picsum.photos/200/300?p=10">
+                            <img src="https://picsum.photos/200/300?p=11">
+                            <img src="https://picsum.photos/200/300?p=12">
+                            <img src="https://picsum.photos/200/300?p=13">
+                            <img src="https://picsum.photos/200/300?p=14">
+                            <img src="https://picsum.photos/200/300?p=15">
+                            <img src="https://picsum.photos/200/300?p=16">
+                            <img src="https://picsum.photos/200/300?p=17">
+                        </div>
+                        -->
+                    </div>
+                </div>
+            </div>
+
+            <div id="detail-content" class="scroll-container-vertical">
+                <div class="vertical-content">
+                    <div class="content-section multi-column">
+                        <div class="left">
+                            <h4>About the research project</h4>
+                            <h3>Covid-19 in Diepsloot, South Africa:<br>Paradoxies of State (Un-)Care</h3>
+                            <span class="author">Simbarashe Nyuke</span>
+                        </div>
+                        <div class="right">
+                            <p>Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet.</p>  
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                        </div>
+                    </div>
+                    <div class="content-section multi-column">
+                        <div class="left">
+                            <h4>About the research project</h4>
+                            <h3>Covid-19 in Diepsloot, South Africa:<br>Paradoxies of State (Un-)Care</h3>
+                            <span class="author">Simbarashe Nyuke</span>
+                        </div>
+                        <div class="right">
+                            <p>Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet.</p>  
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <aside id="slide-ins">
+                <div class="slide-in" id="discover-connections">
+                    <div class="slide-in-handle">
+                        <button class="close-btn" onclick="collapseSlideIn('discover-connections')">&larr;</button>
+                        <span class="vertical-text" onclick="expandSlideIn('discover-connections')">Discover Connections</span>
+                    </div>
+                    <div class="slide-in-content">
+                        <div class="content-section">
+                            <h3>Tags</h3>
+                            <div class="section-content">
+                                <ul class="tags">
+                                    <li>Karotte</li>
+                                    <li>Kartoffel</li>
+                                    <li>Tomate</li>
+                                    <li>Gurke</li>
+                                    <li>Zwiebel</li>
+                                    <li>Paprika</li>
+                                    <li>Spinat</li>
+                                    <li>Brokkoli</li>
+                                    <li>Blumenkohl</li>
+                                    <li>Kohlrabi</li>
+                                    <li>Erbse</li>
+                                    <li>Bohne</li>
+                                    <li>Mais</li>
+                                    <li>Aubergine</li>
+                                    <li>Zucchini</li>
+                                    <li>Lauch</li>
+                                    <li>Sellerie</li>
+                                    <li>Rote Bete</li>
+                                    <li>Kürbis</li>
+                                    <li>Radieschen</li>
+                                    <li>Rettich</li>
+                                    <li>Feldsalat</li>
+                                    <li>Chinakohl</li>
+                                    <li>Endivie</li>
+                                    <li>Schwarzwurzel</li>
+                                    <li>Wirsing</li>
+                                    <li>Fenchel</li>
+                                    <li>Artischocke</li>
+                                    <li>Spargel</li>
+                                    <li>Rosenkohl</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="content-section">
+                            <h3>Themes</h3>
+                            <div class="section-content">
+                                <ul class="tags">
+                                    <li>Karotte</li>
+                                    <li>Kartoffel</li>
+                                    <li>Tomate</li>
+                                    <li>Gurke</li>
+                                    <li>Zwiebel</li>
+                                    <li>Paprika</li>
+                                    <li>Spinat</li>
+                                    <li>Brokkoli</li>
+                                    <li>Blumenkohl</li>
+                                    <li>Kohlrabi</li>
+                                    <li>Erbse</li>
+                                    <li>Bohne</li>
+                                    <li>Mais</li>
+                                    <li>Aubergine</li>
+                                    <li>Zucchini</li>
+                                    <li>Lauch</li>
+                                    <li>Sellerie</li>
+                                    <li>Rote Bete</li>
+                                    <li>Kürbis</li>
+                                    <li>Radieschen</li>
+                                    <li>Rettich</li>
+                                    <li>Feldsalat</li>
+                                    <li>Chinakohl</li>
+                                    <li>Endivie</li>
+                                    <li>Schwarzwurzel</li>
+                                    <li>Wirsing</li>
+                                    <li>Fenchel</li>
+                                    <li>Artischocke</li>
+                                    <li>Spargel</li>
+                                    <li>Rosenkohl</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="content-section">
+                            <h3>Project</h3>
+                            <div class="section-content">
+                                <ul class="tags">
+                                    <li>Karotte</li>
+                                    <li>Kartoffel</li>
+                                    <li>Tomate</li>
+                                    <li>Gurke</li>
+                                    <li>Zwiebel</li>
+                                    <li>Paprika</li>
+                                    <li>Spinat</li>
+                                    <li>Brokkoli</li>
+                                    <li>Blumenkohl</li>
+                                    <li>Kohlrabi</li>
+                                    <li>Erbse</li>
+                                    <li>Bohne</li>
+                                    <li>Mais</li>
+                                    <li>Aubergine</li>
+                                    <li>Zucchini</li>
+                                    <li>Lauch</li>
+                                    <li>Sellerie</li>
+                                    <li>Rote Bete</li>
+                                    <li>Kürbis</li>
+                                    <li>Radieschen</li>
+                                    <li>Rettich</li>
+                                    <li>Feldsalat</li>
+                                    <li>Chinakohl</li>
+                                    <li>Endivie</li>
+                                    <li>Schwarzwurzel</li>
+                                    <li>Wirsing</li>
+                                    <li>Fenchel</li>
+                                    <li>Artischocke</li>
+                                    <li>Spargel</li>
+                                    <li>Rosenkohl</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="slide-in" id="about-the-research-project">
+                    <div class="slide-in-handle">
+                        <button class="close-btn" onclick="collapseSlideIn('about-the-research-project')">&larr;</button>
+                        <span class="vertical-text" onclick="expandSlideIn('about-the-research-project')">About the research project</span>
+                    </div>
+                    <div class="slide-in-content">
+                        <div class="content-section">
+                            <h3>Tags</h3>
+                            <div class="section-content">
+                                <ul class="tags">
+                                    <li>Karotte</li>
+                                    <li>Kartoffel</li>
+                                    <li>Tomate</li>
+                                    <li>Gurke</li>
+                                    <li>Zwiebel</li>
+                                    <li>Paprika</li>
+                                    <li>Spinat</li>
+                                    <li>Brokkoli</li>
+                                    <li>Blumenkohl</li>
+                                    <li>Kohlrabi</li>
+                                    <li>Erbse</li>
+                                    <li>Bohne</li>
+                                    <li>Mais</li>
+                                    <li>Aubergine</li>
+                                    <li>Zucchini</li>
+                                    <li>Lauch</li>
+                                    <li>Sellerie</li>
+                                    <li>Rote Bete</li>
+                                    <li>Kürbis</li>
+                                    <li>Radieschen</li>
+                                    <li>Rettich</li>
+                                    <li>Feldsalat</li>
+                                    <li>Chinakohl</li>
+                                    <li>Endivie</li>
+                                    <li>Schwarzwurzel</li>
+                                    <li>Wirsing</li>
+                                    <li>Fenchel</li>
+                                    <li>Artischocke</li>
+                                    <li>Spargel</li>
+                                    <li>Rosenkohl</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="content-section">
+                            <h3>Themes</h3>
+                            <div class="section-content">
+                                <ul class="tags">
+                                    <li>Karotte</li>
+                                    <li>Kartoffel</li>
+                                    <li>Tomate</li>
+                                    <li>Gurke</li>
+                                    <li>Zwiebel</li>
+                                    <li>Paprika</li>
+                                    <li>Spinat</li>
+                                    <li>Brokkoli</li>
+                                    <li>Blumenkohl</li>
+                                    <li>Kohlrabi</li>
+                                    <li>Erbse</li>
+                                    <li>Bohne</li>
+                                    <li>Mais</li>
+                                    <li>Aubergine</li>
+                                    <li>Zucchini</li>
+                                    <li>Lauch</li>
+                                    <li>Sellerie</li>
+                                    <li>Rote Bete</li>
+                                    <li>Kürbis</li>
+                                    <li>Radieschen</li>
+                                    <li>Rettich</li>
+                                    <li>Feldsalat</li>
+                                    <li>Chinakohl</li>
+                                    <li>Endivie</li>
+                                    <li>Schwarzwurzel</li>
+                                    <li>Wirsing</li>
+                                    <li>Fenchel</li>
+                                    <li>Artischocke</li>
+                                    <li>Spargel</li>
+                                    <li>Rosenkohl</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="content-section">
+                            <h3>Project</h3>
+                            <div class="section-content">
+                                <ul class="tags">
+                                    <li>Karotte</li>
+                                    <li>Kartoffel</li>
+                                    <li>Tomate</li>
+                                    <li>Gurke</li>
+                                    <li>Zwiebel</li>
+                                    <li>Paprika</li>
+                                    <li>Spinat</li>
+                                    <li>Brokkoli</li>
+                                    <li>Blumenkohl</li>
+                                    <li>Kohlrabi</li>
+                                    <li>Erbse</li>
+                                    <li>Bohne</li>
+                                    <li>Mais</li>
+                                    <li>Aubergine</li>
+                                    <li>Zucchini</li>
+                                    <li>Lauch</li>
+                                    <li>Sellerie</li>
+                                    <li>Rote Bete</li>
+                                    <li>Kürbis</li>
+                                    <li>Radieschen</li>
+                                    <li>Rettich</li>
+                                    <li>Feldsalat</li>
+                                    <li>Chinakohl</li>
+                                    <li>Endivie</li>
+                                    <li>Schwarzwurzel</li>
+                                    <li>Wirsing</li>
+                                    <li>Fenchel</li>
+                                    <li>Artischocke</li>
+                                    <li>Spargel</li>
+                                    <li>Rosenkohl</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="slide-in" id="about-the-fieldsite">
+                    <div class="slide-in-handle">
+                        <button class="close-btn" onclick="collapseSlideIn('about-the-fieldsite')">&larr;</button>
+                        <span class="vertical-text" onclick="expandSlideIn('about-the-fieldsite')">About the fieldsite</span>
+                    </div>
+                    <div class="slide-in-content sticky-scroll">
+                        <div class="content-section multi-column">
+                            <div class="left">
+                                <h4>About the research project</h4>
+                                <h3>Covid-19 in Diepsloot, South Africa:<br>Paradoxies of State (Un-)Care</h3>
+                                <span class="author">Simbarashe Nyuke</span>
+                            </div>
+                            <div class="right">
+                                <p>Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet.</p>  
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            </div>
+                        </div>
+                        <div class="content-section multi-column">
+                            <div class="left">
+                                <h4>About the research project</h4>
+                                <h3>Covid-19 in Diepsloot, South Africa:<br>Paradoxies of State (Un-)Care</h3>
+                                <span class="author">Simbarashe Nyuke</span>
+                            </div>
+                            <div class="right">
+                                <p>Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet.</p>  
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            </div>
+                        </div>
+                        <div class="content-section multi-column">
+                            <div class="left">
+                                <h4>About the research project</h4>
+                                <h3>Covid-19 in Diepsloot, South Africa:<br>Paradoxies of State (Un-)Care</h3>
+                                <span class="author">Simbarashe Nyuke</span>
+                            </div>
+                            <div class="right">
+                                <p>Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet.</p>  
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                                <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <!--
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js"></script>
+    -->
+    <!-- Smooth Scrollbar core
+    <script src="https://cdn.jsdelivr.net/npm/smooth-scrollbar@8.7.4/dist/smooth-scrollbar.js"></script>
+    -->
+    <!-- Overscroll Plugin
+    <script src="https://cdn.jsdelivr.net/npm/smooth-scrollbar@8.7.4/dist/plugins/overscroll.js"></script>
+     -->
+    <!--<script src="https://cdn.jsdelivr.net/npm/locomotive-scroll@4.1.4/dist/locomotive-scroll.min.js"></script>-->
+    <script src="script2.js"></script>
+    <script type="module">
+    import WaveSurfer from 'https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.esm.js';
+    
+    const wavesurfer = WaveSurfer.create({
+        container: '#waveform_1',
+        waveColor: '#666',
+        progressColor: '#aaa',
+        cursorColor: '#ccc',
+        height: 50,             // overall container height
+        barWidth: 2,            // wider bars = lower resolution
+        barGap: 1,              // spacing between bars
+        barHeight: 40,          // shorter bars
+        normalize: true,
+        responsive: true,
+        interact: true,
+        cursorWidth: 1
+    });
+    
+    // Load your audio file
+    wavesurfer.load('mp3/vlog-music-beat-trailer-showreel-promo-background-intro-theme-274290.mp3');
+
+    wavesurfer.on('ready', () => {
+    document.getElementById('waveform_1').addEventListener('click', () => {
+        wavesurfer.playPause();
+    });
+    });
+      </script>
+    <!--
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js"></script>
+    -->
+    
+    <script type="text/javascript">
+        /*
+    gsap.registerPlugin(ScrollTrigger);
+
+
+    document.querySelectorAll(".slide-in-section").forEach((section) => {
+    const left = section.querySelector(".left");
+    const right = section.querySelector(".right");
+
+    if (!left || !right) return;
+
+
+    ScrollTrigger.create({
+        trigger: section,
+        start: "top top",
+        end: () => `+=${right.scrollHeight}`,
+        pin: left,
+
+        scrub: true,
+    });
+
+
+    gsap.from(section, {
+        opacity: 0,
+        y: 50,
+        duration: 0.5,
+        scrollTrigger: {
+        trigger: section,
+        start: "top 80%",
+        toggleActions: "play none none reverse"
+        }
+    });
+    });
+    */
+    </script>
+
+</body>
+</html>
