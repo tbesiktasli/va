@@ -4,7 +4,7 @@ function expandSlideIn(id) {
       if (slideIn.id === id) {
         
         slideIn.classList.add('expanded');
-        slideIn.querySelector('.slide-in-content').classList.add('visible');
+        slideIn.querySelector('.vertical-content').classList.add('visible');
         slideIn.querySelector('.close-btn').innerHTML = 'x';
       } else {
           slideIn.classList.remove('expanded'); 
@@ -19,7 +19,7 @@ function collapseSlideIn(id) {
   slideIns.forEach((slideIn) => {
     if (slideIn.id === id) {
       slideIn.classList.remove('expanded');
-      slideIn.querySelector('.slide-in-content').classList.remove('visible');
+      slideIn.querySelector('.vertical-content').classList.remove('visible');
       slideIn.querySelector('.close-btn').innerHTML = '&larr;';
     } else {
       slideIn.querySelector('.close-btn').innerHTML = '&larr;';
@@ -98,7 +98,6 @@ document.getElementById('scroll-on').onclick = (e) => {
 }
 
 
-const sections = document.querySelectorAll('.content-section');
 /*
 sections.forEach((section, index) => {
   const right = section.querySelector('.right');
@@ -139,21 +138,64 @@ sections.forEach((section, index) => {
 });
 */
 
-// Add IntersectionObserver to snap to top if 10px or more visible
-const observerScrollSections = new IntersectionObserver((entries) => {
-  entries.forEach(entry => {
-    console.log(entry.isIntersecting)
-    if (entry.isIntersecting) {
-      entry.target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+const containers = document.querySelectorAll('.vertical-content');
+
+containers.forEach(container => {
+  const sections = container.querySelectorAll('.content-section');
+
+  let isScrolling = false; // lock flag
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting && !isScrolling) {
+        isScrolling = true;
+
+        container.scrollTo({
+          top: entry.target.offsetTop - container.offsetTop,
+          behavior: 'smooth',
+        });
+
+        // Release the lock after the scroll is likely done (adjust if needed)
+        setTimeout(() => {
+          isScrolling = false;
+        }, 700); // 500ms is usually enough for smooth scroll
+      }
+    });
+  }, {
+    root: container,
+    threshold: 0.01,
   });
-}, {
-  root: null,
-  threshold: 0.01,
+
+  sections.forEach(section => observer.observe(section));
 });
 
-sections.forEach(section => observerScrollSections.observe(section));
 
+const horizontal = document.querySelector('.scroll-container-horizontal');
+const vertical = document.querySelector('.scroll-container-vertical');
+
+function fadeOut(container) {
+  container.style.opacity = '0';
+  setTimeout(() => {
+    container.style.display = 'none';
+  }, 400); // matches transition duration
+}
+
+function fadeIn(container) {
+  container.style.display = 'block';
+  requestAnimationFrame(() => {
+    container.style.opacity = '1';
+  });
+}
+
+function showHorizontal() {
+  fadeOut(vertical);
+  fadeIn(horizontal);
+}
+
+function showVertical() {
+  fadeOut(horizontal);
+  fadeIn(vertical);
+}
 
 
 /*

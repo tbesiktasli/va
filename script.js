@@ -326,6 +326,26 @@ linkUngroup.onclick = gridObject.ungroupObjects.bind(gridObject);
 resetGrid.onclick = gridObject.resetGrid.bind(gridObject);
 
 
+window.addEventListener('DOMContentLoaded', () => {
+  linkGroup.click();
+
+  // Wait ~500ms for the transition to finish (adjust as needed)
+  setTimeout(() => {
+    resetGrid.click();
+
+    const objectsCollection = document.querySelectorAll('.object');
+
+    objectsCollection.forEach(obj => {
+      obj.addEventListener('click', () => {
+        // Replace with your desired URL logic
+        window.location.href = 'demo-sidebars.html';
+      });
+    });
+
+  }, 1000);
+});
+
+
 /*
 for(let i=0; i<4; i++) {
   for(let j=0; j<10; j++) {

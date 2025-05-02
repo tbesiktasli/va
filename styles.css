@@ -12,7 +12,7 @@
     background-color: #FAF7F3;
   }
 
-  .header-center, h1, h2, h3, object, .wide-content .gallery-box .column .item.text {
+  .header-center, h1, h2, h3, object, .wide-content .gallery-box .column .item.text, .vertical-content .topics {
     font-family: "Noto Serif Display", serif;
     font-optical-sizing: auto;
     font-weight: 400;
@@ -126,13 +126,41 @@ header nav {
   width: 100vw;
   overflow-x: scroll;
   overflow-y: hidden;
-  display: none;
+
 }
 
 .scroll-container-vertical {
   width: 100vw;
   overflow-x: hidden;
   overflow-y: scroll;
+}
+
+.scroll-container-horizontal,
+.scroll-container-vertical {
+  transition: opacity 0.4s ease;
+  opacity: 0;
+  display: none;
+}
+
+.scroll-container-horizontal.active,
+.scroll-container-vertical.active {
+  opacity: 1;
+  display: block;
+}
+
+#content-back-button {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  background-color: white;
+  width: 35px;
+  height: 35px;
+  border-radius: 100%;
+  border: 1px solid #1d1d1d;
+  line-height: 35px;
+  text-align: center;
+  font-size: 1.3em;
+  box-shadow: 2px 2px 2px rgba(209, 209, 209, 1);;
 }
 
 .count-invisible-objects {
@@ -206,9 +234,12 @@ header nav {
 }
 
 .wide-content .title-box .button {
+  margin-top: 60px;
+}
+
+.button {
   padding: 6px 12px;
   border: 1px solid #1d1d1d;
-  margin-top: 60px;
   display: inline-flex;
   width: auto;
   max-width: max-content;
@@ -217,15 +248,15 @@ header nav {
   align-items: center;
   box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
 }
-.wide-content .title-box .button:hover {
+.button:hover {
   box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
 }
 
-.wide-content .title-box .button .text {
+.button .text {
   font-size: 0.8em;
 }
 
-.wide-content .title-box .button .icon {
+.button .icon {
   margin-left: 20px;
 }
 
@@ -350,53 +381,145 @@ header nav {
   color: #1d1d1d;
 }
 
-.vertical-content, .slide-in-content {
+.vertical-content {
   width: 100%;
   flex-direction: column;
   overflow-y: scroll;
   opacity: 0;
   transition: opacity 0.4s ease;
+  box-sizing: border-box;
 }
 .vertical-content {
   opacity: 1;
 }
 
-.slide-in-content.visible {
+.vertical-content.visible {
   opacity: 1;
 }
 
+.vertical-content p {
+  padding: 0 100px;
+  font-size: 0.9em;
+  line-height: 1.5em;
+  margin-bottom: 20px;
+}
+
+.vertical-content h3 {
+  padding: 0 100px;
+  font-size: 1.5em;
+  margin-top: 50px;
+  padding-bottom: 20px;
+}
+
+.vertical-content h4 {
+  padding-bottom: 20px;
+}
+
+.vertical-content blockquote {
+  font-style: italic;
+  font-size: 0.9em;
+  margin-top: 50px;
+  margin-bottom: 50px;
+  padding-left: 50px;
+  padding-right: 120px;
+  line-height: 1.5em;
+}
+
+#detail-content .vertical-content {
+  width: calc(100% - 120px);
+  padding-left: 100px;
+}
+
+.vertical-content h1 {
+  font-size: 3em;
+  font-style: italic;
+}
+
+.vertical-content .topics {
+  margin-top: 40px;
+  font-size: 0.8em;
+  font-style: italic;
+}
+
+.vertical-content .topics li {
+  display: inline-block;
+  padding-right: 20px;
+  margin-right: 20px;
+  margin-bottom: 10px;
+  border-right: 1px solid #1d1d1d;
+}
+.vertical-content .topics li:last-child {
+  border: none;
+}
+
+.flex-table {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem; /* spacing between rows */
+  font-family: sans-serif;
+}
+
+.flex-table .row {
+  display: flex;
+  justify-content: flex-start;
+  gap: 1rem; /* space between label and value */
+}
+
+.flex-table .label {
+  width: 120px;
+  text-transform: uppercase;
+  font-size: 0.6rem;
+  letter-spacing: 1px;
+  flex-shrink: 0;
+}
+
+.flex-table .value {
+  font-size: 0.8rem;
+}
+
+.flex-table .value a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+
 .content-section {
-  border: 1px solid green;
   height: 100%;
+  color: #1d1d1d;
+  border-bottom: 1px solid #1d1d1d;
+  padding-top: 20px;
+  box-sizing: border-box;
 }
 
 .content-section.multi-column {
   display: flex;
 }
 
-.sticky-scroll .content-section {
-
-}
-
 .content-section .left {
-  width: 40%;
+  width: 50%;
   height: 100%;
-  border: 1px solid red;
-}
-
-.sticky-scroll .content-section .left {
-  display: sticky;
-  top: 0;
+  box-sizing: border-box;
 }
 
 .content-section .right {
-  width: 60%;
+  padding-top: 20px;
+  max-width: 50%;
   height: 100%;
-  border: 1px solid yellow;
   overflow-y: scroll;
+  box-sizing: border-box;
+  padding-bottom: 20px;
 }
 
-.sticky-scroll .content-section .right {
+.content-section.sub-section .left {
+  width: 30%;
+}
+
+.content-section.sub-section .right {
+  max-width: 70%;
+}
+
+.content-section.sub-section .right p {
+  padding-left: 0;
 }
 
 .content-section h3 {
@@ -425,6 +548,7 @@ header nav {
   cursor: pointer;
   transition: background-color 0.2s;
   display: inline-block; /* Ensures button-like appearance */
+  background-color: white;
 }
 
 .tags li:hover {
