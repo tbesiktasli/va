@@ -138,6 +138,7 @@ sections.forEach((section, index) => {
 });
 */
 
+/*
 const containers = document.querySelectorAll('.vertical-content');
 
 containers.forEach(container => {
@@ -168,7 +169,7 @@ containers.forEach(container => {
 
   sections.forEach(section => observer.observe(section));
 });
-
+*/
 
 const horizontal = document.querySelector('.scroll-container-horizontal');
 const vertical = document.querySelector('.scroll-container-vertical');
@@ -196,6 +197,7 @@ function showVertical() {
   fadeOut(horizontal);
   fadeIn(vertical);
 }
+
 
 
 /*
