@@ -156,7 +156,7 @@ window.audioPool = audioPool;
 let objectTypes = ['image', 'text', 'video', 'audio'];
 
 let objects = [];
-const groupCount = 10;
+const groupCount = 5;
 
 // Structured dummy meta per group (title, subtitle, location)
 const groupMetaPool = [
@@ -277,7 +277,7 @@ const THEMES = [
   }
 ];
 
-for(let i=0; i<200; i++) {
+for(let i=0; i<100; i++) {
 
   let objectType = objectTypes[Math.floor(Math.random() * objectTypes.length)];
   let randomObjectWidth = Math.floor(Math.random() * (110 - 60 + 1)) + 60;
@@ -423,8 +423,10 @@ async function strapiFetch(path, params = {}) {
     throw new Error(`Strapi fetch failed ${res.status}: ${url}\n${t}`);
   }
   const json = await res.json();
-  // Light summary (don’t dump huge payloads)
-  const len = Array.isArray(json?.data) ? json.data.length : (json?.data ? 1 : 0);
+  // after res.json()
+  const len = Array.isArray(json) ? json.length
+    : Array.isArray(json?.data) ? json.data.length
+    : (json?.data ? 1 : 0);
   slog('DATA', `items=${len}`, json?.meta ? json.meta : '');
   return json;
 }
@@ -451,14 +453,16 @@ async function strapiFetchAll(path, baseParams = {}) {
   return acc;
 }
 
-// Load all groups (metadata) and all objects belonging to those groups
+// ==============================
+// STRAPI LOADER (all groups + objects) — with media URL resolution
+// ==============================
 async function loadStrapiAllGroupsAndObjects() {
   // 1) Groups
   const groups = await strapiFetchAll('groups', { populate: '*' });
   slog('groups.count', groups.length);
   slog('groups.sample', groups.slice(0, 5).map(g => ({
     id: g.id,
-    title: g.attributes?.Title || g.attributes?.title || ''
+    title: (getAttrs(g).Title || getAttrs(g).title || '')
   })));
 
   if (!groups.length) {
@@ -468,32 +472,73 @@ async function loadStrapiAllGroupsAndObjects() {
 
   const groupIds = groups.map(g => g.id);
 
-  // 2) Objects for those groups
+  // 2) Objects for those groups (use populate=* to avoid keyed-populate issues)
   const objects = await strapiFetchAll('objects', {
-    'filters[group][id][$in]': groupIds.join(','),   // all groups we loaded
+    'filters[group][id][$in]': groupIds.join(','),  // objects that belong to loaded groups
     'publicationState': 'preview',
-    'populate': '*'                                  // v5-friendly; no keyed nested params
+    'populate': '*'
   });
-  dumpStrapiObjects(objects);
-
-  // Quick type-guess from attributes before normalization
-  const tcount = { image:0, video:0, audio:0, text:0, unknown:0 };
-  for (const o of objects) {
-    const a = o.attributes || {};
-    const image = a.ImagePath || a.imagePath || a.image;
-    const video = a.VideoPath || a.videoPath || a.video;
-    const audio = a.AudioPath || a.audioPath || a.audio;
-    const hasMedia = !!(image || video || audio);
-    const isText = !hasMedia && (a.Content || a.Description || a.description);
-    let t = 'unknown';
-    if (video) t='video'; else if (audio) t='audio'; else if (image) t='image'; else if (isText) t='text';
-    tcount[t] = (tcount[t]||0)+1;
-  }
   slog('objects.count', objects.length);
-  slog('objects.types', tcount);
 
-  // 3) Normalize
-  return normalizeStrapiToAppSchema(groups, objects);
+  // 3) Normalize to app schema
+  const normalized = normalizeStrapiToAppSchema(groups, objects);
+  slog('normalize.objects', { in: objects.length, out: normalized.objects.length });
+
+  // 4) Resolve media URLs from ImagePath/VideoPath/AudioPath (batched, cached)
+  await resolveUploadUrlsForObjects(normalized.objects);
+  slog('resolved.media',
+    normalized.objects.reduce((acc, o) => {
+      if (o.image) acc.image++;
+      if (o.video) acc.video++;
+      if (o.audio) acc.audio++;
+      return acc;
+    }, { image: 0, video: 0, audio: 0 })
+  );
+
+  return normalized;
+}
+
+// Resolve best URL for each object from its stored hint (filename + folder-ish path)
+async function resolveUploadUrlsForObjects(objs) {
+  // 1) collect unique filenames we need
+  const needed = [];
+  const hints = new Map(); // obj -> { name, dir , fields present }
+  for (const o of objs) {
+    const ph = o._pathHints;
+    if (!ph) continue;
+    const want = {};
+    if (ph.image && !o.image) { want.image = splitPathHint(ph.image); needed.push(want.image.name); }
+    if (ph.video && !o.video) { want.video = splitPathHint(ph.video); needed.push(want.video.name); }
+    if (ph.audio && !o.audio) { want.audio = splitPathHint(ph.audio); needed.push(want.audio.name); }
+    hints.set(o, want);
+  }
+
+  // 2) batch fetch all filenames once
+  await batchFetchUploadFilesByNames([...new Set(needed)]);
+
+  // 3) choose best match per object+field (prefer folderPath that contains the hint dir)
+  const pickBest = (name, dir) => {
+    const candidates = __uploadCache.get(name) || [];
+    if (!candidates.length) return undefined;
+    if (!dir) return candidates[0].url;
+    // score by longest folderPath substring match
+    let best = candidates[0], bestScore = 0;
+    for (const c of candidates) {
+      const fp = c.folderPath || '';
+      const score = fp.includes(dir) ? dir.length : (fp.split('/').pop() === dir.split('/').pop() ? 1 : 0);
+      if (score > bestScore) { best = c; bestScore = score; }
+    }
+    return best.url;
+  };
+
+  // 4) write resolved URLs back into objects
+  for (const o of objs) {
+    const want = hints.get(o);
+    if (!want) continue;
+    if (!o.image && want.image) o.image = pickBest(want.image.name, want.image.dir);
+    if (!o.video && want.video) o.video = pickBest(want.video.name, want.video.dir);
+    if (!o.audio && want.audio) o.audio = pickBest(want.audio.name, want.audio.dir);
+  }
 }
 
 // Turn Strapi paths ("/uploads/…") into absolute URLs; pass through http(s) as-is
@@ -523,6 +568,7 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
   });
   slog('normalize.groups', Object.keys(groupMeta).length);
 
+  
   // helpers
   const pick = (obj, ...keys) => {
     if (!obj) return undefined;
@@ -575,52 +621,60 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
     }
     const appGroupId = groupIdMap.get(sGroup);
 
-    // ---- media fields
-    // Direct string fields (your importer writes ImagePath/VideoPath/AudioPath)
-    const imgStr = pick(a, 'ImagePath','imagePath','image_path','image');
-    const vidStr = pick(a, 'VideoPath','videoPath','video_path','video');
-    const audStr = pick(a, 'AudioPath','audioPath','audio_path','audio');
+    // ---- media fields (v4/v5 + your custom path fields)
+    const imgStr = a.ImagePath || a.imagePath || a.image_path || null;
+    const vidStr = a.VideoPath || a.videoPath || a.video_path || null;
+    const audStr = a.AudioPath || a.audioPath || a.audio_path || null;
+
     // Upload plugin shapes (v5: field.url; v4: field.data.attributes.url)
     const im = a.image, vi = a.video, au = a.audio;
     const imUrl = im?.url || (im?.data ? (Array.isArray(im.data) ? im.data[0]?.attributes?.url : im.data?.attributes?.url) : undefined);
     const viUrl = vi?.url || (vi?.data ? (Array.isArray(vi.data) ? vi.data[0]?.attributes?.url : vi.data?.attributes?.url) : undefined);
     const auUrl = au?.url || (au?.data ? (Array.isArray(au.data) ? au.data[0]?.attributes?.url : au.data?.attributes?.url) : undefined);
 
-    const imagePath = imgStr || imUrl;
-    const videoPath = vidStr || viUrl;
-    const audioPath = audStr || auUrl;
-
-    // ---- exact type rules
+    // === exact type rules (priority) =========================================
+    // 1) ImagePath (or upload image url) → image
+    // 2) else VideoPath (or upload video url) → video
+    // 3) else AudioPath (or upload audio url) → audio
+    // 4) else → text showing Name
     let type = 'text';
     let image, video, audio, text;
 
-    if (imagePath) {
+    if (imgStr || imUrl) {
       type  = 'image';
-      image = strapiAssetUrl(imagePath);
-    } else if (videoPath) {
+      image = imUrl ? strapiAssetUrl(imUrl) : undefined;   // keep undefined if only a path; will be resolved later
+    } else if (vidStr || viUrl) {
       type  = 'video';
-      video = strapiAssetUrl(videoPath);
-    } else if (audioPath) {
+      video = viUrl ? strapiAssetUrl(viUrl) : undefined;
+    } else if (audStr || auUrl) {
       type  = 'audio';
-      audio = strapiAssetUrl(audioPath);
+      audio = auUrl ? strapiAssetUrl(auUrl) : undefined;
     } else {
       type  = 'text';
-      text  = pick(a, 'Name','name') || `Object ${entry.id}`;
+      text  = a.Name || a.name || `Object ${entry.id}`;
     }
 
-    // ---- tags
+    // Keep original path strings so the batched resolver can translate them to upload URLs
+    const pathHints = {
+      image: imgStr || null,
+      video: vidStr || null,
+      audio: audStr || null
+    };
+
+    // ---- tags (unchanged)
     const tags = Array.from(new Set([
       ...relNames(a.connecting_tags || a['connecting-tags']),
       ...relNames(a.tags)
     ]));
 
-    // ---- dimensions
+    // ---- dimensions (same as before)
     let width, height;
     if (type === 'image') { width = rand(120, 200); height = rand(120, 160); }
     if (type === 'video') { width = rand(120, 180); height = rand(90, 160); }
     if (type === 'audio') { width = rand(140, 200); height = 60; }
     if (type === 'text')  { width = rand(120, 180); height = rand(120, 160); }
 
+    // ---- push normalized object
     out.push({
       id: `sobj_${entry.id}`,
       type,
@@ -631,7 +685,8 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
       width, height,
       image, video, audio,
       text,
-      tags
+      tags,
+      _pathHints: pathHints
     });
   }
 
@@ -644,6 +699,67 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
   })));
 
   return { objects: out, groupMeta };
+}
+
+// Extract "filename.ext" and "dir part" from a hint like "Folder/Sub/images/file.jpg"
+function splitPathHint(pathStr) {
+  if (!pathStr) return { name: '', dir: '' };
+  try { pathStr = decodeURIComponent(pathStr); } catch {}
+  const parts = String(pathStr).split('/');
+  const name = parts.pop() || '';
+  const dir  = parts.join('/').toLowerCase(); // for fuzzy matching duplicates
+  return { name, dir };
+}
+
+const __uploadCache = new Map();
+
+// Fetch many upload files by name using $in (with a safe fallback syntax)
+async function batchFetchUploadFilesByNames(names) {
+  if (!names.length) return;
+  const want = names.filter(n => !__uploadCache.has(n));
+  if (!want.length) return;
+
+  const CHUNK = 40;
+  for (let i = 0; i < want.length; i += CHUNK) {
+    const chunk = want.slice(i, i + CHUNK);
+
+    // First try: array syntax that ALWAYS works in v5
+    const qpEqOr = { 'pagination[page]': 1, 'pagination[pageSize]': 1000 };
+    // filters[$or][0][name][$eq]=fileA, filters[$or][1][name][$eq]=fileB, ...
+    chunk.forEach((n, idx) => { qpEqOr[`filters[$or][${idx}][name][$eq]`] = n; });
+    let json = await strapiFetch('upload/files', qpEqOr);
+
+    // Fallback 1: $in with indexed array
+    const noResults = (Array.isArray(json) && json.length === 0) ||
+                      (Array.isArray(json?.data) && json.data.length === 0);
+    if (noResults) {
+      const qpIn = { 'pagination[page]': 1, 'pagination[pageSize]': 1000 };
+      chunk.forEach((n, idx) => { qpIn[`filters[name][$in][${idx}]`] = n; });
+      json = await strapiFetch('upload/files', qpIn);
+    }
+
+    // Fallback 2: a loose search on URL (covers providers that rename files)
+    const stillNone = (Array.isArray(json) && json.length === 0) ||
+                      (Array.isArray(json?.data) && json.data.length === 0);
+    if (stillNone) {
+      const qpUrl = { 'pagination[page]': 1, 'pagination[pageSize]': 1000 };
+      chunk.forEach((n, idx) => { qpUrl[`filters[$or][${idx}][url][$containsi]`] = n; });
+      json = await strapiFetch('upload/files', qpUrl);
+    }
+
+    // Normalize both response shapes
+    const items = Array.isArray(json) ? json : (Array.isArray(json?.data) ? json.data : []);
+    items.forEach(it => {
+      const a = getAttrs(it);
+      const key = a?.name;
+      const url = a?.url ? strapiAssetUrl(a.url) : undefined;
+      const folderPath = (a?.folderPath || a?.folder?.path || a?.folder?.name || '').toLowerCase();
+      if (!key || !url) return;
+      const arr = __uploadCache.get(key) || [];
+      arr.push({ url, folderPath });
+      __uploadCache.set(key, arr);
+    });
+  }
 }
 
 // Unified loader that returns {objects, groupMeta} based on DATA_MODE
