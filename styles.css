@@ -1,3 +1,11 @@
+:root {
+  --header-h: 50px; /* fallback */
+  --handle-w: 40px; /* closed slide-in handle width so #selection-bar can resolve it */
+  --offgrid-left: 8px;    /* fixed left margin for left counter */
+  --offgrid-right: 8px;   /* base right margin; JS adds slide-in visible width to this */
+  --side-gap: 8px;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -20,50 +28,226 @@
     font-variation-settings: "wdth" 100;
   }
 
+  #workspace {
+    position: absolute;
+    top: var(--header-h);
+    left: 0; right: 0; bottom: 0;
+    overflow: hidden;         /* prevent native scroll; panning stays JS-only */
+  }
+
   #grid {
     border: 1px solid green;
     position: absolute;
     top: 0px;
     left: 0px;
+    will-change: left, top; cursor: grab;
+    overscroll-behavior: none;  /* no scroll chaining to page */
+    touch-action: none;         /* no touch panning/zooming by browser */
   }
 
-  /*
-  .grid-section {
-    position: absolute;
+  #grid.dragging { 
+    cursor: grabbing; 
   }
-  */
 
   .object {
-    border: 1px solid pink;
     position: absolute;
-    font-size: 0.8em;
-    /* font-family: Arial, Helvetica, sans-serif; */
-    /* transform: translate(0, 0); */
+    box-sizing: border-box;
+    background-size: cover;
+    background-position: center;
+    /*background-repeat: 'no-repeat';*/
     background-color: #fff;
-    text-align: center;
-    padding: 5px;
-    transition: transform 1s ease-in-out;
+    overflow: visible;
+    z-index: 1;
+    transition: transform 0.5s ease, width 0.4s ease, height 0.4s ease;
   }
-  
-  #object-container {
-    position: relative;
-    border: 1px solid red;
+
+  /* During zoom, keep width/height animated but freeze transform animations */
+  body.zooming #grid .object {
+    transition: width 0.4s ease, height 0.4s ease !important; /* no transform here */
   }
-  
-  /*
-  .object {
+
+  .object.is-detail { z-index: 1000; }
+
+    /* Fade the small content (children except .detail-panel) */
+  .object.detail-fade-out > :not(.detail-panel) {
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  /* Center text objects without affecting font-fitting geometry */
+  #grid .object[data-type="text"],
+  #grid .object.text {
+    display: flex;               /* create a flex formatting context */
+    align-items: center;         /* vertical centering */
+    justify-content: center;     /* horizontal centering */
+    text-align: center;          /* center multi-line text */
+  }
+
+    /* Detail panel overlay inside the expanded card */
+  .detail-panel {
     position: absolute;
-    background-size: 'cover';
-    background-repeat: 'no-repeat';
-    background-position: 'center';
+    inset: 0;
+    display: grid;
+    grid-template-rows: auto 1fr auto auto auto;
+    gap: 12px;
+    padding: 18px;
+    background: white;
+    opacity: 0;
+    z-index: 10;
+    transition: opacity 0.25s ease;
+    overflow: hidden;
   }
-*/
+
+  .detail-panel.visible { opacity: 1; }
+
+  .detail-close {
+    position: absolute;
+    top: 8px; right: 8px;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: #fff;
+    border: 1px solid #ddd;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 30px;
+  }
+
+  .detail-date, .detail-group {
+    text-align: center;
+    font-size: 0.9rem;
+    font-style: italic;
+    color: #333;
+  }
+  
+  .detail-media {
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+  }
+  
+  .detail-media img, .detail-media video {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+  
+  .detail-text {
+    font-size: 0.95rem;
+    line-height: 1.4;
+    padding: 8px;
+    text-align: center;
+  }
+  
+  .detail-tags {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    padding: 0;
+  }
+  
+  .detail-tags li {
+    font-size: 0.65rem;
+    border: 1px solid #000;
+    border-radius: 999px;
+    padding: 4px 8px;
+    background: #fff;
+  }
+  
+  .detail-link {
+    text-align: center;
+    display: block;
+    margin: 0 auto;
+    font-size: 0.9rem;
+    text-decoration: underline;
+    color: inherit;
+  }
+
+  .object-glow {
+    position: absolute;
+    inset: -6px;                 /* extends a little outside the card */
+    pointer-events: none;
+    z-index: 3;
+    border-radius: 6px;
+  
+    /* knobs */
+    --ring: 6px;                 /* ring thickness */
+    --glow-opacity: 0.55;        /* ring opacity */
+    --glow-blur: 8px;            /* ring blur */
+    --halo-opacity: 0.35;        /* outer halo opacity */
+    --halo-blur: 22px;           /* outer halo blur */
+    --glow: transparent;         /* set via JS to your gradient */
+  
+    background: var(--glow);
+    padding: var(--ring);
+  
+    /* ring mask (hollow center) */
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask-composite: exclude;
+  
+    /* airy feel */
+    filter: blur(var(--glow-blur)) saturate(1.15);
+    opacity: var(--glow-opacity);
+    mix-blend-mode: screen;      /* “light” the content instead of tinting it */
+  }
+  
+  /* soft outer halo */
+  .object-glow::before {
+    content: "";
+    position: absolute;
+    inset: -16px;                /* expand beyond the ring */
+    border-radius: inherit;
+    background: var(--glow);
+    filter: blur(var(--halo-blur));
+    opacity: var(--halo-opacity);
+    mix-blend-mode: screen;
+    pointer-events: none;
+  }  
   
 #controls {
   position: fixed;
   left: 0;
   bottom: 0;
 }
+
+/* Floating stacks live inside #workspace so they respect the header */
+.fab-stack {
+  position: absolute;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 1200; /* above grid + detail panel; overlay menu still wins */
+}
+
+#fab-top-left { top: 12px; }
+#fab-bottom-left { bottom: 12px; }
+
+/* Circular buttons */
+.fab {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid #1d1d1d;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  box-shadow: 2px 2px 2px rgba(0,0,0,.12);
+  cursor: pointer;
+  color: #1d1d1d;
+}
+
+.fab svg { width: 22px; height: 22px; }
+.fab.fab-lg { width: 46px; height: 46px; }     /* bigger for zoom */
+.fab.fab-lg svg { width: 26px; height: 26px; }
+
+.fab:hover { box-shadow: 2px 3px 4px rgba(0,0,0,.18); }
+.fab:active { transform: scale(0.98); }
+
+/* Optional: show a pressed state when in that mode */
+.fab.is-active { background: #FAF7F3; }
 
 #main {
   height: 100vh;
@@ -103,21 +287,6 @@ header {
   height: 25px;
 }
 
-/*
-header nav {
-  position: absolute;
-  top: 0;
-  right: 10px;
-  width: 25px;
-  height: 25px;
-  background-image: url('img/burger-menu.svg');
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  border: 1px solid blue;
-}
-*/
-
 #content {
   position: relative;
 }
@@ -150,8 +319,8 @@ header nav {
 
 #content-back-button {
   position: absolute;
-  top: 20px;
-  left: 20px;
+  top: 12px;
+  left: 12px;
   background-color: white;
   width: 35px;
   height: 35px;
@@ -161,40 +330,13 @@ header nav {
   text-align: center;
   font-size: 1.3em;
   cursor: pointer;
+  z-index: 9999;
   box-shadow: 2px 2px 2px rgba(209, 209, 209, 1);;
-}
-
-.count-invisible-objects {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 1;
-  background-color: white;
-  padding: 6px;
-  font-size: 0.5em;
-  border-radius: 10px;
-  color: #1d1d1d;
-  background-color: #FAF7F3;
-}
-
-.count-invisible-objects.left {
-  left: -4px;
-  transform: rotate(-90deg);
-}
-
-.count-invisible-objects.right {
-  right: 115px;
-  transform: rotate(90deg);
-}
-
-.count-invisible-objects .value {
-  font-style: italic;
 }
 
 .wide-content, .vertical-content {
   display: flex;
   height: calc(100vh - 50px);
-  /* background: linear-gradient(to right, #ff6a00, #ffb347, #00c3ff); */
 }
 
 .wide-content .title-box {
@@ -287,13 +429,11 @@ header nav {
   margin-bottom: auto;
   opacity: 0;
   cursor: pointer;
-  /* transform: translateY(20px); */
   transition: opacity 3s, transform 3s;
 }
 
 .wide-content .gallery-box .column .item.visible {
   opacity: 1;
-  /* transform: translateY(0); */
 }
 
 .wide-content .gallery-box .column .item.text {
@@ -310,24 +450,21 @@ header nav {
 
 .wide-content .gallery-box .column .item.text .scaling-text {
   text-align: center;
+  display: block;
+  max-width: 100%;
+  white-space: normal;
+  word-break: break-word;
+  hyphens: auto;
+  line-height: 1.1;
 }
 
 .wide-content .gallery-box .column .item.waveform {
   width: 60%;
 }
 
-/*
-.wide-content .gallery-box .row {
-  border: 1px solid green;
-  height: 50%;
-  display: flex;
-  align-items: center;
-}
-
-.wide-content .gallery-box .row > * {
-  margin-right: 20px;
-}
-*/
+#group-gallery { display: none; }
+#group-gallery.active { display: block; }
+#group-gallery .item.audio .wave { width: 100%; height: 50px; }
 
 #slide-ins {
   height: 100%;
@@ -338,7 +475,7 @@ header nav {
   flex-direction: row-reverse;
   transform: translateX(100%);
   transition: transform 0.5s ease;
-  z-index: 1;
+  z-index: 1400;
 }
 
 #slide-ins.visible {
@@ -347,19 +484,34 @@ header nav {
 
 .slide-in {
   display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
   height: 100%;
   width: 40px;
   transition: width 0.4s ease;
   background-color: #FAF7F3;
+  box-sizing: border-box;
 }
 
 .slide-in.expanded {
   width: 100%;
 }
 
+/* Expanded size uses the computed width cap */
+#slide-ins .slide-in[data-mode="menu"].expanded {
+  width: auto;                            /* override any .expanded { width:100% } */
+  max-width: var(--slidein-exp-width);    /* animate this from 40px → target */
+}
+
+#slide-ins .slide-in[data-mode="menu"] .vertical-content,
+#slide-ins .slide-in.menu-mode .vertical-content { /* fallback if you used a class */
+  padding-left: 20px;
+}
+
 .slide-in-handle {
   border: 1px solid #1d1d1d;
   border-top: none;
+  border-bottom: none;
   width: 40px;
   display: flex;
   flex-direction: column;
@@ -525,7 +677,7 @@ header nav {
 
 
 .content-section {
-  height: 100%;
+  /*height: 100%;*/
   color: #1d1d1d;
   border-bottom: 1px solid #1d1d1d;
   padding-top: 20px;
@@ -577,11 +729,312 @@ header nav {
 
 .content-section h3 {
   margin-bottom: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
 }
+
+.content-section.collapsible h3::after {
+  content: '▾';
+  transition: transform .25s ease;
+}
+.content-section.collapsible:not(.is-open) h3::after {
+  transform: rotate(-90deg);
+}
+
+/* Animate content height */
+.content-section.collapsible .section-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height .3s ease;
+}
+.content-section.collapsible.is-open .section-content {
+  /* max-height set inline via JS to exact scrollHeight */
+}
+
+/* Little separation between sections (optional) */
+.content-section + .content-section { margin-top: 12px; }
 
 .content-section ul {
   margin-bottom: 25px;
 }
+
+/* Make header a flex row so the chevron can sit at the far right */
+.content-section.collapsible h3,
+.content-section.collapsible .section-header {
+  display: flex;
+  align-items: center;
+}
+
+/* Chevron lives on ::after and is pushed with margin-left:auto */
+.content-section.collapsible h3::after,
+.content-section.collapsible .section-header::after {
+  content: '▾';
+  margin-left: auto;                /* <-- pushes it to the far right */
+  transition: transform .25s ease;
+}
+
+/* Rotate chevron when closed */
+.content-section.collapsible:not(.is-open) h3::after,
+.content-section.collapsible:not(.is-open) .section-header::after {
+  transform: rotate(-90deg);
+}
+
+/* === MENU MODE WIDTH BUDGET (override) === */
+#slide-ins .slide-in[data-mode="menu"] {
+  /* match your handle width */
+  --handle-w: 40px;
+
+  /* your smart target from before (tweak as needed) */
+  --slidein-target: 400px;
+  --slidein-min: 320px;
+  --slidein-edge-gap: 24px;
+  --slidein-viewport-cap: calc(100dvw - var(--slidein-edge-gap));
+  --slidein-exp-width: clamp(var(--slidein-min), var(--slidein-target), var(--slidein-viewport-cap));
+
+  /* animate max-width, not width */
+  width: auto;                 /* overrides any base width:40px for menu mode */
+  max-width: var(--handle-w);  /* collapsed = just the handle */
+  transition: max-width 0.4s ease;
+  overflow: hidden;
+}
+
+/* Expanded width = handle + computed content width */
+#slide-ins .slide-in[data-mode="menu"].expanded {
+  width: auto; /* override any 100% leftovers */
+  max-width: calc(var(--handle-w) + var(--slidein-exp-width));
+}
+
+/* Handle column: fixed */
+#slide-ins .slide-in[data-mode="menu"] .slide-in-handle {
+  flex: 0 0 var(--handle-w);
+  width: var(--handle-w);
+}
+
+/* =========================
+   FIXED SELECTED TAGS BAR
+   ========================= */
+
+#selection-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--header-h);                /* same height as header */
+  background: #FAF7F3;                    /* same background as header */
+  border-top: 1px solid #1d1d1d;
+  display: none;                          /* toggled via .show */
+  align-items: center;
+  justify-content: center;                /* center the pills horizontally */
+  padding: 0 12px;
+  z-index: 1300;                          /* above counters/FAB, below overlay menu */
+}
+#selection-bar.show { display: flex; }
+
+#selection-bar .tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+#selection-bar .tags li {
+  display: inline-flex;
+  align-items: center;                    /* vertical centering */
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid #1d1d1d;
+  background: #fff;
+  cursor: pointer;                        /* entire pill is clickable to remove */
+  user-select: none;
+}
+#selection-bar .tags li .x {
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* When selection bar is visible, push up bottom overlays by its height */
+#workspace.has-selection-bar #offgrid-bottom { bottom: calc(8px + var(--header-h)); }
+#workspace.has-selection-bar #fab-bottom-left { bottom: calc(12px + var(--header-h)); }
+
+/* ====== TWO-COLUMN MENU BODY ====== */
+#slide-ins .slide-in[data-mode="menu"] {
+  /* existing CSS variables for main panel */
+  --handle-w: 40px;
+  --slidein-target: 500px;
+  --slidein-min: 320px;
+  --slidein-edge-gap: 24px;
+  --viewport-cap: calc(100dvw - var(--slidein-edge-gap));
+
+  /* main column width after clamps */
+  --main-w: clamp(var(--slidein-min), var(--slidein-target), var(--viewport-cap));
+
+  /* secondary panel targets (tweak as needed) */
+  --secondary-target: 420px;
+  --secondary-min: 260px;
+
+  /* remaining space available for the secondary (never exceed viewport) */
+  --secondary-cap: calc(var(--viewport-cap) - var(--handle-w) - var(--main-w));
+  --secondary-w: clamp(var(--secondary-min), var(--secondary-target), var(--secondary-cap));
+}
+
+/* Layout: handle | body( secondary + main ) */
+#slide-ins .slide-in[data-mode="menu"] {
+  display: flex;
+  width: auto;
+  max-width: var(--handle-w);              /* collapsed */
+  transition: max-width .4s ease;
+  overflow: hidden;
+}
+
+#slide-ins .slide-in[data-mode="menu"].expanded {
+  /* expanded width with only main panel visible */
+  max-width: calc(var(--handle-w) + var(--main-w));
+}
+
+/* When secondary is open, add its width too */
+#slide-ins .slide-in[data-mode="menu"].expanded.secondary-open {
+  max-width: calc(var(--handle-w) + var(--secondary-w) + var(--main-w));
+}
+
+/* Handle column fixed */
+#slide-ins .slide-in[data-mode="menu"] .slide-in-handle {
+  flex: 0 0 var(--handle-w);
+  width: var(--handle-w);
+}
+
+/* Body is a flex row: secondary | main */
+#slide-ins .slide-in[data-mode="menu"] .slide-in-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Secondary panel: animates width; hidden at 0 */
+#slide-ins .slide-in[data-mode="menu"] .secondary-pane {
+  width: 0;
+  flex: 0 0 auto;
+  overflow: hidden;
+  transition: width .35s ease;
+  padding: 0; /* gets padding only when open (see below) */
+  box-sizing: border-box;   /* 👈 add this */
+}
+
+/* When open, secondary takes its computed width */
+#slide-ins .slide-in[data-mode="menu"].secondary-open .secondary-pane {
+  width: var(--secondary-w);
+  padding: 12px 14px 16px 14px;
+}
+
+#slide-ins .slide-in[data-mode="menu"] .vertical-content {
+  /* was: flex: 1 1 auto; min-width: var(--main-w); ... */
+  flex: 0 0 var(--main-w);
+  width: var(--main-w);
+  min-width: var(--main-w);
+  max-width: var(--main-w);
+  max-height: 100%;
+  overflow: auto;
+  padding-left: 15px;
+  padding-right: 10px;
+  scrollbar-gutter: stable both-edges; /* no right-edge nudge when scrollbar appears */
+}
+
+/* Simple typography for secondary pane */
+.secondary-pane h3 {
+  font-size: 1rem;
+  margin: 6px 0 10px;
+  font-style: italic;
+}
+.secondary-pane p { margin: 0 0 12px; line-height: 1.6; font-size: .9rem; }
+.secondary-pane .back {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: 6px 10px; border: 1px solid #1d1d1d; border-radius: 999px; background: #fff; cursor: pointer;
+  margin-bottom: 10px; font-size: .75rem;
+}
+
+/* Themes list */
+.themes-list {
+  list-style: none;
+  padding: 10px 0 0;
+  display: grid;
+  gap: 8px;
+}
+
+/* Row button with tiny circular icon + label */
+.themes-list .theme-link {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 2px 0;           /* minimal target padding, no visible box */
+  cursor: pointer;
+  line-height: 1.1;
+}
+
+.themes-list .theme-icon {
+  /* size */
+  width: 15px;
+  height: 15px;
+
+  /* same visual tokens as .fab */
+  background: #fff;
+  border: 1px solid #1d1d1d;
+  border-radius: 50%;
+  color: #1d1d1d;
+  box-shadow: 2px 2px 2px rgba(0,0,0,.12);
+
+  /* center the "?" cleanly */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 9px;      /* keeps the "?" crisp at 15x15 */
+  line-height: 1;
+  user-select: none;
+}
+
+/* Match .fab hover/active behavior */
+.themes-list .theme-link:hover .theme-icon {
+  box-shadow: 2px 3px 4px rgba(0,0,0,.18);
+}
+.themes-list .theme-link:active .theme-icon {
+  transform: scale(0.98);
+}
+
+.themes-list .theme-label {
+  margin-left: 20px;
+  text-decoration: none;    /* default */
+}
+
+/* Active state: underline label */
+.theme-item.active .theme-label {
+  text-decoration: underline;
+}
+
+#themes-group-select { margin-top: 6px; }
+
+/* Unified colors for menu slide-ins */
+#slide-ins .slide-in[data-mode="menu"]{
+  --slide-bg: #FAF7F3;                    /* same as your slide-in background */
+  --separator-color: rgba(0,0,0,.12);     /* light divider */
+}
+
+/* Secondary pane: match background + light separator to its right */
+#slide-ins .slide-in[data-mode="menu"] .secondary-pane{
+  background: var(--slide-bg);
+  /* replace any previous border-left */
+  border-left: 0;
+  border-right: 1px solid var(--separator-color);  /* separator between secondary and main */
+}
+
+#slide-ins .slide-in[data-mode="menu"] .content-section {
+  border-bottom: none;
+}
+
+/* START TAGS */
 
 .tags {
   list-style: none; /* Remove default list styling */
@@ -604,6 +1057,308 @@ header nav {
   background-color: white;
 }
 
+/* Slide-in tags: unselectable in AND mode */
+.tags li.disabled {
+  opacity: 0.45;
+  border-color: #ccc !important;
+  color: #999 !important;
+  cursor: not-allowed;
+  box-shadow: none !important;
+  pointer-events: none; /* no mouse/touch */
+  outline: none;        /* if they somehow get focus, don’t show focus ring */
+}
+
 .tags li:hover {
   background-color: #EED9C4; /* Darker blue on hover */
+}
+
+.tag-button {
+  display: inline-block;
+  margin: 5px 5px 0 0;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 2px solid #ccc; /* will be overridden inline */
+  background-color: white;
+  color: #555; /* default text color */
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+/* Segmented control below the tags */
+.tag-match-toggle {
+  display: inline-flex;
+  border: 1px solid #1d1d1d;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 10px;
+  margin-bottom: 10px;
+  user-select: none;
+}
+.tag-match-toggle .label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 6px 10px;
+  background: #FAF7F3;
+  border-right: 1px solid #1d1d1d;
+}
+.tag-match-toggle .seg {
+  background: #fff;
+  padding: 6px 10px;
+  border: none;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+.tag-match-toggle .seg + .seg { border-left: 1px solid #1d1d1d; }
+.tag-match-toggle .seg.is-selected { background: #EED9C4; font-weight: 700; }
+.tag-match-toggle .seg:focus-visible { outline: 2px solid #4363d8; outline-offset: -2px; }
+
+/* Spacing & titles for grouped tags */
+.tag-group-block { margin-top: 16px; }
+.tag-group-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  margin: 10px 0 6px;
+  color: #555;
+}
+
+/* Already have .tags and .tags li styles.
+   Add disabled treatment for AND mode impossibilities: */
+.tags li.disabled {
+  opacity: 0.45;
+  border-color: #ccc !important;
+  color: #999 !important;
+  cursor: not-allowed;
+  box-shadow: none !important;
+}
+
+/* Group switcher row under the visible tag list */
+.tag-group-switch {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tag-group-switch .group-btn {
+  padding: 6px 10px;
+  border: 1px solid #1d1d1d;
+  border-radius: 999px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.7rem;
+}
+.tag-group-switch .group-btn.is-active {
+  background: #EED9C4;
+  font-weight: 600;
+}
+
+/* END TAGS */
+
+/* START OVERLAY MENU */
+
+#overlay-menu {
+  position: fixed;
+  inset: 0;
+  background: #FAF7F3;
+  color: #1d1d1d;
+  z-index: 9999;
+  display: none;
+  flex-direction: column;
+  padding: 0px 10px 60px 100px;
+  font-family: "Arial", sans-serif;
+}
+
+#overlay-menu.active {
+  display: flex;
+}
+
+.overlay-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.overlay-title {
+  font-size: 1.1em;
+  font-style: italic;
+  text-align: center;
+  flex-grow: 1;
+}
+
+#overlay-close {
+  background: none;
+  border: none;
+  font-size: 2em;
+  cursor: pointer;
+}
+
+.overlay-content {
+  display: flex;
+  justify-content: space-between;
+  flex: 1;
+  padding: 60px 0;
+}
+
+.main-menu {
+  flex: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  font-size: 4em;
+  margin-top: 100px;
+}
+
+.menu-item {
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.menu-item:hover {
+  font-weight: 600;
+}
+
+.menu-item.active {
+  font-weight: 600;
+  position: relative;
+}
+
+.menu-item.active::before {
+  content: "— ";
+  margin-right: 10px;
+}
+
+.sub-menu {
+  flex: 1;
+  font-size: 2em;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.sub-menu div:hover {
+  font-weight: 700;
+}
+
+.sub-menu div {
+  cursor: pointer;
+  font-weight: 200;
+}
+
+.sub-menu div.active {
+  font-weight: 700;
+  position: relative;
+}
+
+.sub-menu div.active::before {
+  content: "— ";
+  margin-right: 10px;
+}
+
+.overlay-footer {
+  display: flex;
+  gap: 20px;
+  font-size: 0.9em;
+  justify-content: start;
+}
+
+/* END OVERLAY MENU */
+
+
+/* INVISIBLE OBJECTS COUNTERS */
+
+.count-invisible-objects {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  background-color: white;
+  padding: 6px;
+  font-size: 0.5em;
+  border-radius: 10px;
+  color: #1d1d1d;
+  background-color: #FAF7F3;
+}
+
+.count-invisible-objects .value {
+  font-style: italic;
+}
+
+/* Grid-specific placement (keeps demo styles intact) */
+#grid-shell .count-invisible-objects { 
+  z-index: 1100;                 /* above grid elements */
+  /*box-shadow: 0 1px 3px rgba(0,0,0,.06);*/
+}
+  
+/* Top / Bottom centered (no rotation). Explicitly unset conflicting edges. */
+#workspace .count-invisible-objects.top    { top: 8px;    bottom: auto; left: 50%; right: auto; transform: translateX(-50%); }
+#workspace .count-invisible-objects.bottom { top: auto;   bottom: 8px;  left: 50%; right: auto; transform: translateX(-50%); }
+
+/* Left / Right vertically centered (rotate like in the demo). Explicitly unset conflicting edges. */
+
+/* The right badge sits to the LEFT of the slide-in width + 8px. */
+#workspace { --slideins-width: 0px; } /* default */
+  
+/* Optional: fade when zero to reduce clutter */
+#workspace .count-invisible-objects[aria-hidden="true"] { opacity: 0; pointer-events: none; }
+
+/* Keep slashes neutral and let per-tag numbers inherit tag color */
+#workspace .count-invisible-objects .breakdown .sep { color: inherit; opacity: .9; margin: 0 .25em; }
+#workspace .count-invisible-objects .breakdown .tag-count { font-style: italic; }
+
+/* === FINAL side-counter layout & styling (matches top/bottom) === */
+
+/* OUTER anchors: fixed gap via left/right, vertical centering only; no rotation or styling here */
+
+/* Rotate only the inner wrapper so the anchor distance stays constant */
+
+/* === Gallery side counters (match top/bottom look; fixed 8px edge gap) === */
+.count-invisible-objects.left,
+.count-invisible-objects.right {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);  /* no rotation on the outer */
+  background: transparent;
+  border: 0;
+  padding: 0;
+  box-shadow: none;
+  z-index: 1100;
+}
+
+.count-invisible-objects.left  { left: 8px;  right: auto; }
+.count-invisible-objects.right { right: 8px; left:  auto; }
+
+/* INNER wrapper: rotate + SAME visual style as top/bottom counters */
+.count-invisible-objects.left  .rot,
+.count-invisible-objects.right .rot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  background: #FAF7F3;          /* same as top/bottom */
+  border-radius: 10px;           /* same radius */
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  white-space: nowrap;
+}
+
+.count-invisible-objects.left  .rot {
+  transform-origin: top left !important;
+  transform: translateX(var(--side-gap)) rotate(-90deg) !important;
+}
+
+.count-invisible-objects.right .rot {
+  transform-origin: top right !important;
+  transform: translateX(calc(-1 * (var(--side-gap, 8px) + var(--slideins-visible, 0px)))) rotate(90deg) !important;
+}
+
+/* Side counters: add a small gap between the number and the default "Elements" word */
+#workspace .count-invisible-objects .rot .value,
+#group-gallery > .count-invisible-objects .rot .value {
+  margin-right: 0.3em;
+}
+
+/* When a breakdown is rendered, we don’t need extra margin before the “/ …” */
+#workspace .count-invisible-objects .rot.has-breakdown .value,
+#group-gallery > .count-invisible-objects .rot.has-breakdown .value {
+  margin-right: 0;
 }
