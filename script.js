@@ -1,80 +1,291 @@
-const container = document.getElementById("object-container");
+import WaveSurfer from 'https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.esm.js';
+import { Grid } from './grid.js';
 
-const colors = [
-  'ff0000',
-  '00ff00',
-  '0000ff',
-  '000000',
-  'cccccc'
+// BASIC CONSTANTS AND VARIABLES
+
+// ===== DATA SOURCE MODE =====
+// 'dummy'  → only current dummy data
+// 'mixed'  → dummy data + all groups from Strapi
+// 'strapi' → only all groups from Strapi 
+const DATA_MODE = 'mixed'; // change to 'mixed' or 'strapi' as needed
+
+// ===== STRAPI SETUP =====
+const STRAPI = {
+  base: 'https://va-cms.mpgs.de/api', // e.g. http://localhost:1337/api
+  token: 'Bearer 94b9db053fd8114aaa4fc125aaa584d3958c3ac9c24b480f206d132a45a6c14a44f286c4f754e775e1f6680a636bcd00f0632a1206da31c74914148f74f468ae95ccec1f913bec4170ef7c34d06de270a4b4569816d76e977c569e02951dc9a342c0ee70263822ee23953829549c560913d31c1dc43ea4cec78e1d17b8924130',                         // optional: 'Bearer xxx'
+  pageSize: 1000                     // safety for pagination
+};
+
+// === STRAPI LOGGING ===
+const slog = (kind, ...args) => console.log(`[strapi:${kind}]`, ...args);
+
+// EMD BASIC CONSTANTS AND VARIABLES
+
+// START TAGS DEFINITIONS
+
+// =====================
+// TAG GROUPS (10 groups, ≥20 tags each)
+// =====================
+const TAG_GROUPS = [
+  {
+    id: 'filetype',
+    label: 'Filetype',
+    tags: [
+      'text','picture','video','sound'
+    ]
+  },
+  {
+    id: 'agency_response',
+    label: 'Agency & Response',
+    tags: [
+      'agency','creativity','dissent & contestation','diverging perceptions','endurance',
+      'navigating pandemic regulations','possibilities','responsibility','risk management',
+      'sacrifice','self-reflection','stigma','pandemic narratives','pandemic practices','care'
+    ]
+  },
+  {
+    id: 'emotions_affective',
+    label: 'Emotions & Affective Atmospheres',
+    tags: [
+      'anger','atmosphere of neglect','atmosphere of risk','atmosphere of suspicion','atmosphere of togetherness',
+      'being forgotten','depression','experience of (un)acceptance','experience of urgency',
+      'fear & anxiety','feeling of abandonment','feeling of connection','feeling of helplessness',
+      'frustration','grief','loneliness','(experience of) isolation','experience of deprivation'
+    ]
+  },
+  {
+    id: 'economic_labor',
+    label: 'Economic impacts & Labor',
+    tags: [
+      'mobile labor','impacted labor','essential work','economic impacts','loss of livelihood'
+    ]
+  },
+  {
+    id: 'governance_health',
+    label: 'Governance, Virus & Health',
+    tags: [
+      'government','hospitalization','infection','lockdown','masks','quarantine',
+      'pandemic regulations','pandemic adaptations','state control','(state) carelessness','viral risk'
+    ]
+  },
+  {
+    id: 'social_inequality',
+    label: 'Social Fabric & Inequality',
+    tags: [
+      'care','essential needs','family','lack','loss of vitality','marginality','precarity',
+      'scarcity','social cohesion','social exclusion','social impacts','social inequalities',
+      'social policing','support (networks)','vulnerability'
+    ]
+  },
+  {
+    id: 'spatial_mobility',
+    label: 'Spatialities & Mobility',
+    tags: [
+      'being stuck','border','border crossing','digital space','essential mobility',
+      'felt space','immobility','infrastructure','mobility','one-room','periphery',
+      'public space','spatial separation','urban space','unsafe environments'
+    ]
+  },
+  {
+    id: 'temporalities',
+    label: 'Temporalities',
+    tags: [
+      '(altered) continuities','disruption','early phase','lingering','pre-existing grievances',
+      'slow recovery','transformation','unfilled time'
+    ]
+  }
 ];
 
-const sizes = [
-  
-];
+// Fast lookup: tag → groupId
+const tagToGroup = new Map();
+TAG_GROUPS.forEach(g => g.tags.forEach(t => tagToGroup.set(t, g.id)));
 
+// Colors for ALL tags (stable per label)
+const ALL_TAGS = TAG_GROUPS.flatMap(g => g.tags);
+function hashHue(str){ let h=0; for(let i=0;i<str.length;i++) h=(h*31+str.charCodeAt(i))|0; return ((h%360)+360)%360; }
+const tagColors = Object.fromEntries(ALL_TAGS.map(t => [t, `hsl(${hashHue(t)} 80% 45%)`]));
+window.tagColors = tagColors;
+
+// The group whose tags are currently displayed at the top
+//let currentTagViewGroupId = TAG_GROUPS[0]?.id || null;
+
+// No group selected by default: all tags clickable, default mode = All
+let currentTagViewGroupId = null;
+
+// Utility: did the user select ANY tags?
+const hasSelection = () => activeTags.size > 0;
+
+// Ensure a stable color for any label you show on the group button (optional)
+function groupLabelById(id) {
+  const g = TAG_GROUPS.find(x => x.id === id);
+  return g ? g.label : id;
+}
+
+const activeTags = new Set();
+window.activeTags = activeTags;
+
+function getRandomTags() {
+  const pool = ALL_TAGS;
+  const tagCount = Math.floor(Math.random() * 3) + 1; // 1..3
+  const s = new Set();
+  while (s.size < tagCount) s.add(pool[Math.floor(Math.random() * pool.length)]);
+  return [...s];
+}
+
+// END TAG DEFINITIONS
+
+// START CREATE DUMMY OBJECTS
+
+const videoPool = [
+  "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+  "https://samplelib.com/lib/preview/mp4/sample-5s.mp4"
+];
 /*
-let objects = [{
-  groupId: 1,
-  image: "https://via.placeholder.com/100/0000FF",
-  color: colors[0]
-},{
-  groupId: 1,
-  image: "https://via.placeholder.com/100/0000FF",
-  color: colors[1]
-},{
-  groupId: 1,
-  image: "https://via.placeholder.com/100/0000FF",
-  color: colors[2]
-},{
-  groupId: 1,
-  image: "https://via.placeholder.com/100/0000FF",
-  color: colors[3]
-},{
-  groupId: 1,
-  image: "https://via.placeholder.com/100/0000FF",
-  color: colors[4]
-},{
-  groupId: 2,
-  image: "https://via.placeholder.com/100/0000FF",
-  color: colors[1]
-},{
-  groupId: 2,
-  image: "https://via.placeholder.com/100/0000FF",
-  color: colors[2]
-},{
-  groupId: 2,
-  image: "https://via.placeholder.com/100/0000FF",
-  color: colors[3]
-}];
+const audioPool = [
+  "https://samplelib.com/lib/preview/mp3/sample-3s.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+];
 */
+const audioPool = [
+  "mp3/gorila-315977.mp3",
+  "mp3/vlog-music-beat-trailer-showreel-promo-background-intro-theme-274290.mp3"
+];
 
-// console.log(window.innerWidth, window.innerHeight);
+window.audioPool = audioPool;
 
-const groups = {};
-groups[1] = {x: 100, y: 100};
-groups[2] = {x: 300, y: 500};
-groups[3] = {x: 900, y: 50};
-groups[4] = {x: 800, y: 400};
-groups[5] = {x: 500, y: 150};
-groups[6] = {x: 1150, y: 600};
-groups[7] = {x: 1300, y: 150};
-
-// console.log(groups);
-
-let objectTypes = ['image', 'text'];
+let objectTypes = ['image', 'text', 'video', 'audio'];
 
 let objects = [];
+const groupCount = 10;
+
+// Structured dummy meta per group (title, subtitle, location)
+const groupMetaPool = [
+  { title: "Covid-19 in Diepsloot",
+    subtitle: "Paradoxies of State (Un-)Care in Diepsloot, South Africa",
+    location: "Gauteng, South Africa" },
+  { title: "Housing Strain in Khayelitsha",
+    subtitle: "Paradoxies of State (Un-)Care in Cape Town’s Periphery, South Africa",
+    location: "Western Cape, South Africa" },
+  { title: "Water Access in Kibera",
+    subtitle: "Paradoxies of State (Un-)Care in Nairobi’s Informal Settlements",
+    location: "Nairobi County, Kenya" },
+  { title: "Public Space in Mathare",
+    subtitle: "Paradoxies of State (Un-)Care in Nairobi, Kenya",
+    location: "Nairobi County, Kenya" },
+  { title: "Street Vending in Fordsburg",
+    subtitle: "Paradoxies of State (Un-)Care in Johannesburg’s Inner City",
+    location: "Gauteng, South Africa" },
+  { title: "Migration at Beitbridge",
+    subtitle: "Paradoxies of State (Un-)Care at the Limpopo Border",
+    location: "Limpopo, South Africa" },
+  { title: "Load Shedding in Soweto",
+    subtitle: "Paradoxies of State (Un-)Care in Everyday Electricity Cuts",
+    location: "Gauteng, South Africa" },
+  { title: "Work and Care in Umlazi",
+    subtitle: "Paradoxies of State (Un-)Care in Durban’s Townships",
+    location: "KwaZulu-Natal, South Africa" },
+  { title: "Transit Lines in Kayole",
+    subtitle: "Paradoxies of State (Un-)Care in Eastlands, Nairobi",
+    location: "Nairobi County, Kenya" },
+  { title: "Clinic Queues in Mitchells Plain",
+    subtitle: "Paradoxies of State (Un-)Care in Cape Flats Clinics",
+    location: "Western Cape, South Africa" },
+];
+
+const groupMetaById = {};
+for (let gid = 1; gid <= groupCount; gid++) {
+  groupMetaById[gid] = groupMetaPool[(gid - 1) % groupMetaPool.length];
+}
+// Expose for other modules (e.g., Grid UI if needed)
+window.groupMetaById = groupMetaById;
+
+
+function randomDateString(startYear = 2018, endYear = 2025) {
+  const start = new Date(startYear, 0, 1);
+  const end   = new Date(endYear, 11, 31);
+  const d = new Date(start.getTime() + Math.random() * (end - start));
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${mm} / ${dd} / ${yyyy}`;
+}
+
+// ---- Global THEMES (not tags) ----
+const THEMES = [
+  {
+    id: 'theme-1',
+    title: 'Mobility',
+    paragraphs: [
+      'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer posuere, elit quis cursus finibus, tortor lorem gravida nibh.',
+      'Suspendisse potenti. Donec at ornare ipsum. Curabitur feugiat, arcu sed aliquet fermentum, erat lorem rutrum ex, vitae luctus arcu nisl sit amet justo.',
+      'Proin varius, quam non semper malesuada, nibh tortor finibus felis, ac tristique velit lorem vel sapien.'
+    ]
+  },
+  {
+    id: 'theme-2',
+    title: 'Essential Work',
+    paragraphs: [
+      'Morbi iaculis, nunc in condimentum lobortis, lorem massa lacinia lorem, vitae consequat sem ante vitae mauris.',
+      'Nulla facilisi. In viverra, purus id tempor lacinia, dolor sapien commodo velit, a volutpat dui risus a nibh.',
+      'Maecenas sit amet pharetra justo. Pellentesque habitant morbi tristique senectus et netus.'
+    ]
+  },
+  {
+    id: 'theme-3',
+    title: 'Public Space',
+    paragraphs: [
+      'Etiam pharetra, sem sit amet bibendum iaculis, neque nisl auctor ipsum, sed feugiat nunc ex sed leo.',
+      'Vestibulum eget leo at est fermentum dictum. Curabitur posuere, justo id facilisis consequat, augue nibh mattis ligula.',
+      'Aliquam erat volutpat. Vivamus sagittis dui ut ultricies bibendum.'
+    ]
+  },
+  {
+    id: 'theme-4',
+    title: 'Housing',
+    paragraphs: [
+      'Sed tristique, nibh at fermentum tincidunt, enim risus dignissim lectus, id gravida risus arcu vitae eros.',
+      'Mauris varius, arcu at viverra consequat, ante leo efficitur est, sed condimentum sem massa vel urna.',
+      'Donec feugiat, libero a consequat rutrum, augue quam tincidunt lacus, vitae sollicitudin turpis lorem nec nibh.'
+    ]
+  },
+  {
+    id: 'theme-5',
+    title: 'Health & Care',
+    paragraphs: [
+      'Fusce faucibus, ante at blandit luctus, neque lorem convallis quam, a tempus lacus arcu sit amet nisl.',
+      'Integer viverra pulvinar lorem, in fermentum sapien placerat non.',
+      'Quisque et dapibus arcu. Cras efficitur porta risus, vitae pharetra ipsum cursus at.'
+    ]
+  },
+  {
+    id: 'theme-6',
+    title: 'Education',
+    paragraphs: [
+      'Nunc tristique aliquam nunc, eu rutrum ipsum posuere quis.',
+      'Integer sit amet sagittis leo. Duis nec luctus arcu, vitae malesuada arcu.',
+      'Praesent venenatis, velit in ultrices laoreet, lacus lorem fringilla arcu, at sagittis magna felis nec ipsum.'
+    ]
+  },
+  {
+    id: 'theme-7',
+    title: 'Memory',
+    paragraphs: [
+      'Curabitur nec varius nunc. Pellentesque ac sem non lorem bibendum posuere.',
+      'Suspendisse hendrerit, arcu at varius tempor, sem diam ultrices metus, non dictum mi nisi non arcu.',
+      'Phasellus aliquet gravida diam, ut mattis justo euismod at.'
+    ]
+  }
+];
 
 for(let i=0; i<200; i++) {
 
-  let objectType = objectTypes[Math.floor(Math.random() * 2)];
-
+  let objectType = objectTypes[Math.floor(Math.random() * objectTypes.length)];
   let randomObjectWidth = Math.floor(Math.random() * (110 - 60 + 1)) + 60;
   let randomObjectHeight = Math.floor(Math.random() * (150 - 60 + 1)) + 60;
-  let randomGroupId = Math.floor(Math.random() * Object.keys(groups).length + 1);
+  const randomGroupId = Math.floor(Math.random() * groupCount + 1);
 
-  let angle = Math.random() * 2 * Math.PI;
-  let distance = Math.random() * 100;
+  //let angle = Math.random() * 2 * Math.PI;
+  //let distance = Math.random() * 100;
 
   let newObject = {};
 
@@ -84,12 +295,11 @@ for(let i=0; i<200; i++) {
       id: `object_${i+1}`,
       type: 'image',
       groupId: randomGroupId,
+      //groupName: groupNameById[randomGroupId],
+      groupLocation: groupMetaById[randomGroupId].location,
+      date: randomDateString(),
       grid_x: 0,
       grid_y: 0,
-      group_initial_x: groups[randomGroupId].x + Math.cos(angle) * distance,
-      group_initial_y: groups[randomGroupId].y + Math.sin(angle) * distance,
-      group_x: groups[randomGroupId].x + Math.cos(angle) * distance,
-      group_y: groups[randomGroupId].y + Math.sin(angle) * distance,
       width: randomObjectWidth,
       height: randomObjectHeight,
       image: `https://picsum.photos/${randomObjectWidth}/${randomObjectHeight}`,
@@ -102,49 +312,2280 @@ for(let i=0; i<200; i++) {
       id: `object_${i+1}`,
       type: 'text',
       groupId: randomGroupId,
+      //groupName: groupNameById[randomGroupId],
+      groupLocation: groupMetaById[randomGroupId].location,
+      date: randomDateString(),
       grid_x: 0,
       grid_y: 0,
-      group_initial_x: groups[randomGroupId].x + Math.cos(angle) * distance,
-      group_initial_y: groups[randomGroupId].y + Math.sin(angle) * distance,
-      group_x: groups[randomGroupId].x + Math.cos(angle) * distance,
-      group_y: groups[randomGroupId].y + Math.sin(angle) * distance,
       width: randomObjectWidth,
       height: randomObjectHeight,
       image: '',
-      text: 'hello world! This is some text.',
+      text: 'hello world! This is some text. I am too long by the way',
+    }
+  } else if (objectType === 'video') {
+    const w = Math.floor(Math.random() * (180 - 120 + 1)) + 120;
+    const h = Math.floor(Math.random() * (160 - 90 + 1)) + 90;
+    newObject = {
+      id: `object_${i+1}`,
+      type: 'video',
+      groupId: randomGroupId,
+      //groupName: groupNameById[randomGroupId],
+      groupLocation: groupMetaById[randomGroupId].location,
+      date: randomDateString(),
+      grid_x: 0, grid_y: 0,
+      width: w, height: h,
+      video: videoPool[Math.floor(Math.random() * videoPool.length)],
+      image: "", text: ""
+    };
+  
+  } else if (objectType === 'audio') {
+    const w = Math.floor(Math.random() * (220 - 160 + 1)) + 160;
+    const h = Math.floor(Math.random() * (80 - 48 + 1)) + 48;
+    newObject = {
+      id: `object_${i+1}`,
+      type: 'audio',
+      groupId: randomGroupId,
+      //groupName: groupNameById[randomGroupId],
+      groupLocation: groupMetaById[randomGroupId].location,
+      date: randomDateString(),
+      grid_x: 0, grid_y: 0,
+      width: w, height: h,
+      audio: audioPool[Math.floor(Math.random() * audioPool.length)],
+      image: "", text: ""
+    };
+  }
+
+  newObject.tags = getRandomTags();
+
+  objects.push(newObject);
+  //console.log(newObject);
+}
+
+// END CREATE DUMMY OBJECTS
+
+
+// START GROUP CALCULATION AND ADD TO OBJECTS
+
+// END GROUP CALCULATION
+
+// === Group labels (prefer whatever you already stored on objects) ===
+const GROUP_IDS = [...new Set(objects.map(o => o.groupId))];
+const GROUP_LABELS = {};
+for (const gid of GROUP_IDS) {
+  // Try to find a name from any object in that group; fallback to dummy
+  //const any = objects.find(o => o.groupId === gid);
+  //GROUP_LABELS[gid] = any?.groupName || `City ${gid}, Country`;
+  const any = objects.find(o => o.groupId === gid);
+  GROUP_LABELS[gid] = groupMetaById[gid]?.location || `Province ${gid}, Country`;
+}
+
+// === Dummy theme content per group (≥5 themes each) ===
+const BASE_THEME_TITLES = [
+  'Mobility', 'Essential Work', 'Public Space', 'Housing', 'Health & Care',
+  'Education', 'Memory'
+];
+function lorem(n=3) {
+  const p = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer posuere, elit quis cursus finibus, tortor lorem gravida nibh, vitae luctus arcu nisl sit amet justo. Donec at ornare ipsum. Suspendisse potenti.";
+  return Array.from({length:n}, ()=>p);
+}
+export const THEMES_BY_GROUP = {};
+for (const gid of GROUP_IDS) {
+  THEMES_BY_GROUP[gid] = BASE_THEME_TITLES.slice(0,5).map((title, idx) => ({
+    id: `g${gid}-theme-${idx+1}`,
+    title,
+    paragraphs: lorem(3)
+  }));
+}
+
+
+// ==============================
+// STRAPI LOADER (all groups + objects)
+// ==============================
+
+async function strapiFetch(path, params = {}) {
+  // Ensure we always hit /api/<path> and never lose the prefix
+  let base = String(STRAPI.base || '').replace(/\/+$/, '');
+  if (!/\/api$/i.test(base)) base += '/api';
+  const cleanPath = String(path || '').replace(/^\/+/, ''); // remove leading '/'
+
+  const url = new URL(`${base}/${cleanPath}`);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (STRAPI.token) headers['Authorization'] = STRAPI.token;
+
+  slog('GET', url.toString());
+  const res = await fetch(url.toString(), { headers });
+  slog('RES', res.status, url.pathname + url.search);
+
+  if (!res.ok) {
+    const t = await res.text().catch(()=>'');
+    throw new Error(`Strapi fetch failed ${res.status}: ${url}\n${t}`);
+  }
+  const json = await res.json();
+  // Light summary (don’t dump huge payloads)
+  const len = Array.isArray(json?.data) ? json.data.length : (json?.data ? 1 : 0);
+  slog('DATA', `items=${len}`, json?.meta ? json.meta : '');
+  return json;
+}
+
+// Fetch ALL pages for a collection endpoint (logs each page)
+async function strapiFetchAll(path, baseParams = {}) {
+  let page = 1;
+  const acc = [];
+  while (true) {
+    slog('PAGE', path, { page, pageSize: STRAPI.pageSize });
+    const data = await strapiFetch(path, {
+      ...baseParams,
+      'pagination[page]': page,
+      'pagination[pageSize]': STRAPI.pageSize,
+    });
+    const arr = (data && data.data) || [];
+    slog('PAGE:items', arr.length);
+    acc.push(...arr);
+    const meta = data?.meta?.pagination;
+    if (!meta || page >= meta.pageCount) break;
+    page++;
+  }
+  slog('TOTAL', path, acc.length);
+  return acc;
+}
+
+// Load all groups (metadata) and all objects belonging to those groups
+async function loadStrapiAllGroupsAndObjects() {
+  // 1) Groups
+  const groups = await strapiFetchAll('groups', { populate: '*' });
+  slog('groups.count', groups.length);
+  slog('groups.sample', groups.slice(0, 5).map(g => ({
+    id: g.id,
+    title: g.attributes?.Title || g.attributes?.title || ''
+  })));
+
+  if (!groups.length) {
+    slog('groups.empty', 'No groups found in Strapi.');
+    return { objects: [], groupMeta: {} };
+  }
+
+  const groupIds = groups.map(g => g.id);
+
+  // 2) Objects for those groups
+  const objects = await strapiFetchAll('objects', {
+    'filters[group][id][$in]': groupIds.join(','),   // all groups we loaded
+    'publicationState': 'preview',
+    'populate': '*'                                  // v5-friendly; no keyed nested params
+  });
+  dumpStrapiObjects(objects);
+
+  // Quick type-guess from attributes before normalization
+  const tcount = { image:0, video:0, audio:0, text:0, unknown:0 };
+  for (const o of objects) {
+    const a = o.attributes || {};
+    const image = a.ImagePath || a.imagePath || a.image;
+    const video = a.VideoPath || a.videoPath || a.video;
+    const audio = a.AudioPath || a.audioPath || a.audio;
+    const hasMedia = !!(image || video || audio);
+    const isText = !hasMedia && (a.Content || a.Description || a.description);
+    let t = 'unknown';
+    if (video) t='video'; else if (audio) t='audio'; else if (image) t='image'; else if (isText) t='text';
+    tcount[t] = (tcount[t]||0)+1;
+  }
+  slog('objects.count', objects.length);
+  slog('objects.types', tcount);
+
+  // 3) Normalize
+  return normalizeStrapiToAppSchema(groups, objects);
+}
+
+// Turn Strapi paths ("/uploads/…") into absolute URLs; pass through http(s) as-is
+function strapiAssetUrl(p) {
+  if (!p) return undefined;
+  if (/^https?:\/\//i.test(p)) return p;
+  let root = String(STRAPI.base || '').replace(/\/+$/,'');
+  root = root.replace(/\/api$/i, ''); // strip trailing /api
+  if (p[0] !== '/') p = '/' + p;
+  return root + p;
+}
+
+// Convert Strapi entities into your current in-memory schema
+function normalizeStrapiToAppSchema(groups, objectsArr) {
+  // Build group meta and a map StrapiGroupId -> appGroupId "s<id>"
+  const groupMeta = {};
+  const groupIdMap = new Map();
+  groups.forEach(g => {
+    const a = getAttrs(g);
+    const appGroupId = `s${g.id}`;
+    groupIdMap.set(g.id, appGroupId);
+    groupMeta[appGroupId] = {
+      title: a.Title || a.title || `Group ${g.id}`,
+      subtitle: a.Subtitle || a.subtitle || '',
+      location: a.Location || a.location || ''
+    };
+  });
+  slog('normalize.groups', Object.keys(groupMeta).length);
+
+  // helpers
+  const pick = (obj, ...keys) => {
+    if (!obj) return undefined;
+    for (const k of keys) if (obj[k] != null && obj[k] !== '') return obj[k];
+    const lower = Object.create(null);
+    Object.keys(obj).forEach(k => { lower[k.toLowerCase()] = k; });
+    for (const k of keys) { const real = lower[k.toLowerCase()]; if (real && obj[real] != null && obj[real] !== '') return obj[real]; }
+    return undefined;
+  };
+  const relNames = (rel) => {
+    if (!rel) return [];
+    // v4: { data: [{ attributes: { Name } }]}
+    if (Array.isArray(rel?.data)) {
+      return rel.data.map(it => (getAttrs(it)?.Name || getAttrs(it)?.name || '')).filter(Boolean);
+    }
+    // v5: [{ id, Name }] or [{ id, name }]
+    if (Array.isArray(rel)) {
+      return rel.map(it => (it?.Name || it?.name || '')).filter(Boolean);
+    }
+    return [];
+  };
+  const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+  // If only one group was loaded, we can safely default missing group to it
+  const singleGroupId = groupIdMap.size === 1 ? [...groupIdMap.keys()][0] : null;
+
+  const out = [];
+  let skippedNoGroup = 0;
+  const skippedSamples = [];
+
+  for (const entry of objectsArr) {
+    const a = getAttrs(entry);
+
+    // ---- robust group id extraction (v4/v5)
+    let sGroup;
+    const gRel = a.group ?? a.Group;
+    if (gRel) {
+      if (typeof gRel === 'number') sGroup = gRel;                       // numeric id
+      else if (gRel.id) sGroup = gRel.id;                                 // v5 populated object
+      else if (gRel.data) sGroup = Array.isArray(gRel.data) ? gRel.data[0]?.id : gRel.data?.id; // v4 populated
+    }
+    if ((!sGroup || !groupIdMap.has(sGroup)) && singleGroupId != null) {
+      sGroup = singleGroupId;
+      slog('normalize.fallback.group', { obj: entry.id, assigned: sGroup });
+    }
+    if (!sGroup || !groupIdMap.has(sGroup)) {
+      skippedNoGroup++;
+      if (skippedSamples.length < 5) skippedSamples.push({ id: entry.id, groupRel: gRel });
+      continue;
+    }
+    const appGroupId = groupIdMap.get(sGroup);
+
+    // ---- media fields
+    // Direct string fields (your importer writes ImagePath/VideoPath/AudioPath)
+    const imgStr = pick(a, 'ImagePath','imagePath','image_path','image');
+    const vidStr = pick(a, 'VideoPath','videoPath','video_path','video');
+    const audStr = pick(a, 'AudioPath','audioPath','audio_path','audio');
+    // Upload plugin shapes (v5: field.url; v4: field.data.attributes.url)
+    const im = a.image, vi = a.video, au = a.audio;
+    const imUrl = im?.url || (im?.data ? (Array.isArray(im.data) ? im.data[0]?.attributes?.url : im.data?.attributes?.url) : undefined);
+    const viUrl = vi?.url || (vi?.data ? (Array.isArray(vi.data) ? vi.data[0]?.attributes?.url : vi.data?.attributes?.url) : undefined);
+    const auUrl = au?.url || (au?.data ? (Array.isArray(au.data) ? au.data[0]?.attributes?.url : au.data?.attributes?.url) : undefined);
+
+    const imagePath = imgStr || imUrl;
+    const videoPath = vidStr || viUrl;
+    const audioPath = audStr || auUrl;
+
+    // ---- exact type rules
+    let type = 'text';
+    let image, video, audio, text;
+
+    if (imagePath) {
+      type  = 'image';
+      image = strapiAssetUrl(imagePath);
+    } else if (videoPath) {
+      type  = 'video';
+      video = strapiAssetUrl(videoPath);
+    } else if (audioPath) {
+      type  = 'audio';
+      audio = strapiAssetUrl(audioPath);
+    } else {
+      type  = 'text';
+      text  = pick(a, 'Name','name') || `Object ${entry.id}`;
+    }
+
+    // ---- tags
+    const tags = Array.from(new Set([
+      ...relNames(a.connecting_tags || a['connecting-tags']),
+      ...relNames(a.tags)
+    ]));
+
+    // ---- dimensions
+    let width, height;
+    if (type === 'image') { width = rand(120, 200); height = rand(120, 160); }
+    if (type === 'video') { width = rand(120, 180); height = rand(90, 160); }
+    if (type === 'audio') { width = rand(140, 200); height = 60; }
+    if (type === 'text')  { width = rand(120, 180); height = rand(120, 160); }
+
+    out.push({
+      id: `sobj_${entry.id}`,
+      type,
+      groupId: appGroupId,
+      groupLocation: groupMeta[appGroupId]?.location || '',
+      date: a.createdAt || a.updatedAt || '',
+      grid_x: 0, grid_y: 0,
+      width, height,
+      image, video, audio,
+      text,
+      tags
+    });
+  }
+
+  if (skippedNoGroup) slog('normalize.skipped.no-group', { count: skippedNoGroup, samples: skippedSamples });
+  slog('normalize.objects', { in: objectsArr.length, out: out.length });
+  slog('normalize.sample', out.slice(0, 5).map(x => ({
+    id: x.id, type: x.type, groupId: x.groupId,
+    media: x.image || x.video || x.audio || null,
+    text: x.text ? (String(x.text).slice(0, 60) + (String(x.text).length > 60 ? '…' : '')) : null
+  })));
+
+  return { objects: out, groupMeta };
+}
+
+// Unified loader that returns {objects, groupMeta} based on DATA_MODE
+async function loadData(DATA_MODE) {
+  if (DATA_MODE === 'dummy') {
+    return { objects, groupMeta: groupMetaById };
+  }
+  const s = await loadStrapiAllGroupsAndObjects();
+  if (DATA_MODE === 'strapi') {
+    return { objects: s.objects, groupMeta: s.groupMeta };
+  }
+  // mixed: dummy + strapi (merge metas; keep both sets of objects)
+  const mergedMeta = { ...groupMetaById, ...s.groupMeta };
+  return { objects: [...objects, ...s.objects], groupMeta: mergedMeta };
+}
+
+// START GRID OBJECT
+
+//const gridObject = new Grid('grid', objects, {});
+//window.gridObject = gridObject; // expose globally so the gallery click handler can read currentState & groups
+
+// START GRID OBJECT (data-aware)
+let gridObject;
+window.gridObject = null;
+
+(async () => {
+  try {
+    const loaded = await loadData(DATA_MODE);
+    // Use the chosen data source
+    objects = loaded.objects;
+    Object.assign(groupMetaById, loaded.groupMeta);
+    console.log('[data] mode=', DATA_MODE, 'groups=', Object.keys(loaded.groupMeta).length, 'objects=', loaded.objects.length);
+    gridObject = new Grid('grid', objects, {});
+    window.gridObject = gridObject;
+  } catch (err) {
+    console.error('Failed to load data / init grid:', err);
+    alert('Strapi load failed. Check the console for details (network/permissions).');
+  }
+})();
+
+// Pretty logging for Strapi objects
+function dumpStrapiObjects(objects) {
+  const unionKeys = new Set();
+  let imgPath = 0, vidPath = 0, audPath = 0;
+  let imgUpload = 0, vidUpload = 0, audUpload = 0;
+
+  const firstN = objects.slice(0, 5);
+  console.group('[strapi:objects.dump]');
+  console.log('total', objects.length);
+
+  objects.forEach(o => {
+    const a = getAttrs(o);
+    Object.keys(a || {}).forEach(k => unionKeys.add(k));
+    if (a?.ImagePath || a?.imagePath || a?.image_path) imgPath++;
+    if (a?.VideoPath || a?.videoPath || a?.video_path) vidPath++;
+    if (a?.AudioPath || a?.audioPath || a?.audio_path) audPath++;
+    // Upload media common shapes (v4: image.data.attributes.url; v5: image.url)
+    const im = a?.image; const vi = a?.video; const au = a?.audio;
+    const imUrl = (im?.data ? (Array.isArray(im.data) ? im.data[0]?.attributes?.url : im.data?.attributes?.url) : im?.url);
+    const viUrl = (vi?.data ? (Array.isArray(vi.data) ? vi.data[0]?.attributes?.url : vi.data?.attributes?.url) : vi?.url);
+    const auUrl = (au?.data ? (Array.isArray(au.data) ? au.data[0]?.attributes?.url : au.data?.attributes?.url) : au?.url);
+    if (imUrl) imgUpload++;
+    if (viUrl) vidUpload++;
+    if (auUrl) audUpload++;
+  });
+
+  console.log('attribute keys (union):', Array.from(unionKeys).sort());
+  console.log('counts: ImagePath=%d, VideoPath=%d, AudioPath=%d', imgPath, vidPath, audPath);
+  console.log('upload-shape counts: image.url=%d, video.url=%d, audio.url=%d', imgUpload, vidUpload, audUpload);
+
+  firstN.forEach((o, i) => {
+    const a = getAttrs(o);
+    console.group(`#${i} id=${o.id}`);
+    console.log('attributes:', a);
+    console.log('group relation:', a?.group || a?.Group);
+    console.log('raw object:', o);
+    console.groupEnd();
+  });
+
+  console.groupEnd();
+}
+
+// small helper to extract a URL if fields use Strapi Upload media (object/array with .data[].attributes.url)
+function tryUploadUrl(mediaField) {
+  if (!mediaField) return undefined;
+  const d = mediaField.data;
+  if (!d) return undefined;
+  if (Array.isArray(d)) return d[0]?.attributes?.url;
+  return d.attributes?.url;
+}
+
+// Strapi v5 returns fields on the top level; v4 used entry.attributes
+function getAttrs(entry) {
+  if (!entry) return {};
+  return entry.attributes ? entry.attributes : entry;
+}
+
+// END GRID OBJECT
+
+function refreshSlideInsVisibility() {
+  const slideIns = document.getElementById('slide-ins');
+  if (!slideIns) return;
+
+  const galleryActive = document.getElementById('group-gallery')?.classList.contains('active');
+  const state = window.gridObject?.currentState;
+  const shouldShow = (state === 'ungrouped' || state === 'clustered' || state === 'pre-cluster') && !galleryActive;
+
+  slideIns.classList.toggle('visible', !!shouldShow);
+
+  // When hiding, collapse any expanded panel so it re-opens clean next time
+  if (!shouldShow) {
+    slideIns.querySelectorAll('.slide-in').forEach(el => {
+      el.classList.remove('expanded', 'secondary-open');
+      el.querySelector('.vertical-content')?.classList.remove('visible');
+      const b = el.querySelector('.close-btn');
+      if (b) b.textContent = '←';
+    });
+  }
+
+  // keep your right counter offset in sync with the slide-ins width
+  if (typeof updateRightCounterOffset === 'function') updateRightCounterOffset();
+}
+
+// === GROUPED MODE: click any object -> open gallery; other modes unaffected ===
+// DEBUG: log clicks on the grid; when grouped, log the object clicked
+{
+  const gridEl = document.getElementById('grid');
+  const gridShellEl = document.getElementById('grid-shell');
+  const groupGalleryEl = document.getElementById('group-gallery');
+  const backBtnEl = document.getElementById('content-back-button');
+
+  // DRAG-TO-CLICK GUARD (grouped mode)
+  // Tracks pointer movement; if movement > 6px when releasing, we mark the last interaction as a drag.
+  // The click handler will ignore the very next click in grouped mode.
+  let __down = null;
+  let __lastDragAt = 0;
+  const __SLOP2 = 6 * 6; // squared px threshold
+
+  gridEl.addEventListener('pointerdown', (e) => {
+    __down = { x: e.clientX, y: e.clientY, moved: false };
+  }, true);
+
+  gridEl.addEventListener('pointermove', (e) => {
+    if (!__down) return;
+    const dx = e.clientX - __down.x;
+    const dy = e.clientY - __down.y;
+    if ((dx * dx + dy * dy) > __SLOP2) __down.moved = true;
+  }, true);
+
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(type => {
+    gridEl.addEventListener(type, () => {
+      if (__down?.moved) __lastDragAt = performance.now();
+      __down = null;
+    }, true);
+  });
+
+  function openGallery(gid) {
+    if (!groupGalleryEl) {
+      console.warn('[gallery] #group-gallery not found');
+      return;
+    }
+  
+    // Hide the grid shell, then show gallery
+    if (gridShellEl) gridShellEl.style.display = 'none';
+    groupGalleryEl.classList.add('active');
+  
+    // 1) Title + subtitle for this group
+    if (gid && window.groupMetaById) {
+      const meta = window.groupMetaById[gid];
+      if (meta) {
+        const tEl = document.querySelector('#group-gallery .title-box h2');
+        const sEl = document.querySelector('#group-gallery .title-box h3');
+        if (tEl) tEl.textContent = meta.title;
+        if (sEl) sEl.textContent = meta.subtitle;
+      }
+    }
+  
+    // 2) Build the gallery items (columns + mixed .item nodes for this group)
+    if (typeof window.renderGroupGallery === 'function') {
+      window.renderGroupGallery(gid);  // creates columns and appends items
+    }
+  
+    // 3) Bind fade-ins, counters, WaveSurfer (IO attaches to what's in the DOM now)
+    window.__galleryIO__?.onOpen?.();
+  
+    // 4) Push a history state so browser Back closes the gallery
+    try {
+      if (!history.state || !history.state.gallery) {
+        history.pushState({ gallery: true, gid: String(gid ?? '') }, '', '#group-gallery');
+      }
+    } catch {}
+  
+    refreshSlideInsVisibility();
+    console.log('[gallery] opened', { gid });
+  }
+  
+  function closeGallery(options = {}) {
+    const viaPopstate = !!options.viaPopstate;
+  
+    // 1) Reset scroll so next open starts at the beginning
+    try {
+      groupGalleryEl?.scrollTo({ left: 0, top: 0, behavior: 'auto' });
+      groupGalleryEl?.querySelector('.gallery-box')?.scrollTo?.({ left: 0, top: 0, behavior: 'auto' });
+    } catch {}
+  
+    // 2) Tear down observers + WaveSurfer instances
+    window.__galleryIO__?.onClose?.();
+  
+    // 3) Remove all dynamic items/columns so next open is fresh
+    const box = groupGalleryEl?.querySelector('.gallery-box');
+    if (box) box.innerHTML = '';
+  
+    // 4) Hide gallery, show grid shell
+    groupGalleryEl.classList.remove('active');
+    if (gridShellEl) gridShellEl.style.display = '';
+  
+    refreshSlideInsVisibility();
+    console.log('[gallery] closed');
+  }  
+
+  (function galleryTextFit(){
+    const gg = document.getElementById('group-gallery');
+    if (!gg) return;
+ 
+    let textObs = null;
+    let mo = null;
+    let resizeRaf = 0;
+    let scrollRaf = 0;
+ 
+    function fitScalingText(span) {
+      const item = span.closest('.item.text');
+      if (!item) return;
+ 
+      // measure available box (subtract padding)
+      const csItem = getComputedStyle(item);
+      const padX = parseFloat(csItem.paddingLeft) + parseFloat(csItem.paddingRight);
+      const padY = parseFloat(csItem.paddingTop)  + parseFloat(csItem.paddingBottom);
+      const maxW = Math.max(0, item.clientWidth  - padX);
+      const maxH = Math.max(0, item.clientHeight - padY);
+ 
+      // early exit if nothing to do
+      if (maxW <= 0 || maxH <= 0) return;
+ 
+      // start from a sensible font size (computed)
+      const csSpan = getComputedStyle(span);
+      let fs = parseFloat(csSpan.fontSize) || 16;
+ 
+      span.style.whiteSpace = 'normal';
+      span.style.display = 'block';
+      span.style.lineHeight = '1.1';
+      span.style.maxWidth = maxW + 'px';
+ 
+      // helper: does the span overflow the target box?
+      const overflows = () => (span.scrollWidth > maxW + 0.5) || (span.scrollHeight > maxH + 0.5);
+ 
+      // coarse downscale until it fits or we hit a floor
+      let attempts = 0;
+      while (attempts++ < 30 && overflows() && fs > 6) {
+        fs *= 0.9;
+        span.style.fontSize = fs + 'px';
+      }
+ 
+      // gentle upscale to approach the limit (optional)
+      while (attempts++ < 60 && !overflows() && fs < 200) {
+        fs *= 1.03;
+        span.style.fontSize = fs + 'px';
+        if (overflows()) {
+          fs /= 1.03;
+          span.style.fontSize = fs + 'px';
+          break;
+        }
+      }
+    }
+ 
+    function fitAllVisibleTexts() {
+      const spans = gg.querySelectorAll('.gallery-box .item.text .scaling-text');
+      spans.forEach(s => fitScalingText(s));
+    }
+ 
+    function onResize() {
+      cancelAnimationFrame(resizeRaf);
+      resizeRaf = requestAnimationFrame(fitAllVisibleTexts);
+    }
+ 
+   function onScroll() {
+     cancelAnimationFrame(scrollRaf);
+     scrollRaf = requestAnimationFrame(fitAllVisibleTexts);
+   }
+ 
+    function attachTextIO() {
+      if (textObs) textObs.disconnect();
+ 
+      const options = { root: gg, threshold: 0.15 };
+      textObs = new IntersectionObserver((entries) => {
+        entries.forEach(en => {
+          if (!en.isIntersecting) return;
+          const span = en.target;
+          fitScalingText(span);
+          textObs.unobserve(span); // one-shot per item; will re-fit on scroll/resize
+        });
+      }, options);
+ 
+      // observe existing
+      gg.querySelectorAll('.gallery-box .item.text .scaling-text').forEach(s => textObs.observe(s));
+ 
+      // observe future nodes as the gallery is (re)rendered
+      if (mo) mo.disconnect();
+      mo = new MutationObserver(() => {
+        gg.querySelectorAll('.gallery-box .item.text .scaling-text').forEach(s => {
+          if (!s._observed) {
+            s._observed = true;
+            textObs.observe(s);
+          }
+        });
+      });
+      mo.observe(gg.querySelector('.gallery-box'), { childList: true, subtree: true });
+    }
+ 
+    // Optional external hook to force a pass
+    window.__galleryTextFit = { refresh: fitAllVisibleTexts };
+ 
+    (window.__galleryIO__ ||= { onOpen() {}, onClose() {} });
+    const prevOpen = window.__galleryIO__.onOpen;
+    const prevClose = window.__galleryIO__.onClose;
+ 
+    window.__galleryIO__.onOpen = function () {
+      prevOpen?.();
+      attachTextIO();
+      requestAnimationFrame(fitAllVisibleTexts);
+      document.fonts?.ready.then(() => requestAnimationFrame(fitAllVisibleTexts));
+      window.addEventListener('resize', onResize);
+      gg.addEventListener('scroll', onScroll, { passive: true });
+    };
+ 
+    window.__galleryIO__.onClose = function () {
+      prevClose?.();
+      if (textObs) { textObs.disconnect(); textObs = null; }
+      if (mo) { mo.disconnect(); mo = null; }
+      window.removeEventListener('resize', onResize);
+      gg.removeEventListener('scroll', onScroll);
+    };
+  })();
+ 
+
+  backBtnEl?.addEventListener('click', (e) => { e.preventDefault(); closeGallery(); });
+
+  if (!gridEl) {
+    console.log('[debug] #grid element not found at script load');
+  } else {
+    gridEl.addEventListener('click', (e) => {
+      const go = window.gridObject;
+      const isGrouped = go?.currentState === 'grouped';
+
+      // Robust object detection under the cursor:
+      let objEl = null;
+
+      // 1) composedPath (handles retargeting/shadow-ish cases)
+      if (e.composedPath) {
+        const path = e.composedPath();
+        objEl = path.find(n => n && n.classList && n.classList.contains('object')) || null;
+      }
+
+      // 2) elementsFromPoint fallback (topmost element under pointer)
+      if (!objEl && document.elementsFromPoint) {
+        const stack = document.elementsFromPoint(e.clientX, e.clientY);
+        objEl = stack.find(n => n && n.classList && n.classList.contains('object')) || null;
+      }
+
+      // 3) classic closest as a last resort
+      if (!objEl && e.target && e.target.closest) {
+        objEl = e.target.closest('.object');
+      }
+
+      // SWALLOW clicks that immediately follow a drag in grouped mode
+      if (isGrouped && (performance.now() - __lastDragAt) < 200) {
+        return;
+      }
+
+      // Debug what we actually found
+      console.log('[debug] resolve objEl', {
+        target: e.target.tagName,
+        targetCls: e.target.className,
+        found: !!objEl,
+        objId: objEl && objEl.id
+      });
+
+      console.log('[click]', {
+        target: e.target.tagName,
+        isGrouped,
+        hasObjectAncestor: !!objEl,
+        objId: objEl?.id
+      });
+
+      // Only in grouped mode: any object click opens gallery
+      if (isGrouped && objEl) {
+        e.preventDefault();
+        e.stopPropagation();
+        //openGallery();
+        const obj = (window.gridObject?.objects || objects || []).find(o => String(o.id) === String(objEl.id));
+        const gid = obj?.groupId;
+        openGallery(gid);
+      }
+    }, true); // capture so we log/handle even if child elements have handlers
+  }
+}
+
+// === IntersectionObserver for #group-gallery (title + item-by-item) ===
+(function galleryIntersectionObservers() {
+  const gg = document.getElementById('group-gallery');
+  if (!gg) return;
+
+  function setupGalleryIO() {
+    if (gg._ioBound) return;          // bind once per open
+    gg._ioBound = true;
+
+    // Title box fades in when it comes into view (viewport is fine)
+    const title = gg.querySelector('.title-box');
+    if (title) {
+      const titleObs = new IntersectionObserver((entries, obs) => {
+        entries.forEach(en => {
+          if (en.isIntersecting) {
+            en.target.classList.add('visible');
+            obs.unobserve(en.target); // one-shot
+          }
+        });
+      }, { root: null, threshold: 0.35, rootMargin: '0px 0px -10% 0px' });
+      titleObs.observe(title);
+      gg._titleObs = titleObs;
+    }
+
+    // Items fade in individually as you horizontally scroll the gallery box
+    //const box = gg.querySelector('.gallery-box');
+    //const itemObs = new IntersectionObserver((entries, obs) => {
+    const box = gg.querySelector('.gallery-box');
+    if (!box) return; // require the horizontal scroller as the IO root
+    const scroller = gg; // #group-gallery is the scroll container (has overflow-x: scroll)
+    const itemObs = new IntersectionObserver((entries, obs) => {
+      entries.forEach(en => {
+        if (en.isIntersecting) {
+          en.target.classList.add('visible');
+          obs.unobserve(en.target); // one-shot
+        }
+      });
+    }, {
+      root: scroller,                 // observe vs. the actual horizontal scroller
+      threshold: 0.15,                // 10–20% works well
+      rootMargin: '0px'               // no pre-trigger; fires as it truly enters
+    });
+
+    // Observe all current items
+    //(box ? box.querySelectorAll('.item') : gg.querySelectorAll('.item'))
+    //  .forEach(el => itemObs.observe(el));
+
+    // Optional: small stagger for items initially visible at open
+    let idx = 0;
+    box.querySelectorAll('.item').forEach(el => {
+      el.style.transitionDelay = `${(idx++ % 6) * 40}ms`; // waves of up to 6
+      itemObs.observe(el);
+    });
+
+    gg._itemObs = itemObs;
+  }
+
+  // Expose tiny helpers so your existing open/close can call them
+  window.__galleryIO__ = {
+    onOpen() {
+      // (Re)bind observers after the gallery becomes visible in the layout
+      requestAnimationFrame(() => {
+        setupGalleryIO();
+      });
+    },
+    onClose() {
+      if (gg._itemObs) { gg._itemObs.disconnect(); gg._itemObs = null; }
+      if (gg._titleObs) { gg._titleObs.disconnect(); gg._titleObs = null; }
+      gg._ioBound = false;
+      // Reset visibility so next open fades again
+      gg.querySelector('.title-box')?.classList.remove('visible');
+      gg.querySelectorAll('.gallery-box .item').forEach(el => { 
+        el.style.transitionDelay = ''; 
+        el.classList.remove('visible');
+      });
+    }
+  };
+})();
+
+// === Wrap gallery side counters so only the inner rotates ===
+(() => {
+  const gg = document.getElementById('group-gallery');
+  if (!gg) return;
+
+  function ensureRot(node) {
+    if (!node) return;
+    if (!node.querySelector('.rot')) {
+      const span = document.createElement('span');
+      span.className = 'rot';
+      span.innerHTML = node.innerHTML;
+      node.innerHTML = '';
+      node.appendChild(span);
     }
   }
 
-  objects.push(newObject);
+  (window.__galleryIO__ ||= { onOpen() {}, onClose() {} });
+  const prevOpen  = window.__galleryIO__.onOpen;
+  const prevClose = window.__galleryIO__.onClose;
+
+  window.__galleryIO__.onOpen = function () {
+    prevOpen?.();
+    gg.querySelectorAll('.count-invisible-objects.left, .count-invisible-objects.right')
+      .forEach(ensureRot);
+  };
+
+  window.__galleryIO__.onClose = function () {
+    prevClose?.();
+    // nothing special to undo; gallery DOM is rebuilt on next open
+  };
+})();
+
+// === Gallery audio waveforms (WaveSurfer) ===
+// Builds one waveform per entry in audioPool, lazy-creates on intersection, destroys on close.
+(() => {
+  const gg = document.getElementById('group-gallery');
+  if (!gg) return;
+
+  // Registry of WaveSurfer instances for this gallery session
+  let wsRegistry = new Map();
+  let audioObserver = null;
+
+  // Config cloned from demo-sidebars.html
+  const WS_CONFIG = {
+    waveColor: '#666',
+    progressColor: '#aaa',
+    cursorColor: '#ccc',
+    height: 50,          // overall container height
+    barWidth: 2,         // wider bars = lower resolution
+    barGap: 1,           // spacing between bars
+    barHeight: 40,       // shorter bars
+    normalize: true,
+    responsive: true,
+    interact: true,
+    cursorWidth: 1,
+  };
+
+  // Lazy-create waves when items enter the visible gallery viewport
+  function attachAudioIO() {
+    // Ensure previous observer is gone
+    if (audioObserver) {
+      audioObserver.disconnect();
+      audioObserver = null;
+    }
+
+    const scroller = gg; // #group-gallery is the horizontal scroller (your viewport)
+    const options = { root: scroller, threshold: 0.15, rootMargin: '0px' };
+
+    audioObserver = new IntersectionObserver((entries, obs) => {
+      entries.forEach(en => {
+        if (!en.isIntersecting) return;
+
+        const item = en.target;
+        const wave = item.querySelector('.wave');
+        const src  = item.dataset.audioSrc;
+        if (!wave || !src) return;
+
+        // Create WaveSurfer once per container
+        if (!wsRegistry.has(wave.id)) {
+          const ws = WaveSurfer.create({ ...WS_CONFIG, container: `#${wave.id}` });
+          ws.load(src);
+
+          // Simple play/pause on click (mirror demo behavior)
+          item.addEventListener('click', () => ws.playPause());
+
+          wsRegistry.set(wave.id, ws);
+        }
+
+        // Stop observing after first creation
+        obs.unobserve(item);
+      });
+    }, options);
+
+    // Observe any audio items currently in DOM
+    gg.querySelectorAll('.gallery-box .item.audio').forEach(el => audioObserver.observe(el));
+  }
+
+  // Destroy all WaveSurfer instances and clear the column
+  function destroyAllAudio() {
+    if (audioObserver) { audioObserver.disconnect(); audioObserver = null; }
+    wsRegistry.forEach(ws => { try { ws.destroy?.(); } catch(_){} });
+    wsRegistry.clear();
+  }
+
+  // Hook into gallery lifecycle (fade-in/counters already use these hooks)
+  (window.__galleryIO__ ||= { onOpen(){}, onClose(){} });
+  const prevOpen  = window.__galleryIO__.onOpen;
+  const prevClose = window.__galleryIO__.onClose;
+
+  window.__galleryIO__.onOpen = function() {
+    prevOpen?.();
+    attachAudioIO();      // lazy-create for any .item.audio present
+  };
+
+  window.__galleryIO__.onClose = function() {
+    prevClose?.();
+    destroyAllAudio();    // clean up for a fresh reopen
+  };
+})();
+
+// === Dynamic gallery renderer (fixed 3 items per column; random item widths 100–200px) ===
+(function galleryRenderer() {
+  const gg  = document.getElementById('group-gallery');
+  const box = gg?.querySelector('.gallery-box');
+  if (!gg || !box) return;
+
+  // random width between 100–200 px
+  function randItemWidth() {
+    return 100 + Math.floor(Math.random() * 101); // 100..200
+  }
+
+  function uid() {
+    return (crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
+  }
+
+  function createGalleryItem(o) {
+    // IMAGE (allow up to 1.5x intrinsic CSS width, DPR-aware)
+    if (o.type === 'image') {
+      const img = document.createElement('img');
+      img.className = 'item';
+      img.alt = o.alt || '';
+      img.loading = 'lazy';
+      img.src = o.image || o.src || o.url || '';
+
+      const desired = randItemWidth();      // your 100–200 px random width
+      const dpr = window.devicePixelRatio || 1;
+      const UPSCALE_MAX = 2;              // allow up to 150% of intrinsic CSS width
+
+      // helper to apply width and keep counters in sync
+      const setCssWidth = (px) => {
+        img.style.width = `${px}px`;
+        img.style.height = 'auto';
+        img.style.display = 'block';
+        requestAnimationFrame(() => window.__galleryIO__?._updateCounts?.());
+      };
+
+      // If dummy data has intrinsic pixel width, clamp immediately
+      if (typeof o.width === 'number' && o.width > 0) {
+        const intrinsicCss = o.width / dpr;                         // pixels → CSS px on this DPR
+        const maxCss = Math.max(1, Math.floor(intrinsicCss * UPSCALE_MAX));
+        setCssWidth(Math.min(desired, maxCss));
+      } else {
+        // Otherwise set desired first, then clamp after the image loads
+        setCssWidth(desired);
+        img.addEventListener('load', () => {
+          const intrinsic = img.naturalWidth || desired;            // pixel width
+          const intrinsicCss = intrinsic / dpr;
+          const maxCss = Math.max(1, Math.floor(intrinsicCss * UPSCALE_MAX));
+          if (desired > maxCss) setCssWidth(maxCss);
+        }, { once: true });
+      }
+
+      return img;
+    }
+
+    // VIDEO
+    if (o.type === 'video') {
+      const vid = document.createElement('video');
+      vid.className = 'item';
+      vid.setAttribute('playsinline', '');
+      vid.setAttribute('muted', '');
+      vid.setAttribute('loop', '');
+      vid.src = o.video || o.src || o.url || '';
+      vid.style.width  = `${randItemWidth()}px`;   // ← random width
+      vid.style.height = 'auto';                   // ← auto height
+      vid.style.display = 'block';
+      vid.addEventListener('mouseover', () => { try { vid.play(); } catch {} });
+      vid.addEventListener('mouseout',  () => { try { vid.pause(); } catch {} });
+      return vid;
+    }
+
+    // TEXT
+    if (o.type === 'text') {
+      const d = document.createElement('div');
+      d.className = 'item text';
+      d.style.width = `${randItemWidth()}px`;      // ← random width
+      const span = document.createElement('span');
+      span.className = 'scaling-text';
+      span.textContent = o.text || o.caption || o.title || '';
+      d.appendChild(span);
+      return d;
+    }
+
+    // AUDIO (WaveSurfer picks these up via IO)
+    if (o.type === 'audio') {
+      const item = document.createElement('div');
+      item.className = 'item audio';
+      item.style.width = `${randItemWidth()}px`;   // ← random width for the whole item
+      item.style.display = 'block';
+
+      const wave = document.createElement('div');
+      wave.className = 'wave';
+      wave.id = `wave_${o.id || uid()}`;
+      wave.style.width = '100%';                   // fill the item’s random width
+      wave.style.height = '50px';
+      item.dataset.audioSrc = o.audio || o.src || o.url || '';
+      item.appendChild(wave);
+      return item;
+    }
+
+    // Fallback
+    const d = document.createElement('div');
+    d.className = 'item text';
+    d.style.width = `${randItemWidth()}px`;        // ← random width
+    const span = document.createElement('span');
+    span.className = 'scaling-text';
+    span.textContent = o.title || '[unknown]';
+    d.appendChild(span);
+    return d;
+  }
+
+  function groupObjects(gid) {
+    const all = (window.gridObject?.objects || window.objects || []);
+    return all.filter(o => String(o.groupId) === String(gid));
+  }
+
+  // Public: build the gallery for a given group id (3 items per column)
+  window.renderGroupGallery = function(gid) {
+    if (!gid) return;
+    const objs = groupObjects(gid);
+
+    const itemsPerCol = 3;
+    const colCount = Math.max(1, Math.ceil(objs.length / itemsPerCol));
+
+    // make fresh columns
+    box.innerHTML = '';
+    const cols = [];
+    for (let i = 0; i < colCount; i++) {
+      const c = document.createElement('div');
+      c.className = 'column';
+      cols.push(c);
+      box.appendChild(c);
+    }
+
+    // sequentially place: 3 items per column
+    objs.forEach((o, i) => {
+      const el = createGalleryItem(o);
+      const colIndex = Math.floor(i / itemsPerCol);
+      (cols[colIndex] || cols[cols.length - 1]).appendChild(el);
+    });
+
+    requestAnimationFrame(() => {
+      window.__galleryIO__?._updateCounts?.();
+      window.__galleryTextFit?.refresh?.();
+    });
+  };
+})();
+
+// === Invisible item counters (left/right) scoped to #group-gallery ===
+(function galleryCounters() {
+  const gg = document.getElementById('group-gallery');
+  if (!gg) return;
+
+  function attachCountersOnce() {
+    if (gg._countsBound) return;
+    gg._countsBound = true;
+
+    const scroller   = gg; // #group-gallery IS the horizontal scroller (overflow-x)
+    const leftBadge  = gg.querySelector('.count-invisible-objects.left .value');
+    const rightBadge = gg.querySelector('.count-invisible-objects.right .value');
+    const items      = () => gg.querySelectorAll('.gallery-box .item');
+
+    if (!leftBadge || !rightBadge) return;
+
+    function updateCounts() {
+      // Compare each item rect to the scroller's visible window
+      const viewport = scroller.getBoundingClientRect();
+      let left = 0, right = 0;
+
+      items().forEach(el => {
+        const r = el.getBoundingClientRect();
+        if (r.right <= viewport.left)  left++;       // fully left of view
+        else if (r.left >= viewport.right) right++;  // fully right of view
+      });
+
+      leftBadge.textContent  = String(left);
+      rightBadge.textContent = String(right);
+    }
+
+    // Update on horizontal scroll of the scroller, and on resize
+    scroller.addEventListener('scroll', updateCounts, { passive: true });
+    window.addEventListener('resize', updateCounts);
+
+    // Recalculate when images load (sizes change after load)
+    gg.querySelectorAll('img').forEach(img => {
+      if (!img.complete) img.addEventListener('load', updateCounts, { once: true });
+    });
+
+    // Initial calculate once the gallery is visible in layout
+    requestAnimationFrame(updateCounts);
+
+    // keep references for cleanup on close (optional)
+    gg._updateCounts = updateCounts;
+  }
+
+  // hook into the same open/close lifecycle used for the fade-ins
+  (window.__galleryIO__ ||= { onOpen(){}, onClose(){} });
+  const prevOpen  = window.__galleryIO__.onOpen;
+  const prevClose = window.__galleryIO__.onClose;
+
+  window.__galleryIO__.onOpen = function() {
+    prevOpen?.();
+    attachCountersOnce();
+    // ensure the counts reflect current scroll after opening
+    gg._updateCounts?.();
+  };
+
+  window.__galleryIO__.onClose = function() {
+    prevClose?.();
+    // optional: nothing to detach (listeners can persist); if you want full cleanup:
+    // window.removeEventListener('resize', gg._updateCounts);
+    // gg._countsBound = false;
+  };
+})();
+
+
+// --- Smooth "Explore" scroll (bind once on open) ---
+(function bindExploreScroll(){
+  const gg = document.getElementById('group-gallery');
+  if (!gg || gg._exploreBound) return;
+  gg._exploreBound = true;
+
+  const btn     = gg.querySelector('#scroll-on');
+  const target  = gg.querySelector('#gallery-scroll') || gg.querySelector('.gallery-box');
+
+  if (!btn || !target) return;
+
+  btn.addEventListener('click', (e) => {
+    e.preventDefault(); // stop the page from jumping to the hash
+
+    // Prefer element-based scroll; it uses the nearest scrollable ancestor (#group-gallery)
+    if (target.scrollIntoView) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+      return;
+    }
+
+    // Fallback: manual horizontal scroll on the scroller
+    const scroller = gg;
+    const x = target.offsetLeft - scroller.offsetLeft;
+    scroller.scrollTo({ left: x, top: 0, behavior: 'smooth' });
+  });
+})();
+
+// === Gallery back-button + history integration ===
+{
+  const gridShellEl    = document.getElementById('grid-shell');
+  const groupGalleryEl = document.getElementById('group-gallery');
+
+  // Ensure we only bind once
+  if (!window.__galleryHistoryBound) {
+    window.__galleryHistoryBound = true;
+
+    // 1) Delegate click for the back button: go back in navigation if we created a gallery state;
+    //    otherwise just close the gallery.
+    document.addEventListener('click', (e) => {
+      const back = e.target.closest('#content-back-button');
+      if (!back) return;
+      e.preventDefault();
+
+      // If we pushed a gallery state, let browser back close it via popstate:
+      if (history.state && history.state.gallery) {
+        history.back();
+      } else {
+        // Fallback: close directly if no history state
+        if (groupGalleryEl) groupGalleryEl.classList.remove('active');
+        if (gridShellEl) gridShellEl.style.display = '';
+        window.__galleryIO__?.onClose?.();
+        console.log('[gallery] closed (direct)');
+      }
+    }, true);
+
+    // 2) Listen for back/forward to restore the grid when leaving the gallery state
+    window.addEventListener('popstate', () => {
+      const active = groupGalleryEl?.classList.contains('active');
+      const stillInGallery = !!history.state?.gallery || location.hash === '#gallery' || location.hash === '#group-gallery';
+      if (active && !stillInGallery) {
+        // We navigated away from the gallery state -> close it and show grid again
+        groupGalleryEl.classList.remove('active');
+        if (gridShellEl) gridShellEl.style.display = '';
+        window.__galleryIO__?.onClose?.();
+        console.log('[gallery] closed (popstate)');
+      }
+    });
+  }
+
+  // 3) Push a history state whenever we open the gallery (call from your openGallery())
+  //    Add these two lines inside your existing openGallery() AFTER you add `.active`:
+  //    if (!history.state || !history.state.gallery) {
+  //      history.pushState({ gallery: true }, '', '#group-gallery');
+  //    }
 }
 
+// START DEFINE CONTROLS
 
-const grid = document.getElementById("grid");
+// FAB bindings
+const fabGroup   = document.getElementById('fab-group');
+const fabCluster = document.getElementById('fab-cluster');
+const fabUngroup = document.getElementById('fab-ungroup');
+const fabZoomIn  = document.getElementById('fab-zoom-in');
+const fabZoomOut = document.getElementById('fab-zoom-out');
+const fabFitAll  = document.getElementById('fab-fit-all');
 
-// console.log(document.documentElement.clientWidth);
-// console.log(document.documentElement.clientHeight);
+fabGroup?.addEventListener('click',  (e) => { e.preventDefault(); gridObject.groupObjects();   markActive('group'); refreshSlideInsVisibility();  });
+fabCluster?.addEventListener('click',(e) => { e.preventDefault(); gridObject.clusterGroupedObjects(); markActive('cluster'); refreshSlideInsVisibility(); });
+fabUngroup?.addEventListener('click',(e) => { e.preventDefault(); gridObject.ungroupObjects(); markActive('ungroup'); refreshSlideInsVisibility(); });
+fabZoomIn?.addEventListener('click', (e) => { e.preventDefault(); gridObject.zoomIn(); });
+fabZoomOut?.addEventListener('click',(e) => { e.preventDefault(); gridObject.zoomOut(); });
+fabFitAll?.addEventListener('click', (e) => { e.preventDefault(); gridObject.fitAll(120); });
 
-let zoomOutFactor = 0.9;
-let zoomInFactor = 1.1;
+// Recalculate counters after any camera/state change
+;[fabGroup, fabCluster, fabUngroup, fabZoomIn, fabZoomOut].forEach(btn => btn?.addEventListener('click', scheduleOffgridUpdate));
+
+// Optional: highlight active mode button (purely visual)
+function markActive(which) {
+  [fabGroup, fabCluster, fabUngroup].forEach(btn => btn?.classList.remove('is-active'));
+  if (which === 'group')   fabGroup?.classList.add('is-active');
+  if (which === 'cluster') fabCluster?.classList.add('is-active');
+  if (which === 'ungroup') fabUngroup?.classList.add('is-active');
+}
+
+document.getElementById('reset-grid')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  gridObject.resetGrid();
+});
+
+// END DEFINE CONTROLS
+
+// --- Off-grid counters (Top/Bottom/Left/Right) ---
+const workspaceEl = document.getElementById('workspace');
+const gridEl = document.getElementById('grid');
+const counters = {
+  top:    document.getElementById('offgrid-top'),
+  bottom: document.getElementById('offgrid-bottom'),
+  left:   document.getElementById('offgrid-left'),
+  right:  document.getElementById('offgrid-right'),
+};
+
+function scheduleOffgridUpdate() {
+  if (scheduleOffgridUpdate._raf) return;
+  scheduleOffgridUpdate._raf = requestAnimationFrame(() => {
+    scheduleOffgridUpdate._raf = null;
+    updateOffgridCounters();
+    // Keep offset in sync in case layout changed during pan/zoom flows
+    updateRightCounterOffset();
+  });
+}
+
+function updateOffgridCounters() {
+  if (!workspaceEl || !gridEl) return;
+  const vp = workspaceEl.getBoundingClientRect();
+  const items = Array.from(gridEl.querySelectorAll('.object'));
+
+  const data = {
+    top: { total: 0, perTag: {} },
+    bottom: { total: 0, perTag: {} },
+    left: { total: 0, perTag: {} },
+    right: { total: 0, perTag: {} },
+  };
+  //const selectedTags = Array.from((typeof activeTags !== 'undefined' ? activeTags : new Set()));
+  let selectedTags = Array.from((typeof activeTags !== 'undefined' ? activeTags : new Set()));
+  // Ignore tags currently disabled in the UI (defensive; clicks are already blocked)
+  const disabledNow = new Set(
+    Array.from(document.querySelectorAll('#tags-visible li.disabled,[aria-disabled="true"]'))
+         .map(li => li.dataset.tag)
+  );
+  selectedTags = selectedTags.filter(t => !disabledNow.has(t));
+
+  for (const el of items) {
+    const r = el.getBoundingClientRect();
+    // Skip if any overlap with viewport (i.e., at least partly visible)
+    const overlaps = !(r.right <= vp.left || r.left >= vp.right || r.bottom <= vp.top || r.top >= vp.bottom);
+    if (overlaps) continue;
+
+    // Measure "how far outside" on each side and assign to the dominant side
+    const dTop    = Math.max(vp.top    - r.bottom, 0);
+    const dBottom = Math.max(r.top     - vp.bottom, 0);
+    const dLeft   = Math.max(vp.left   - r.right, 0);
+    const dRight  = Math.max(r.left    - vp.right, 0);
+    let dir = 'top', maxD = dTop;
+    if (dBottom > maxD) { dir = 'bottom'; maxD = dBottom; }
+    if (dLeft   > maxD) { dir = 'left';   maxD = dLeft; }
+    if (dRight  > maxD) { dir = 'right';  maxD = dRight; }
+
+    data[dir].total++;
+    if (selectedTags.length) {
+      const tags = (el.dataset.tags || '').split(',').filter(Boolean);
+      for (const t of selectedTags) {
+        if (tags.includes(t)) data[dir].perTag[t] = (data[dir].perTag[t] || 0) + 1;
+      }
+    }
+  }
+
+  const render = (dir) => {
+    const node = counters[dir];
+    if (!node) return;
+    const { total, perTag } = data[dir];
+    const valueEl = node.querySelector('.value');
+    if (valueEl) valueEl.textContent = String(total);
+
+    // Clear previous breakdown (inside rot if present)
+    const host = node.querySelector('.rot') || node;
+    host.querySelector('.breakdown')?.remove();
+    if (total === 0) {
+      node.setAttribute('aria-hidden', 'true');
+      return;
+    }
+    node.removeAttribute('aria-hidden');
+
+    // Default: no breakdown → ensure class is off
+    host.classList.remove('has-breakdown');
+
+    if (selectedTags.length) {
+      host.classList.add('has-breakdown');
+      const wrap = document.createElement('span');
+      wrap.className = 'breakdown';
+      for (const t of selectedTags) {
+        const sep = document.createElement('span');
+        sep.className = 'sep';
+        sep.textContent = ' / ';
+        wrap.appendChild(sep);
+
+        const n = perTag[t] || 0;
+        const cnt = document.createElement('span');
+        cnt.className = 'tag-count';
+        cnt.textContent = String(n);
+        // Use your stable tag color map if available
+        if (typeof tagColors !== 'undefined' && tagColors[t]) {
+          cnt.style.color = tagColors[t];
+        }
+        wrap.appendChild(cnt);
+
+        const word = document.createElement('span');
+        word.textContent = ' Elements';
+        wrap.appendChild(word);
+      }
+      host.appendChild(wrap);
+    }
+  };
+
+  render('top'); render('bottom'); render('left'); render('right');
+}
+
+// Observe grid pan/zoom (style changes), viewport resize, and object visibility
+const mo = new MutationObserver(scheduleOffgridUpdate);
+if (gridEl) mo.observe(gridEl, { attributes: true, attributeFilter: ['style', 'class'] });
+window.addEventListener('resize', scheduleOffgridUpdate);
+
+// IntersectionObserver to react when items enter/leave
+const io = new IntersectionObserver(() => scheduleOffgridUpdate(), { root: workspaceEl, threshold: 0 });
+Array.from(gridEl.querySelectorAll('.object')).forEach(el => io.observe(el));
+
+// Kick an initial paint
+requestAnimationFrame(updateOffgridCounters);
+
+// Keep the right badge offset aligned with the current slide-ins width
+const slideInsEl = document.getElementById('slide-ins');
 
 /*
-let gridDimension = {
-  width: 0,
-  height: 0
+function updateRightCounterOffset() {
+  const w = slideInsEl ? Math.round(slideInsEl.getBoundingClientRect().width) : 0;
+  workspaceEl?.style.setProperty('--slideins-width', `${w}px`);
 }
 */
+// Visible width of the slide-in (in px) → used by the grid's RIGHT counter only
+function updateRightCounterOffset() {
+  const ws = document.getElementById('workspace') || document.documentElement;
+  const slideIns = document.getElementById('slide-ins');
+  let visible = 0;
 
-/*
-let gridSectionDimension = {
-  'width': 150,
-  'height': 200,
-  'marginX': 40,
-  'marginY': 40,
-  'offsetX': 100,
+  if (slideIns) {
+    const r = slideIns.getBoundingClientRect();
+    // How much of the slide-in is currently on-screen (it sits on the right)
+    visible = Math.max(0, Math.min(r.width, window.innerWidth - r.left));
+  }
+
+  // Expose as a CSS var the RIGHT counter can read
+  ws.style.setProperty('--slideins-visible', `${Math.round(visible)}px`);
 }
-*/
 
-let gridWidthCalculated = false;
+// On init and whenever #slide-ins resizes (open/close), update the CSS var
+if (slideInsEl && 'ResizeObserver' in window) {
+  const ro = new ResizeObserver(() => updateRightCounterOffset());
+  ro.observe(slideInsEl);
+  // initial set
+  updateRightCounterOffset();
+} else {
+  // Fallback: update on window resize
+  window.addEventListener('resize', updateRightCounterOffset);
+  updateRightCounterOffset();
+}
+
+
+// START DRAG AND DROP
+// END DRAG AND DROP
+
+// START DOM LOADED
+
+window.addEventListener('DOMContentLoaded', () => {
+  setTagGroupPolicy('GLOBAL');       // 'GLOBAL' or 'SCOPED'
+  setTagMode('AND');                 // 'AND' or 'OR'
+
+  initSlideInTags();
+
+  initSlideInAccordion('#discover-connections'); // reads data-section-mode="accordion"
+
+  attachSecondaryAutoClose('#discover-connections');
+
+  // Close secondary when any section is opened in this slide-in
+  const dc = document.getElementById('discover-connections');
+  dc?.addEventListener('slidein:sectionOpened', () => {
+    closeMenuSecondary('#discover-connections');
+  });
+
+  renderThemesUI();
+
+  // Remove active underline when the Themes section is closed
+  const themesSection = document.querySelector('#discover-connections #themes-section')?.closest('.content-section');
+  if (themesSection) {
+    const ro = new MutationObserver(() => {
+      if (!themesSection.classList.contains('is-open')) {
+        clearThemesActiveState();
+      }
+    });
+    ro.observe(themesSection, { attributes: true, attributeFilter: ['class'] });
+  }
+});
+
+// END DOM LOADED
+
+// START INIT WHEN DOM LOADED
+
+
+// END INIT WHEN DOM LOADED
+
+// START TAG SETUP
+
+// ---- CONFIG: tag matching mode ----
+// 'OR' (default) or 'AND'
+// Mode config (defaults to OR). You can change at runtime via setTagMode('AND'|'OR').
+// Tag mode config
+const TAG_MODES = { OR: 'OR', AND: 'AND' };
+let TAG_MODE = TAG_MODES.OR;   // default
+
+const TAG_GROUP_POLICIES = { GLOBAL: 'GLOBAL', SCOPED: 'SCOPED' };
+let TAG_GROUP_POLICY = TAG_GROUP_POLICIES.GLOBAL; // or 'SCOPED'
+let activeTagGroupId = null; // used only in SCOPED policy
+
+function setTagMode(mode) {
+  TAG_MODE = (mode === TAG_MODES.AND) ? TAG_MODES.AND : TAG_MODES.OR;
+  updateTagAvailability?.();
+  updateObjectGlowsWithGradient?.();
+  syncTagModeToggleUI?.();
+}
+
+function setTagGroupPolicy(policy) {
+  TAG_GROUP_POLICY = (policy === TAG_GROUP_POLICIES.SCOPED) ? TAG_GROUP_POLICIES.SCOPED : TAG_GROUP_POLICIES.GLOBAL;
+  updateTagAvailability?.();
+}
+
+function renderTagModeToggle(container) {
+  if (!container || renderTagModeToggle._rendered) return;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'tag-match-toggle';
+  wrap.setAttribute('role', 'group');
+  wrap.setAttribute('aria-label', 'Tag match mode');
+
+  const label = document.createElement('div');
+  label.className = 'label';
+  label.textContent = 'Match:';
+  wrap.appendChild(label);
+
+  const btnAny = document.createElement('button');
+  btnAny.type = 'button'; btnAny.className = 'seg'; btnAny.textContent = 'Any'; btnAny.dataset.mode = 'OR';
+  const btnAll = document.createElement('button');
+  btnAll.type = 'button'; btnAll.className = 'seg'; btnAll.textContent = 'All'; btnAll.dataset.mode = 'AND';
+
+  wrap.appendChild(btnAny);
+  wrap.appendChild(btnAll);
+
+  wrap.addEventListener('click', (e) => {
+    const b = e.target.closest('.seg');
+    if (!b) return;
+    setTagMode(b.dataset.mode);
+  });
+
+  container.appendChild(wrap);
+  renderTagModeToggle._rendered = true;
+  renderTagModeToggle._els = { btnAny, btnAll };
+}
+function syncTagModeToggleUI() {
+  const els = renderTagModeToggle._els;
+  if (!els) return;
+  els.btnAny.classList.toggle('is-selected', TAG_MODE !== TAG_MODES.AND);
+  els.btnAll.classList.toggle('is-selected', TAG_MODE === TAG_MODES.AND);
+  els.btnAny.setAttribute('aria-pressed', TAG_MODE !== TAG_MODES.AND);
+  els.btnAll.setAttribute('aria-pressed', TAG_MODE === TAG_MODES.AND);
+}
+
+// Build a fast lookup: tag -> objects that have it
+const tagToObjects = new Map();
+function buildTagIndex(objects) {
+  tagToObjects.clear();
+  for (const o of objects) {
+    for (const t of o.tags) {
+      if (!tagToObjects.has(t)) tagToObjects.set(t, []);
+      tagToObjects.get(t).push(o);
+    }
+  }
+}
+
+// call once after `objects` are generated:
+buildTagIndex(objects);
+
+// Helper
+function objectHasAllTags(objTags, requiredSet) {
+  for (const t of requiredSet) if (!objTags.includes(t)) return false;
+  return true;
+}
+
+function updateTagAvailability() {
+  const ul = document.getElementById('tags-visible');
+  if (!ul) return;
+
+  const lis = [...ul.querySelectorAll('li')];
+
+  const activeGroup = currentTagViewGroupId; // null = no group selected
+  
+  // 0) Group gating: if a group is selected, disable chips from other groups
+  if (activeGroup) {
+    lis.forEach(li => {
+      const inGroup = (li.dataset.group === activeGroup);
+      if (!inGroup) {
+        li.classList.add('disabled');
+        li.setAttribute('aria-disabled', 'true');
+      } else {
+        li.classList.remove('disabled');
+        li.setAttribute('aria-disabled', 'false');
+      }
+    });
+  }
+  
+  // 1) OR mode or no tag selection -> availability only depends on group gating (if any)
+  if (TAG_MODE === TAG_MODES.OR || activeTags.size === 0) {
+    if (!activeGroup) {
+      // no gating: make sure everything is enabled
+      lis.forEach(li => { li.classList.remove('disabled'); li.setAttribute('aria-disabled','false'); });
+    }
+    return;
+  }
+
+  // AND mode: grey out a candidate if no object contains (selected + candidate)
+  const required = [...activeTags];
+  lis.forEach(li => {
+    // if already disabled by group gating, skip the expensive check
+    if (li.classList.contains('disabled')) return;
+    const tag = li.dataset.tag;
+    const isActive = li.classList.contains('active');
+    if (isActive) { li.classList.remove('disabled'); li.setAttribute('aria-disabled','false'); return; }
+
+    // If SCOPED is locked to a different group, visible list is always the locked group anyway.
+    const pool = tagToObjects.get(tag) || [];
+    const ok = pool.some(o => objectHasAllTags(o.tags || [], new Set([...required, tag])));
+    li.classList.toggle('disabled', !ok);
+    li.setAttribute('aria-disabled', (!ok).toString());
+  });
+}
+
+// Reseed selection from a detail-panel tag and keep UI in sync
+function reseedTagsFromDetail(tag) {
+  if (!tag) return;
+
+  // Toggle semantics from detail views:
+  // - If the clicked tag is the ONLY active tag, clear selection (unselect).
+  // - Otherwise, replace selection with the clicked tag.
+  const wasSoleActive = activeTags.size === 1 && activeTags.has(tag);
+  if (wasSoleActive) {
+    activeTags.clear();
+    // clear SCOPED lock if present
+    if (typeof activeTagGroupId !== 'undefined') activeTagGroupId = null;
+  } else {
+    activeTags.clear();
+    activeTags.add(tag);
+    const gid = tagToGroup.get(tag);
+    // keep SCOPED lock consistent with the clicked tag's group
+    if (typeof activeTagGroupId !== 'undefined') activeTagGroupId = gid || null;
+    // If your policy scopes the visible group, switch the menu to this tag's group
+    if (typeof TAG_GROUP_POLICIES !== 'undefined' && typeof TAG_GROUP_POLICY !== 'undefined') {
+      if (TAG_GROUP_POLICY === TAG_GROUP_POLICIES.SCOPED && gid) {
+        currentTagViewGroupId = gid;
+      }
+    }
+  }
+
+  // 3) Re-render the visible tag row and active group button
+  if (typeof renderTagsForCurrentGroup === 'function') renderTagsForCurrentGroup();
+  if (typeof markActiveGroupButton === 'function') markActiveGroupButton();
+
+  // 4) Availability, glows, and counters
+  if (typeof updateTagAvailability === 'function') updateTagAvailability();
+  if (typeof updateObjectGlowsWithGradient === 'function') updateObjectGlowsWithGradient();
+  if (typeof scheduleOffgridUpdate === 'function') scheduleOffgridUpdate();
+  if (typeof renderSelectionBar === 'function') renderSelectionBar();
+  syncDetailTagHighlights();
+}
+// expose for grid.js
+window.reseedTagsFromDetail = reseedTagsFromDetail;
+
+function updateObjectGlowsWithGradient() {
+  const selected = [...activeTags];
+  document.querySelectorAll(".object").forEach(div => {
+    const tags = (div.dataset.tags || '').split(",").filter(Boolean);
+    const glow = div.querySelector(".object-glow");
+    if (!glow) return;
+
+    let matches = false;
+    if (selected.length === 0) {
+      matches = false;
+    } else if (TAG_MODE === TAG_MODES.OR) {
+      matches = tags.some(t => activeTags.has(t));
+    } else {
+      matches = selected.every(t => tags.includes(t));
+    }
+
+    if (!matches) {
+      glow.style.background = "transparent";
+    } else {
+      const colors = (TAG_MODE === TAG_MODES.OR)
+        ? tags.filter(t => activeTags.has(t)).map(t => tagColors[t])
+        : selected.map(t => tagColors[t]);
+      glow.style.background = `linear-gradient(to bottom, ${colors.join(", ")})`;
+    }
+  });
+}
+
+function initSlideInTags() {
+  const section = document.querySelector('#discover-connections .section-content');
+  if (!section) return;
+
+  section.innerHTML = '';
+
+  // 1) Visible tags (single group at a time)
+  const ul = document.createElement('ul');
+  ul.className = 'tags';
+  ul.id = 'tags-visible';
+  section.appendChild(ul);
+
+  // Tag clicks (delegated)
+  ul.addEventListener('click', (e) => {
+    const li = e.target.closest('li');
+    if (!li || !li.dataset.tag) return;
+    // If this chip is disabled, ignore the click entirely
+    if (li.classList.contains('disabled') || li.getAttribute('aria-disabled') === 'true') {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    const tag = li.dataset.tag;
+    const color = tagColors[tag];
+
+    // In SCOPED policy: lock to the group of the first selection
+    if (TAG_GROUP_POLICY === TAG_GROUP_POLICIES.SCOPED) {
+      const tagGroup = li.dataset.group;
+      if (!li.classList.contains('active')) {
+        // if switching to a different group than the locked one → reset
+        if (activeTagGroupId && tagGroup !== activeTagGroupId) {
+          clearAllTagSelectionsUI();
+          activeTags.clear();
+          activeTagGroupId = null;
+        }
+      }
+    }
+
+    // Toggle selection
+    if (activeTags.has(tag)) {
+      activeTags.delete(tag);
+      li.classList.remove('active');
+      li.style.borderColor = '#000';
+      li.style.color = '';
+      li.style.boxShadow = '';
+    } else {
+      activeTags.add(tag);
+      li.classList.add('active');
+      li.style.borderColor = color;
+      li.style.color = color;
+      li.style.boxShadow = `${color}66 0 0 8px`;
+      // Set lock on first selection in SCOPED
+      if (TAG_GROUP_POLICY === TAG_GROUP_POLICIES.SCOPED) {
+        activeTagGroupId = li.dataset.group;
+      }
+    }
+
+    // Update off-grid counters for any tag change
+    scheduleOffgridUpdate();
+    updateTagAvailability();
+    updateObjectGlowsWithGradient();
+    renderSelectionBar();
+    syncDetailTagHighlights();
+  });
+
+  // 2) Group switcher (buttons shown under the tags)
+  const switcher = document.createElement('div');
+  switcher.className = 'tag-group-switch';
+  TAG_GROUPS.forEach(g => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'group-btn';
+    b.dataset.groupId = g.id;
+    b.textContent = g.label;
+    switcher.appendChild(b);
+  });
+  section.appendChild(switcher);
+
+  // Switcher clicks (toggle): click a group to restrict to that group; click again to clear
+  switcher.addEventListener('click', (e) => {
+    const btn = e.target.closest('.group-btn');
+    if (!btn) return;
+    const gid = btn.dataset.groupId;
+    if (!gid) return;
+    
+    const wasSelected = currentTagViewGroupId === gid;
+    if (wasSelected) {
+      // Clear selection: all tags clickable; default match = All
+      currentTagViewGroupId = null;
+      setTagMode('AND');
+      // keep current activeTags as-is
+    } else {
+      // Select this group: non-member tags disabled; default match = Any
+      currentTagViewGroupId = gid;
+      setTagMode('OR');
+      // Remove any active tags that do not belong to this group (avoid “active but disabled”)
+      [...activeTags].forEach(t => { if (tagToGroup.get(t) !== gid) activeTags.delete(t); });
+    }
+    
+    // Refresh UI
+    renderTagsForCurrentGroup();   // now renders all tags; availability applies gating
+    markActiveGroupButton();       // highlight selected group (or none)
+    updateObjectGlowsWithGradient();
+    scheduleOffgridUpdate?.();
+    renderSelectionBar?.();
+    syncDetailTagHighlights();
+  });
+
+  // 3) Match toggle (last)
+  renderTagModeToggle(section);
+  syncTagModeToggleUI();
+
+  // Initial paint
+  renderTagsForCurrentGroup();
+  markActiveGroupButton();
+  updateTagAvailability();
+}
+
+// Sync .active styling of tag pills inside detail cards with global activeTags
+function syncDetailTagHighlights() {
+  const active = window.activeTags || new Set();
+  const colors = window.tagColors || {};
+
+  // Select any tag chip rendered in detail cards (works whether they use data-tag or innerText)
+  const candidates = document.querySelectorAll(
+    '.detail-card [data-tag], .detail-tags [data-tag], .detail-card .tag, .detail-tags .tag'
+  );
+
+  candidates.forEach(el => {
+    // prefer data-tag; fallback to text
+    const tag = (el.dataset?.tag || el.textContent || '').trim();
+    if (!tag) return;
+
+    const isActive = active.has(tag);
+    el.classList.toggle('active', isActive);
+
+    // Apply the same color treatment you use elsewhere
+    const c = colors[tag];
+    if (isActive && c) {
+      el.style.borderColor = c;
+      el.style.color = c;
+      el.style.boxShadow = `${c}66 0 0 8px`;
+    } else {
+      el.style.removeProperty('border-color');
+      el.style.removeProperty('color');
+      el.style.removeProperty('box-shadow');
+    }
+  });
+}
+
+function openMenuSecondary(slideInSelector, { title, paragraphs }) {
+  const host  = document.querySelector(slideInSelector);
+  const panel = document.querySelector(`${slideInSelector} .secondary-pane`);
+  if (!host || !panel) return;
+
+  host.classList.add('expanded');        // ensure the slide-in is open
+  host.classList.add('secondary-open');  // widen to include secondary
+
+  panel.setAttribute('aria-hidden', 'false');
+  panel.innerHTML = `
+    <h3>${title}</h3>
+    ${paragraphs.map(p => `<p>${p}</p>`).join('')}
+  `;
+}
+
+function closeMenuSecondary(slideInSelector) {
+  const host  = document.querySelector(slideInSelector);
+  const panel = document.querySelector(`${slideInSelector} .secondary-pane`);
+  if (!host || !panel) return;
+
+  host.classList.remove('secondary-open');
+  panel.setAttribute('aria-hidden', 'true');
+  panel.innerHTML = '';
+}
+
+function attachSecondaryAutoClose(slideInSelector) {
+  const host = document.querySelector(slideInSelector);
+  if (!host) return;
+
+  const mo = new MutationObserver((mutations, obs) => {
+    const removedExpanded =
+      !host.classList.contains('expanded') &&
+      mutations.some(m => m.attributeName === 'class' &&
+                          m.oldValue && m.oldValue.includes('expanded'));
+
+    if (removedExpanded) {
+      // Prevent re-entrancy while we mutate classes/attributes
+      obs.disconnect();
+      closeMenuSecondary(slideInSelector);
+      // Re-arm after the current frame
+      requestAnimationFrame(() => {
+        obs.observe(host, { attributes: true, attributeFilter: ['class'], attributeOldValue: true });
+      });
+    }
+  });
+
+  mo.observe(host, { attributes: true, attributeFilter: ['class'], attributeOldValue: true });
+}
+
+function initSlideInAccordion(slideInSelector, opts = {}) {
+  const root = document.querySelector(slideInSelector);
+  if (!root) return;
+
+  // Resolve mode: html data-attr > opts > default
+  const mode = (root.dataset.sectionMode || opts.mode || 'static').toLowerCase();
+  if (mode === 'static') return; // no collapsing for this slide-in
+
+  const singleOpen = (mode === 'accordion');
+  const sections = Array.from(root.querySelectorAll('.content-section'));
+  if (!sections.length) return;
+
+  // Mark collapsible and set ARIA on headers
+  const observers = new WeakMap();
+
+  function measureOpenHeight(sec) {
+    const content = sec.querySelector('.section-content');
+    if (!content) return;
+    // Set to actual content height so CSS transition has a pixel target
+    content.style.maxHeight = content.scrollHeight + 'px';
+  }
+
+  function openSection(sec, focusHeader = false) {
+    if (sec.classList.contains('is-open')) return;
+
+    if (singleOpen) {
+      sections.forEach(s => { if (s !== sec) closeSection(s); });
+    }
+    sec.classList.add('is-open');
+
+    // NEW: notify the slide-in that a section opened
+    root.dispatchEvent(new CustomEvent('slidein:sectionOpened', { detail: { section: sec } }));
+
+    const header = sec.querySelector('.section-header, h3');
+    const content = sec.querySelector('.section-content');
+    header?.setAttribute('aria-expanded', 'true');
+
+    // Prepare animation target
+    measureOpenHeight(sec);
+
+    // Keep height in sync as content changes
+    if (content && !observers.get(content) && 'ResizeObserver' in window) {
+      const ro = new ResizeObserver(() => {
+        if (sec.classList.contains('is-open')) {
+          content.style.maxHeight = content.scrollHeight + 'px';
+        }
+      });
+      ro.observe(content);
+      observers.set(content, ro);
+    }
+
+    if (focusHeader && header) header.focus();
+  }
+
+  function closeSection(sec) {
+    if (!sec.classList.contains('is-open')) return;
+    const header = sec.querySelector('.section-header, h3');
+    const content = sec.querySelector('.section-content');
+    header?.setAttribute('aria-expanded', 'false');
+
+    // Lock to current height first, then animate to 0
+    if (content) {
+      content.style.maxHeight = content.scrollHeight + 'px';
+      requestAnimationFrame(() => { content.style.maxHeight = '0px'; });
+    }
+    sec.classList.remove('is-open');
+  }
+
+  function toggleSection(sec) {
+    if (sec.classList.contains('is-open')) closeSection(sec);
+    else openSection(sec);
+  }
+
+  // Make headers interactive
+  sections.forEach((sec, idx) => {
+    sec.classList.add('collapsible');
+    const header = sec.querySelector('.section-header, h3');
+    if (!header) return;
+    header.setAttribute('role', 'button');
+    header.setAttribute('tabindex', '0');
+    header.setAttribute('aria-expanded', 'false');
+
+    header.addEventListener('click', () => toggleSection(sec));
+    header.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSection(sec); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); openNext(idx); }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); openPrev(idx); }
+    });
+  });
+
+  function openNext(i){ const s = sections[i+1]; if (s) openSection(s, true); }
+  function openPrev(i){ const s = sections[i-1]; if (s) openSection(s, true); }
+
+  // Initial state: open the first; others closed
+  openSection(sections[0]);
+  sections.slice(1).forEach(closeSection);
+
+  // Public API (optional)
+  root._accordion = { openSection, closeSection, toggleSection };
+}  
+
+function renderThemesUI() {
+  const host = document.getElementById('themes-section');
+  if (!host) return;
+
+  host.innerHTML = `
+    <ul class="themes-list">
+      ${THEMES.map(t => `
+        <li class="theme-item" data-tid="${t.id}">
+          <button type="button" class="theme-link">
+            <span class="theme-icon" aria-hidden="true">?</span>
+            <span class="theme-label">${t.title}</span>
+          </button>
+        </li>
+      `).join('')}
+    </ul>
+  `;
+
+  // Click → mark active and open secondary content
+  host.addEventListener('click', (e) => {
+    const btn = e.target.closest('.theme-link');
+    if (!btn) return;
+
+    const li = btn.closest('.theme-item');
+    const tid = li.dataset.tid;
+    const theme = THEMES.find(x => x.id === tid);
+    if (!theme) return;
+
+    // switch active state to this row
+    host.querySelectorAll('.theme-item.active').forEach(n => n.classList.remove('active'));
+    li.classList.add('active');
+
+    openMenuSecondary('#discover-connections', {
+      title: theme.title,
+      paragraphs: theme.paragraphs
+    });
+  });
+}
+
+function clearThemesActiveState() {
+  const list = document.querySelector('#themes-section .themes-list');
+  if (!list) return;
+  list.querySelectorAll('.theme-item.active').forEach(n => n.classList.remove('active'));
+}
+
+function renderTagsForCurrentGroup() {
+  // Renders ALL tags from ALL groups. Group selection is enforced via disabled state.
+  const ul = document.getElementById('tags-visible');
+  if (!ul) return;
+  ul.innerHTML = '';
+
+  TAG_GROUPS.forEach(group => {
+    group.tags.forEach(tag => {
+      const li = document.createElement('li');
+      li.dataset.tag = tag;
+      li.dataset.group = group.id;
+      li.textContent = tag;
+
+      if (activeTags.has(tag)) {
+        const color = tagColors[tag];
+        li.classList.add('active');
+        li.style.borderColor = color;
+        li.style.color = color;
+        li.style.boxShadow = `${color}66 0 0 8px`;
+      }
+      ul.appendChild(li);
+    });
+  });
+  // After (re)render, enforce availability rules (AND logic  group gating)
+  updateTagAvailability();
+}
+
+function markActiveGroupButton() {
+  document
+    .querySelectorAll('.tag-group-switch .group-btn')
+    .forEach(b => b.classList.toggle('is-active', b.dataset.groupId === currentTagViewGroupId));
+}
+
+function clearAllTagSelectionsUI() {
+  document.querySelectorAll('#discover-connections .tags li.active').forEach(n => {
+    n.classList.remove('active');
+    n.style.borderColor = '#000';
+    n.style.color = '';
+    n.style.boxShadow = '';
+  });
+}
+
+
+// --- Slide-ins: expand/collapse ---
+function initSlideIns() {
+  const container = document.getElementById('slide-ins');
+  if (!container) return;
+
+  // Prevent duplicate listeners
+  if (container.dataset.inited === '1') return;
+  container.dataset.inited = '1';
+
+  //container.classList.add('visible');
+
+  container.addEventListener('click', (e) => {
+    const wrap = e.target.closest('.slide-in');
+    if (!wrap) return;
+
+    if (e.target.matches('.vertical-text')) {
+      document.querySelectorAll('#slide-ins .slide-in').forEach(el => {
+        if (el === wrap) {
+          el.classList.add('expanded');
+          el.querySelector('.vertical-content')?.classList.add('visible');
+          el.querySelector('.close-btn').textContent = '×';
+        } else {
+          el.classList.remove('expanded', 'secondary-open'); // collapse others + secondary
+          el.querySelector('.vertical-content')?.classList.remove('visible');
+          const b = el.querySelector('.close-btn');
+          if (b) b.textContent = '→';
+        }
+      });
+    }
+
+    if (e.target.matches('.close-btn')) {
+      // stop other click handlers from reacting to the same click
+      e.stopPropagation();
+
+      wrap.classList.remove('expanded', 'secondary-open');
+
+      clearThemesActiveState();
+      
+      wrap.querySelector('.vertical-content')?.classList.remove('visible');
+      e.target.textContent = '←';
+
+      // also hide secondary, just in case
+      const panel = wrap.querySelector('.secondary-pane');
+      if (panel) {
+        panel.setAttribute('aria-hidden', 'true');
+        panel.innerHTML = '';
+      }
+    }
+  });
+}
+
+// END TAG SETUP
+
+// --- Full-screen overlay menu (burger) ---
+function initOverlayMenu() {
+  const burger = document.getElementById('burger-btn');
+  const overlay = document.getElementById('overlay-menu');
+  const closeBtn = document.getElementById('overlay-close');
+  const mainItems = overlay?.querySelectorAll('.menu-item');
+  const subMenu = document.getElementById('sub-menu');
+
+  const subItemsMap = {
+    viralatmospheres: ['Blah','Blub'],
+    about: ['The Research Project','Summer School','The Book'],
+    projects: ['Project One','Project Two','Project Three'],
+    team: ['Member One','Member Two','Member Three']
+  };
+
+  function setActiveMenu(target){
+    if (!overlay) return;
+    mainItems.forEach(i => i.classList.remove('active'));
+    overlay.querySelector(`.menu-item[data-target="${target}"]`)?.classList.add('active');
+    subMenu.innerHTML = '';
+    (subItemsMap[target] || []).forEach(text => {
+      const div = document.createElement('div');
+      div.textContent = text;
+      div.classList.add('sub-item');
+      div.addEventListener('click', () => {
+        subMenu.querySelectorAll('.sub-item').forEach(i=>i.classList.remove('active'));
+        div.classList.add('active');
+      });
+      subMenu.appendChild(div);
+    });
+  }
+
+  burger?.addEventListener('click', () => { overlay.classList.add('active'); setActiveMenu('viralatmospheres'); });
+  closeBtn?.addEventListener('click', () => overlay.classList.remove('active'));
+  mainItems?.forEach(i => i.addEventListener('click', () => setActiveMenu(i.dataset.target)));
+}
+
+// Run once DOM is ready (keep your existing DOMContentLoaded handlers)
+document.addEventListener('DOMContentLoaded', () => {
+  initSlideIns();
+  initOverlayMenu();
+  refreshSlideInsVisibility();
+
+  updateRightCounterOffset();
+
+  const slideIns = document.getElementById('slide-ins');
+  if (slideIns) {
+    ['transitionrun','transitionstart','transitionend'].forEach(evt => {
+      slideIns.addEventListener(evt, (e) => {
+        if (e.propertyName === 'transform' || !e.propertyName) {
+          requestAnimationFrame(updateRightCounterOffset);
+        }
+      });
+    });
+  }
+  window.addEventListener('resize', updateRightCounterOffset);
+});
+
+function applyHeaderOffset() {
+  const header = document.querySelector('header');
+  if (!header) return;
+  const h = Math.ceil(header.getBoundingClientRect().height); // includes borders
+  document.documentElement.style.setProperty('--header-h', `${h}px`);
+
+  // If the grid is already mounted, make sure the camera is still in legal bounds
+  if (window.gridObject?.clampCameraToBounds) {
+    window.gridObject.clampCameraToBounds(true);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  applyHeaderOffset();
+
+  // Update on window resize
+  window.addEventListener('resize', applyHeaderOffset);
+
+  // Update when the header’s size changes (fonts, dynamic content, etc.)
+  const header = document.querySelector('header');
+  if (header && 'ResizeObserver' in window) {
+    const ro = new ResizeObserver(applyHeaderOffset);
+    ro.observe(header);
+  }
+});
+
+// === Selected Tags Bottom Bar ===
+function renderSelectionBar() {
+  const bar  = document.getElementById('selection-bar');
+  const list = document.getElementById('selected-tags-list');
+  const ws   = document.getElementById('workspace');
+  if (!bar || !list || !ws) return;
+
+  list.innerHTML = '';
+
+  if (!window.activeTags || activeTags.size === 0) {
+    bar.classList.remove('show');
+    ws.classList.remove('has-selection-bar');
+    return;
+  }
+
+  // Create a pill for each selected tag
+  [...activeTags].forEach(tag => {
+    const li = document.createElement('li');
+    li.dataset.tag = tag;
+    li.innerHTML = `${tag} <span class="x" aria-hidden="true">×</span>`;
+    const color = window.tagColors?.[tag];
+    if (color) {
+      li.classList.add('active');
+      li.style.borderColor = color;
+      li.style.color = color;
+      li.style.boxShadow = `${color}66 0 0 8px`;
+    }
+    list.appendChild(li);
+  });
+
+  bar.classList.add('show');
+  ws.classList.add('has-selection-bar');
+}
+
+function initSelectionBar() {
+  const bar = document.getElementById('selection-bar');
+  if (!bar || bar.dataset.inited === '1') return;
+  bar.dataset.inited = '1';
+
+  // Clicking a pill removes that tag from the selection
+  bar.addEventListener('click', (e) => {
+    const li = e.target.closest('li[data-tag]');
+    if (!li) return;
+    const tag = li.dataset.tag;
+    if (window.activeTags && activeTags.has(tag)) {
+      activeTags.delete(tag);
+      // keep the rest of the UI consistent
+      if (typeof renderTagsForCurrentGroup === 'function') renderTagsForCurrentGroup();
+      if (typeof updateTagAvailability === 'function') updateTagAvailability();
+      if (typeof updateObjectGlowsWithGradient === 'function') updateObjectGlowsWithGradient();
+      if (typeof scheduleOffgridUpdate === 'function') scheduleOffgridUpdate();
+      renderSelectionBar();
+    }
+  });
+
+  // First paint (empty)
+  renderSelectionBar();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Initial sync (in case something is preselected)
+  syncDetailTagHighlights();
+
+  // Keep detail pills in sync when panels/cards are re-rendered
+  const detailRoot =
+    document.getElementById('right-side') ||
+    document.getElementById('detail') ||
+    document.body;
+
+  const mo = new MutationObserver(() => {
+    syncDetailTagHighlights();
+  });
+  mo.observe(detailRoot, { childList: true, subtree: true });
+});
+
+
+document.addEventListener('DOMContentLoaded', initSelectionBar);
+
 
 // TODO: content type video
 // TODO: integrate offsetX again
@@ -166,375 +2607,3 @@ let gridWidthCalculated = false;
 // TODO: dynamic cell sizes (not for now)
 // TODO: cell margins (done)
 // TODO: add video, text, image (to be done)
-
-class Grid {
-
-  _grid = Array();
-  gridDimension = {
-    width: 0,
-    height: 0
-  }
-  gridSectionDimension = {
-    'width': 200,
-    'height': 180,
-    'marginX': 60,
-    'marginY': 40,
-    'offsetX': 40,
-  }
-
-  constructor(gridId='grid', objects) {
-    this.gridId = gridId;
-    this.htmlGridElement = document.getElementById(gridId);
-    this.objects = objects;
-    this.createGrid();
-    this.addObjectsRandomly();
-  }
-
-  createGrid() {
-    //console.log(this.objects.length);
-    //console.log(Math.sqrt(this.objects.length));
-
-    let gridSectionCountX = Math.ceil(Math.sqrt(this.objects.length));
-    let gridSectionCountY = Math.ceil(this.objects.length / gridSectionCountX);
-
-    this.gridDimension.width = gridSectionCountX * this.gridSectionDimension.width + (gridSectionCountX-1) * this.gridSectionDimension.marginX;
-    this.gridDimension.height = gridSectionCountY * this.gridSectionDimension.height + (gridSectionCountY-1) * this.gridSectionDimension.marginY;
-
-    let gridToViewportDiffX = this.gridDimension.width - parseInt(window.innerWidth);
-    let gridToViewportDiffY = this.gridDimension.height - parseInt(window.innerHeight);
-
-    // console.log(gridToViewportDiffX, gridToViewportDiffY);
-
-    grid.style.left = `-${Math.floor(gridToViewportDiffX / 2)}px`;
-    grid.style.top = `-${Math.floor(gridToViewportDiffY / 2)}px`;
-
-    //console.log(gridSectionCount);
-
-    for(let row = 0; row < gridSectionCountY; row++) {
-      for(let column = 0; column < gridSectionCountX; column++) {
-        this._grid.push({
-          section_id: `section_${column}_${row}`,
-          x: this.gridSectionDimension.width * column + this.gridSectionDimension.marginX * column,
-          y: this.gridSectionDimension.height * row + this.gridSectionDimension.marginY * row,
-          object_id: '',
-        });
-      }
-    }
-
-    //console.log(this._grid);
-  }
-
-  addObjectsRandomly() {
-    for(const object of this.objects) {
-      let onlyEmptyGridSections = this._grid.filter(gridSection => gridSection.object_id == '');
-      let randomGridSection = Math.floor(Math.random() * (onlyEmptyGridSections.length - 1));
-      
-      onlyEmptyGridSections[randomGridSection].object_id = object.id;
-
-      let diffWidthImageToGrid = this.gridSectionDimension.width - object.width;
-      let diffHeightImageToGrid = this.gridSectionDimension.height - object.height;
-  
-      let randomImageLeft = Math.floor(Math.random() * diffWidthImageToGrid + 1);
-      let randomImageTop = Math.floor(Math.random() * diffHeightImageToGrid + 1);
-
-      object.grid_x = onlyEmptyGridSections[randomGridSection].x + randomImageLeft;
-      object.grid_y = onlyEmptyGridSections[randomGridSection].y + randomImageTop;
-
-      const objectDiv = document.createElement("div");
-      objectDiv.id = object.id;
-      objectDiv.classList.add("object");
-      objectDiv.style.top = `${object.grid_y}px`;
-      objectDiv.style.left = `${object.grid_x}px`;
-      objectDiv.style.width = `${object.width}px`;
-      objectDiv.style.height = `${object.height}px`;
-      objectDiv.style.backgroundImage = `url(${object.image})`;
-      objectDiv.innerHTML = object.text;
-
-      grid.appendChild(objectDiv);
-    }
-
-    // console.log(this._grid);
-    // console.log(this.objects);
-  }
-
-  groupObjects(event) {
-    event.preventDefault();
-    console.log('group objects');
-
-    for(const object of this.objects) {
-
-      const element = document.getElementById(object.id);
-      element.style.transform = '';
-
-      const elementTargetX = object.group_x - object.grid_x;
-      const elementTargetY = object.group_y - object.grid_y;
-
-      element.style.transform = `translate(${elementTargetX}px, ${elementTargetY}px)`;
-    }
-  }
-
-  ungroupObjects(event) {
-    event.preventDefault();
-    console.log('ungroup objects');
-
-    for(const object of this.objects) {
-
-      const element = document.getElementById(object.id);
-      element.style.transform = '';
-
-      /*
-      const elementTargetX = object.grid_x - object.group_x;
-      const elementTargetY = object.grid_y - object.group_y;
-
-      element.style.transform = `translate(${elementTargetX}px, ${elementTargetY}px)`;
-      */
-    }
-    
-  }
-
-  resetGrid(event) {
-    grid.style.top = "0px";
-    grid.style.left = "0px";
-  }
-
-  addObjectToPosition(position) {
-
-  }
-
-  addObjectRandomly() {
-
-  }
-
-  shuffleObjects() {
-
-  }
-}
-
-const gridObject = new Grid('grid', objects);
-
-grid.style.width = `${gridObject.gridDimension.width}px`;
-grid.style.height = `${gridObject.gridDimension.height}px`;
-
-// console.log(grid.style.width, grid.style.height);
-
-const linkGroup = document.getElementById('link-group');
-const linkUngroup = document.getElementById('link-ungroup');
-const resetGrid = document.getElementById('reset-grid');
-
-linkGroup.onclick = gridObject.groupObjects.bind(gridObject);
-linkUngroup.onclick = gridObject.ungroupObjects.bind(gridObject);
-resetGrid.onclick = gridObject.resetGrid.bind(gridObject);
-
-
-window.addEventListener('DOMContentLoaded', () => {
-  linkGroup.click();
-
-  // Wait ~500ms for the transition to finish (adjust as needed)
-  setTimeout(() => {
-    resetGrid.click();
-
-    const objectsCollection = document.querySelectorAll('.object');
-
-    objectsCollection.forEach(obj => {
-      obj.addEventListener('click', () => {
-        // Replace with your desired URL logic
-        window.location.href = 'demo-sidebars.html';
-      });
-    });
-
-  }, 1000);
-});
-
-
-/*
-for(let i=0; i<4; i++) {
-  for(let j=0; j<10; j++) {
-    const gridSection = document.createElement("div");
-    gridSection.classList.add("grid-section");
-    gridSection.style.top = gridSectionDimension.height * i + i*gridSectionDimension.marginY + "px";
-    gridSection.style.left = gridSectionDimension.width * j + j*gridSectionDimension.marginX + i%2*gridSectionDimension.offsetX + "px";
-    gridSection.style.width = `${gridSectionDimension.width}px`;
-    gridSection.style.height = `${gridSectionDimension.height}px`;
-
-    if(!gridWidthCalculated) {
-      gridDimension.width = gridDimension.width + gridSectionDimension.width + gridSectionDimension.marginX;
-    }
-
-    let randomImageWidth = Math.floor(Math.random() * (80 - 50 + 1)) + 50;
-    let randomImageHeight = Math.floor(Math.random() * (130 - 50 + 1)) + 50;
-
-    let diffWidthImageToGrid = gridSectionDimension.width - randomImageWidth;
-    let diffHeightImageToGrid = gridSectionDimension.height - randomImageHeight;
-
-    let randomImageLeft = Math.floor(Math.random() * diffWidthImageToGrid + 1);
-    let randomImageTop = Math.floor(Math.random() * diffHeightImageToGrid + 1);
-
-    const image = document.createElement("div");
-    image.classList.add("image");
-    image.style.top = `${randomImageTop}px`;
-    image.style.left = `${randomImageLeft}px`;
-    image.style.width = `${randomImageWidth}px`;
-    image.style.height = `${randomImageHeight}px`;
-    image.style.backgroundImage = `url(https://picsum.photos/${randomImageWidth}/${randomImageHeight})`;  
-    gridSection.appendChild(image);
-
-    grid.appendChild(gridSection);
-  }
-  gridWidthCalculated = true;
-  gridDimension.height = gridDimension.height + gridSectionDimension.height + gridSectionDimension.marginY;
-}
-
-grid.style.width = `${gridDimension.width}px`;
-grid.style.height = `${gridDimension.height}px`;
-
-const gridSections = grid.children;
-*/
-
-let mouseDown = false;
-let mouseDragging = false;
-let lastMouseX = 0;
-let lastMouseY = 0;
-
-grid.addEventListener("mousedown", (e) => {
-  mouseDown = true;
-  lastMouseX = e.clientX;
-  lastMouseY = e.clientY;
-});
-
-grid.addEventListener("mousemove", (e) => {
-  if(mouseDown) {
-
-    document.body.style.cursor = "grabbing";
-
-    mouseDragging = true;
-    mouseDeltaX = e.clientX - lastMouseX;
-    mouseDeltaY = e.clientY - lastMouseY;
-
-    //console.log(mouseDeltaX, mouseDeltaY);
-    
-    let newGridX = parseInt(grid.style.left) + mouseDeltaX;
-    let newGridY = parseInt(grid.style.top) + mouseDeltaY;
-
-    //console.log(groups);
-
-    /*
-    for(let group in groups) {
-      groups[group].x = groups[group].x + mouseDeltaX;
-      groups[group].y = groups[group].y + mouseDeltaY;
-    }
-    */
-
-    objects.forEach((object, index) => {
-      object.group_x = object.group_initial_x - parseInt(grid.style.left);
-      object.group_y = object.group_initial_y - parseInt(grid.style.top);
-    });
-
-    // console.log(objects);
-
-    // console.log(newGridX, newGridY);
-
-    if(newGridY < 0 && newGridY > (parseInt(window.innerHeight) - parseInt(grid.style.height))) {
-      grid.style.top = `${newGridY}px`;
-    }
-
-    if(newGridX < 0 && newGridX > (parseInt(window.innerWidth) - parseInt(grid.style.width))) {
-      grid.style.left = `${newGridX}px`;
-    }
-
-    lastMouseX = e.clientX;
-    lastMouseY = e.clientY;
-  }
-});
-
-grid.addEventListener("mouseup", (e) => {
-  mouseDown = false;
-  mouseDragging = false;
-  document.body.style.cursor = "default";
-});
-
-function zoomOut() {
-
-  Array.from(gridSections).forEach((gridSection, index) => {
-
-    gridSection.style.left = `${parseInt(gridSection.style.left) * zoomOutFactor}px`;
-    gridSection.style.top = `${parseInt(gridSection.style.top) * zoomOutFactor}px`;
-    gridSection.style.width = `${parseInt(gridSection.style.width) * zoomOutFactor}px`;
-    gridSection.style.height = `${parseInt(gridSection.style.height) * zoomOutFactor}px`;
-
-    image = gridSection.getElementsByClassName("image")[0];
-    image.style.width = `${parseInt(image.style.width) * zoomOutFactor}px`;
-    image.style.height = `${parseInt(image.style.height) * zoomOutFactor}px`;
-  })
-
-  gridDimension.width *= zoomOutFactor;
-  grid.style.width = `${gridDimension.width}px`;
-
-  gridDimension.height *= zoomOutFactor;
-  grid.style.height = `${gridDimension.height}px`;
-
-  // console.log(grid.style.width);
-  // console.log(grid.style.height);
-}
-
-function zoomIn() {
-
-  Array.from(gridSections).forEach((gridSection, index) => {
-
-    gridSection.style.left = `${parseInt(gridSection.style.left) * zoomInFactor}px`;
-    gridSection.style.top = `${parseInt(gridSection.style.top) * zoomInFactor}px`;
-    gridSection.style.width = `${parseInt(gridSection.style.width) * zoomInFactor}px`;
-    gridSection.style.height = `${parseInt(gridSection.style.height) * zoomInFactor}px`;
-
-    image = gridSection.getElementsByClassName("image")[0];
-    image.style.width = `${parseInt(image.style.width) * zoomInFactor}px`;
-    image.style.height = `${parseInt(image.style.height) * zoomInFactor}px`;
-  })
-
-  gridDimension.width *= zoomInFactor;
-  grid.style.width = `${gridDimension.width}px`;
-
-  gridDimension.height *= zoomInFactor;
-  grid.style.height = `${gridDimension.height}px`;
-
-  // console.log(grid.style.width);
-  // console.log(grid.style.height);
-}
-
-
-/*
-let lastGroupPositionX = 0;
-let lastGroupPositionY = 0;
-let lastGroupId = 0;
-
-objects.forEach((object, index) => {
-  const objectDiv = document.createElement("div");
-  objectDiv.classList.add("object");
-
-  //const positionX = 0;
-  //const positionY = 0;
-  
-  const positionX = Math.floor(Math.random() * 80);
-  const positionY = Math.floor(Math.random() * 80);
-  
-  //objectDiv.style.backgroundImage = `url(${object.image})`;
-  objectDiv.style.backgroundColor = '#' + object.color;
-  objectDiv.style.width = '50px';
-  objectDiv.style.height = '50px';
-  objectDiv.style.top = `${positionX}px`;
-  objectDiv.style.left = `${positionY}px`;
-  
-  console.log(`${object.groupId}`);
-  console.log(`${positionX} ${positionY}`);
-  console.log(`${objectDiv.style.width} ${objectDiv.style.height}`);
-  
-  container.appendChild(objectDiv);
-});
-*/
-
-/*
-function ungroupObjects() {
-  Array.from(container.children).forEach((object, index) => {
-    console.log(object);
-  })
-}
-*/
