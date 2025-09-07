@@ -3,31 +3,213 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dynamic Object Placements</title>
+  <title>Viral Atmospheres</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
 </head>
 <body>
+  <header>
+    <div class="header-left">Research Project in Diepsloot, South Africa</div>
+    <div class="header-center">Viral Atmospheres</div>
+    <div class="header-right">
+      <!-- swap to a text button if you don't have the svg yet -->
+      <img src="img/burger-menu.svg" alt="Menu" id="burger-btn" />
+    </div>
+  </header>
 
-  <div id="grid" style="left:0px; top:0px">
+  <div id="workspace">
+    <div id="grid-shell">
+      <div id="grid"></div>
+
+      <!-- Off-grid counters (same visual style as demo-sidebars badges) -->
+      <div id="offgrid-top" class="count-invisible-objects top">&uarr; <span class="value">0</span> Elements</div>
+      <div id="offgrid-bottom" class="count-invisible-objects bottom"><span class="value">0</span> Elements &uarr;</div>
+      <div id="offgrid-left"  class="count-invisible-objects left"><span class="rot"><span class="value">0</span> Elements ↑</span></div>
+      <div id="offgrid-right" class="count-invisible-objects right"><span class="rot"><span class="value">0</span> Elements ↑</span></div>
+
+      <!-- Top-left controls -->
+      <div id="fab-top-left" class="fab-stack">
+        <button id="fab-group" class="fab" title="Group" aria-label="Group">
+          <!-- "group" icon: overlapping circles -->
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12.5a4.5 4.5 0 1 1 0-9a4.5 4.5 0 0 1 0 9Zm6 8a4.5 4.5 0 1 1 0-9a4.5 4.5 0 0 1 0 9Z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M13.2 6.2a4.5 4.5 0 1 1 0 7.6" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        </button>
+        <button id="fab-cluster" class="fab" title="Cluster" aria-label="Cluster">
+          <!-- "cluster" icon: central node with satellites -->
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="currentColor"/><circle cx="5" cy="7" r="2" fill="currentColor"/><circle cx="19" cy="7" r="2" fill="currentColor"/><circle cx="6" cy="18" r="2" fill="currentColor"/><circle cx="18" cy="18" r="2" fill="currentColor"/><path d="M7 8l4 3M17 8l-4 3M7 17l4-2M17 17l-4-2" stroke="currentColor" stroke-width="1.4" fill="none"/></svg>
+        </button>
+        <button id="fab-ungroup" class="fab" title="Ungroup (Masonry)" aria-label="Ungroup">
+          <!-- "masonry" icon: bricks -->
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="8" height="4" rx="1" fill="currentColor"/><rect x="13" y="5" width="8" height="4" rx="1" fill="currentColor"/><rect x="3" y="11" width="5" height="4" rx="1" fill="currentColor"/><rect x="9" y="11" width="12" height="4" rx="1" fill="currentColor"/><rect x="3" y="17" width="8" height="4" rx="1" fill="currentColor"/><rect x="13" y="17" width="8" height="4" rx="1" fill="currentColor"/></svg>
+        </button>
+        <button id="fab-fit-all" class="fab" title="Fit All" aria-label="Fit All">
+          <!-- "fit" icon: four corners -->
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Bottom-left controls -->
+      <div id="fab-bottom-left" class="fab-stack">
+        <button id="fab-zoom-in" class="fab fab-lg" title="Zoom In" aria-label="Zoom In">
+          <!-- big plus -->
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <button id="fab-zoom-out" class="fab fab-lg" title="Zoom Out" aria-label="Zoom Out">
+          <!-- big minus -->
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div id="group-gallery" class="scroll-container-horizontal" data-allow-scroll>
+      <!-- Back button to return to grid -->
+      <div id="content-back-button" title="Back">←</div>
+    
+      <!-- Gallery-specific counters (independent from grid counters) -->
+      <div class="count-invisible-objects left"><span class="rot"><span class="value">0</span> Elements ↑</span></div>
+      <div class="count-invisible-objects right"><span class="rot"><span class="value">0</span> Elements ↑</span></div>
+    
+      <div class="wide-content" id="canvas">
+        <div class="title-box">
+          <h2>Covid-19<br> in Diepsloot</h2>
+          <h3>Paradoxies of State (Un-)Care<br> in Diepsloot, South Africa</h3>
+          <a id="scroll-on" class="button" href="#gallery-scroll">
+            <span class="text">Explore</span><span class="icon">→</span>
+          </a>
+        </div>
+    
+        <div class="gallery-box" id="gallery-scroll">
+          <div class="column">
+            <video class="item" width="100" height="150" loop muted playsinline
+                   onmouseover="this.play()" onmouseout="this.pause()">
+              <source src="video/5512609-hd_1080_1920_25fps.mp4" type="video/mp4">
+              Your browser does not support the video tag.
+            </video>
+            <img class="item" src="https://picsum.photos/200/300" />
+            <div class="item text"><span class="scaling-text">We are like a wound that refuses to go</span></div>
+          </div>
+    
+          <div class="column">
+            <div class="item text"><span class="scaling-text">We are like a wound that refuses to go</span></div>
+            <img class="item" src="https://picsum.photos/120/190?p=3" />
+          </div>
+    
+          <div class="column">
+            <img class="item" src="https://picsum.photos/150/220?p=4" />
+            <video class="item" width="150" height="200" loop muted playsinline
+                   onmouseover="this.play()" onmouseout="this.pause()">
+              <source src="video/5512609-hd_1080_1920_25fps.mp4" type="video/mp4">
+            </video>
+          </div>
+
+          <div class="column">
+            <img class="item" src="https://picsum.photos/150/220?p=4" />
+            <video class="item" width="150" height="200" loop muted playsinline
+                   onmouseover="this.play()" onmouseout="this.pause()">
+              <source src="video/5512609-hd_1080_1920_25fps.mp4" type="video/mp4">
+            </video>
+          </div>
+
+          <div class="column">
+            <img class="item" src="https://picsum.photos/150/220?p=4" />
+            <video class="item" width="150" height="200" loop muted playsinline
+                   onmouseover="this.play()" onmouseout="this.pause()">
+              <source src="video/5512609-hd_1080_1920_25fps.mp4" type="video/mp4">
+            </video>
+          </div>
+
+          <div class="column">
+            <img class="item" src="https://picsum.photos/150/220?p=4" />
+            <video class="item" width="150" height="200" loop muted playsinline
+                   onmouseover="this.play()" onmouseout="this.pause()">
+              <source src="video/5512609-hd_1080_1920_25fps.mp4" type="video/mp4">
+            </video>
+          </div>
+
+          <div class="column">
+            <img class="item" src="https://picsum.photos/150/220?p=4" />
+            <video class="item" width="150" height="200" loop muted playsinline
+                   onmouseover="this.play()" onmouseout="this.pause()">
+              <source src="video/5512609-hd_1080_1920_25fps.mp4" type="video/mp4">
+            </video>
+          </div>
+
+          <div class="column">
+            <img class="item" src="https://picsum.photos/150/220?p=4" />
+            <video class="item" width="150" height="200" loop muted playsinline
+                   onmouseover="this.play()" onmouseout="this.pause()">
+              <source src="video/5512609-hd_1080_1920_25fps.mp4" type="video/mp4">
+            </video>
+          </div>
+        </div> <!-- /.gallery-box -->
+      </div> <!-- /.wide-content -->
+    </div> <!-- /#group-gallery -->
+
+    <aside id="slide-ins">
+      <!-- data-section-mode one of "accordion", "collapsible", "static" -->
+      <div class="slide-in" id="discover-connections" data-mode="menu" data-section-mode="accordion">
+        <div class="slide-in-handle">
+          <button class="close-btn" type="button">&larr;</button>
+          <span class="vertical-text">Discover Connections</span>
+        </div>
+        <!-- NEW: body wrapper with two columns: secondary + main -->
+        <div class="slide-in-body">
+          <!-- NEW: secondary panel (hidden by default) -->
+          <aside class="secondary-pane" aria-hidden="true"></aside>
+          <div class="vertical-content">
+            <div class="content-section">
+              <h3>Tags</h3>
+              <div class="section-content">
+                <!-- Give this UL a stable target; we'll fill it dynamically -->
+                <ul class="tags" id="tags-filter"></ul>
+              </div>
+            </div>
+            <div class="content-section">
+              <h3>Themes</h3>
+              <div class="section-content" id="themes-section">
+                <!-- <ul class="tags"><li>Essential Work</li><li>Mobility</li></ul> -->
+              </div>
+            </div>
+            <div class="content-section">
+              <h3>Project</h3>
+              <div class="section-content"><ul class="tags"><li>Covid-19</li><li>Memory</li></ul></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Fixed bottom selection bar (spans to the left edge of closed slide-in) -->
+    <div id="selection-bar" aria-live="polite" aria-label="Selected tags">
+      <ul class="tags" id="selected-tags-list"></ul>
+    </div>
+
   </div>
 
-  <!-- <div id="object-container"></div> -->
-  
-  
-<div id="controls">
-  <a href='#' id="link-group">group</a>
-  <a href='#' id="link-ungroup">ungroup</a>
-  <a href='#' onclick='zoomOut(); return false;'>zoom out</a>
-  <a href='#' onclick='zoomIn(); return false;'>zoom in</a>
-  <a href='#' id="reset-grid">reset grid</a>
-</div>
+  <div id="overlay-menu">
+    <div class="overlay-header">
+      <div class="overlay-title">Viral Atmospheres</div>
+      <button id="overlay-close" type="button">×</button>
+    </div>
+    <div class="overlay-content">
+      <div class="main-menu">
+        <div class="menu-item" data-target="viralatmospheres">Viral Atmospheres</div>
+        <div class="menu-item" data-target="about">About MoRePPaR</div>
+        <div class="menu-item" data-target="projects">Research Projects</div>
+        <div class="menu-item" data-target="team">Our Team</div>
+      </div>
+      <div class="sub-menu" id="sub-menu"></div>
+    </div>
+    <div class="overlay-footer">
+      <a href="#" target="_blank">Impressum</a>
+      <a href="#" target="_blank">Data Security</a>
+      <a href="#" target="_blank">Contact</a>
+    </div>
+  </div>
 
-  <script src="script.js"></script>
-  <script type="text/javascript">
-
-  </script>
+  <script type="module" src="script.js"></script>
 </body>
 </html>
