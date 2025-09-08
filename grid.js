@@ -10,6 +10,13 @@ function fitTextToContainer(container, maxFontSize = 100, minFontSize = 6) {
   span.style.whiteSpace = 'pre-wrap';
   span.style.wordWrap = 'break-word';
 
+    // Account for container padding so text fits inside the card
+  const cs = getComputedStyle(container);
+  const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+  const padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+  const availW = Math.max(0, container.clientWidth  - padX);
+  const availH = Math.max(0, container.clientHeight - padY);
+
   while (low <= high) {
     const mid = (low + high) >> 1;
     span.style.fontSize = `${mid}px`;
@@ -388,7 +395,7 @@ export class Grid {
         // window.location.href = url;
 
         // Plain navigation:
-        window.location.href = 'demo-sidebars.html';
+        window.openObjectDetail?.({ objectId: obj.id, from: this.currentState, gid: obj.groupId });
       });
     
       this.currentState = 'detail';
@@ -404,8 +411,8 @@ export class Grid {
       const el = document.getElementById(obj.id);
     
       // Detail size = half of ungrouped in both dimensions
-      const width  = baseSize * 0.75;
-      const height = baseSize * 0.75;
+      const width  = 500;
+      const height = 500;
     
       // Cluster/group center in world space
       const g = this.groups?.[obj.groupId];
@@ -503,6 +510,16 @@ export class Grid {
           ev.stopPropagation();
           this.exitDetail();
         });
+
+        // Open full-page object detail from clustered detail card
+        const openLink = panel.querySelector('.detail-link');
+        if (openLink) {
+          openLink.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            window.openObjectDetail?.({ objectId: obj.id, from: 'clustered', gid: obj.groupId });
+          });
+        }
 
         // Detail tags (clustered): paint on open and repaint after clicks
         const tagList = panel.querySelector('.detail-tags');
@@ -626,6 +643,13 @@ export class Grid {
         panel.querySelector('.detail-close')?.addEventListener('click', (ev) => {
           ev.stopPropagation();
           this.exitDetail();
+        });
+
+        // Open full-page object detail from clustered detail card
+        panel.querySelector('.detail-link')?.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          window.openObjectDetail?.({ objectId: obj.id, from: 'clustered', gid: obj.groupId });
         });
       };
 
@@ -821,7 +845,8 @@ export class Grid {
           objectDiv.dataset.type = 'text';
           objectDiv.classList.add('text');
           const span = document.createElement("span");
-          span.innerText = object.text;
+          span.className = 'scaling-text';
+          span.textContent = object.text;
           objectDiv.appendChild(span);
         }
 
@@ -846,17 +871,23 @@ export class Grid {
             v.currentTime = 0;
           });
         }
-        
+
         if (object.type === 'audio') {
-          const a = document.createElement("audio");
-          a.src = object.audio;
-          a.controls = true;
-          a.preload = "none";
-          a.style.position = "absolute";
-          a.style.left = "0";
-          a.style.bottom = "0";
-          a.style.width = "100%";
-          objectDiv.appendChild(a);
+          objectDiv.classList.add('audio');            // so we can target it
+          objectDiv.dataset.audioSrc = object.audio;   // WaveSurfer will read from here
+        
+          const wave = document.createElement('div');
+          wave.className = 'wave';
+          wave.id = `wave_${object.id}_o`;               // unique per tile
+        
+          // place at the bottom of the tile
+          wave.style.position = 'absolute';
+          wave.style.left = '0';
+          wave.style.bottom = '0';
+          wave.style.width = '100%';
+          wave.style.height = '50px';
+        
+          objectDiv.appendChild(wave);
         }
         
         objectDiv.dataset.tags = object.tags.join(",");
@@ -1682,7 +1713,7 @@ export class Grid {
             } else if (this.currentState === 'clustered' && !(this._detail && this._detail.active)) {
               this.enterClusterDetail?.(clickedId);
             } else if (this.currentState === 'ungrouped' && !(this._detail && this._detail.active)) {
-              this.enterDetail(clickedId, { size: 400, margin: 80 });
+              this.enterDetail(clickedId, { size: 500, margin: 80 });
             }
         }
         p.clickCandidateId = null;
