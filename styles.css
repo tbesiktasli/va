@@ -61,6 +61,10 @@
     transition: transform 0.5s ease, width 0.4s ease, height 0.4s ease;
   }
 
+  .object.audio {
+    background-color: inherit;
+  }
+
   /* During zoom, keep width/height animated but freeze transform animations */
   body.zooming #grid .object {
     transition: width 0.4s ease, height 0.4s ease !important; /* no transform here */
@@ -81,6 +85,44 @@
     align-items: center;         /* vertical centering */
     justify-content: center;     /* horizontal centering */
     text-align: center;          /* center multi-line text */
+  }
+
+    /* Grid view: reuse gallery text styling */
+  #grid .object.text {
+    box-sizing: border-box;               /* keep absolute size even with padding */
+    border: 1px solid #1d1d1d;
+    padding: 20px;
+    background-color: #fff;
+
+    /* same serif look as gallery text */
+    font-family: "Noto Serif Display", serif;
+    font-optical-sizing: auto;
+    font-weight: 400;
+    font-style: normal;
+    font-variation-settings: "wdth" 100;
+  }
+
+  #grid .object.text .scaling-text {
+    display: block;
+    max-width: 100%;
+    white-space: normal;
+    word-break: break-word;
+    hyphens: auto;
+    line-height: 1.1;
+  }
+
+  /* WaveSurfer in grid audio tiles */
+  #grid .object.audio .wave {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    height: 50px; /* matches WS height */
+  }
+
+  /* If your tiles can be very short, keep controls on top of content */
+  #grid .object.audio {
+    overflow: hidden;
   }
 
     /* Detail panel overlay inside the expanded card */
