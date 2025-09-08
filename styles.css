@@ -1404,3 +1404,34 @@ header {
 #group-gallery > .count-invisible-objects .rot.has-breakdown .value {
   margin-right: 0;
 }
+
+/* === Ken Burns (pan + subtle zoom) === */
+.kb-wrap { position: relative; overflow: hidden; }
+.kb-img  { display:block; width:100%; height:100%; object-fit:cover; transform-origin:center; will-change: transform; }
+
+/* Animate only on hover (or focus for keyboard users) */
+.kb-wrap:hover .kb-img,
+.kb-wrap:focus-within .kb-img {
+  animation: kb-pan var(--kb-duration, 12s) linear infinite alternate;
+}
+
+@keyframes kb-pan {
+  from {
+    transform:
+      translate(var(--kb-x0, 0%), var(--kb-y0, 0%))
+      scale(var(--kb-s0, 1.06));
+  }
+  to {
+    transform:
+      translate(var(--kb-x1, 0%), var(--kb-y1, 0%))
+      scale(var(--kb-s1, 1.12));
+  }
+}
+
+/* Accessibility: disable motion if user prefers reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .kb-img.kb-anim {
+    animation: none !important;
+    transform: none !important;
+  }
+}
