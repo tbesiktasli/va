@@ -965,6 +965,7 @@ function refreshSlideInsVisibility() {
     // 3) Bind fade-ins, counters, WaveSurfer (IO attaches to what's in the DOM now)
     window.__galleryIO__?.onOpen?.();
     window.__galleryVideos__?.onOpen?.();
+    window.__galleryImages__?.onOpen?.();
   
     // 4) Push a history state so browser Back closes the gallery
     try {
@@ -989,6 +990,7 @@ function refreshSlideInsVisibility() {
     // 2) Tear down observers + WaveSurfer instances
     window.__galleryIO__?.onClose?.();
     window.__galleryVideos__?.onClose?.();
+    window.__galleryImages__?.onClose?.();
   
     // 3) Remove all dynamic items/columns so next open is fresh
     const box = groupGalleryEl?.querySelector('.gallery-box');
@@ -1299,8 +1301,8 @@ function refreshSlideInsVisibility() {
       const titleObs = new IntersectionObserver((entries, obs) => {
         entries.forEach(en => {
           if (en.isIntersecting) {
-            en.target.classList.add('visible');
-            obs.unobserve(en.target); // one-shot
+            en.target.classList.add('visible');   // put .visible on the title itself
+            obs.unobserve(en.target);             // one-shot
           }
         });
       }, { root: null, threshold: 0.35, rootMargin: '0px 0px -10% 0px' });
@@ -1316,15 +1318,19 @@ function refreshSlideInsVisibility() {
     const scroller = gg; // #group-gallery is the scroll container (has overflow-x: scroll)
     const itemObs = new IntersectionObserver((entries, obs) => {
       entries.forEach(en => {
-        if (en.isIntersecting) {
-          en.target.classList.add('visible');
-          obs.unobserve(en.target); // one-shot
-        }
+        if (!en.isIntersecting) return;
+        // if the observed node is an <img> that got wrapped later,
+        // add .visible to the nearest .item wrapper:
+        const item = en.target.classList.contains('item')
+          ? en.target
+          : en.target.closest('.item');
+        if (item) item.classList.add('visible');
+        obs.unobserve(en.target);   // one-shot
       });
     }, {
-      root: scroller,                 // observe vs. the actual horizontal scroller
-      threshold: 0.15,                // 10–20% works well
-      rootMargin: '0px'               // no pre-trigger; fires as it truly enters
+      root: scroller,
+      threshold: 0.15,
+      rootMargin: '0px'
     });
 
     // Observe all current items
@@ -1333,8 +1339,11 @@ function refreshSlideInsVisibility() {
 
     // Optional: small stagger for items initially visible at open
     let idx = 0;
-    box.querySelectorAll('.item').forEach(el => {
-      el.style.transitionDelay = `${(idx++ % 6) * 40}ms`; // waves of up to 6
+    box.querySelectorAll('.column > .item, .column img.item').forEach(el => {
+      // Set delay on the actual flex item (wrapper if present)
+      const item = el.classList.contains('item') ? el : el.closest('.item') || el;
+      item.style.transitionDelay = `${(idx++ % 6) * 40}ms`;
+      // Observe the original node; the callback will add .visible to the wrapper
       itemObs.observe(el);
     });
 
@@ -1674,7 +1683,7 @@ function refreshSlideInsVisibility() {
     // IMAGE (allow up to 1.5x intrinsic CSS width, DPR-aware)
     if (o.type === 'image') {
       const img = document.createElement('img');
-      img.className = 'item';
+      img.className = 'item image';
       img.alt = o.alt || '';
       img.loading = 'lazy';
       img.src = o.image || o.src || o.url || '';
@@ -2043,6 +2052,211 @@ function refreshSlideInsVisibility() {
       videos = [];
     }
   };
+})();
+
+// === Gallery images: Ken Burns (randomized pan+zoom, only while visible) ===
+(() => {
+  const gg = document.getElementById('group-gallery');
+  if (!gg) return;
+
+  // Pick one of several gentle pan directions + zoom combo
+  function randomKBVars() {
+    const dirs = [
+      { x0: '-4%', y0: '-3%', x1: ' 4%', y1: ' 3%' }, // TL -> BR
+      { x0: ' 4%', y0: ' 3%', x1: '-4%', y1: '-3%' }, // BR -> TL
+      { x0: ' 0%', y0: '-4%', x1: ' 0%', y1: ' 4%' }, // T -> B
+      { x0: ' 0%', y0: ' 4%', x1: ' 0%', y1: '-4%' }, // B -> T
+      { x0: '-4%', y0: ' 0%', x1: ' 4%', y1: ' 0%' }, // L -> R
+      { x0: ' 4%', y0: ' 0%', x1: '-4%', y1: ' 0%' }, // R -> L
+      { x0: '-3%', y0: ' 3%', x1: ' 3%', y1: '-3%' }, // BL <-> TR
+    ];
+    const d = dirs[Math.floor(Math.random() * dirs.length)];
+    const s0 = 1.06 + Math.random() * 0.02; // 1.06–1.08
+    const s1 = s0 + 0.04;                    // +0.04 zoom
+    const base = 11 + Math.random() * 3;           // was ~11–14s
+    return { ...d, s0, s1, duration: (base / 2).toFixed(2) + 's' }; // now ~5.5–7s
+  }
+
+  // Ensure each image has a cropping viewport (.kb-wrap) and mark img as .kb-img
+  function ensureKB(itemOrImg) {
+    let item = itemOrImg;
+    let img = itemOrImg;
+
+    // If a DIV.item.image contains an IMG
+    if (item.tagName !== 'IMG') {
+      img = item.querySelector('img');
+      if (!img) return null;
+    }
+
+    // If already wrapped, ensure wrapper has the right classes/data
+    const existing = img.closest('.kb-wrap');
+    if (existing) {
+      existing.classList.add('item', 'image');     // make wrapper the flex item
+      if (img.dataset.oid) existing.dataset.oid = img.dataset.oid; // move data to wrapper
+      img.classList.add('kb-img');                 // keep animation class on IMG
+      img.classList.remove('item', 'image');       // avoid duplicate .item on child
+      return img;
+    }
+
+    // Insert a .kb-wrap right above the img; make wrapper the flex item
+    const wrap = document.createElement('div');
+    wrap.className = 'kb-wrap';
+    img.parentNode.insertBefore(wrap, img);
+    wrap.appendChild(img);
+
+    // make the WRAPPER the gallery item
+    wrap.classList.add('item', 'image');
+
+    // move data attributes needed by delegation (e.g., data-oid) to wrapper
+    if (img.dataset.oid) wrap.dataset.oid = img.dataset.oid;
+
+    // the IMG keeps only the animation class (and any intrinsic classes), not .item
+    img.classList.add('kb-img');
+    img.classList.remove('item', 'image');
+
+    return img;
+
+  }
+
+  // Toggle animation only when visible
+  let io = null;
+  let bound = false;
+
+  function bindAll() {
+    if (bound) return;
+    bound = true;
+
+    const root = gg.querySelector('.gallery-box') || gg;
+    io = new IntersectionObserver((entries) => {
+      entries.forEach(en => {
+        // We observe the ITEM (.item.image), but animate the IMG (.kb-img)
+        const item = en.target;
+        const img  = item.tagName === 'IMG' ? item : item.querySelector('img');
+        if (!img) return;
+
+        const kbImg = ensureKB(item); // wrap if needed
+        if (!kbImg) return;
+
+        if (en.isIntersecting) {
+          // Randomize per-image variables only once
+          if (!kbImg.__kbInit) {
+            const vars = randomKBVars();
+            const wrap = kbImg.closest('.kb-wrap');
+            wrap.style.setProperty('--kb-x0', vars.x0);
+            wrap.style.setProperty('--kb-y0', vars.y0);
+            wrap.style.setProperty('--kb-x1', vars.x1);
+            wrap.style.setProperty('--kb-y1', vars.y1);
+            wrap.style.setProperty('--kb-s0', String(vars.s0));
+            wrap.style.setProperty('--kb-s1', String(vars.s1));
+            wrap.style.setProperty('--kb-duration', vars.duration);
+
+            // PRE-SEED so hover doesn't jump
+            kbImg.style.transform = `translate(${vars.x0}, ${vars.y0}) scale(${vars.s0})`;
+
+            kbImg.__kbInit = true;
+          }
+        }
+      });
+    }, { root, threshold: 0.35 });
+
+    // Observe all current gallery image items (supports either IMG.item.image or DIV.item.image)
+    const items = gg.querySelectorAll('.gallery-box .column .item.image, .gallery-box .column img.item');
+    items.forEach(el => io.observe(el));
+  }
+
+  window.__galleryImages__ = {
+    onOpen() {
+      bindAll();
+    },
+    onClose() {
+      if (io) io.disconnect();
+      gg.querySelectorAll('.kb-img.kb-anim').forEach(img => img.classList.remove('kb-anim'));
+    }
+  };
+})();
+
+// === Grid images: Ken Burns (only while visible; works in clustered/ungrouped) ===
+(() => {
+  const grid = document.getElementById('grid');
+  if (!grid) return;
+
+  function randomKBVars() {
+    const dirs = [
+      { x0: '-4%', y0: '-3%', x1: ' 4%', y1: ' 3%' },
+      { x0: ' 4%', y0: ' 3%', x1: '-4%', y1: '-3%' },
+      { x0: ' 0%', y0: '-4%', x1: ' 0%', y1: ' 4%' },
+      { x0: ' 0%', y0: ' 4%', x1: ' 0%', y1: '-4%' },
+      { x0: '-4%', y0: ' 0%', x1: ' 4%', y1: ' 0%' },
+      { x0: ' 4%', y0: ' 0%', x1: '-4%', y1: ' 0%' },
+    ];
+    const d = dirs[Math.floor(Math.random() * dirs.length)];
+    const s0 = 1.05 + Math.random() * 0.02;
+    const s1 = s0 + 0.05;
+    const base = 10 + Math.random() * 3;          // was ~10–13s
+    return { ...d, s0, s1, duration: (base / 2).toFixed(2) + 's' }; // now ~5–6.5s
+  }
+
+  function ensureKB(img) {
+    if (!img) return null;
+    if (img.closest('.kb-wrap')) return img;
+    const wrap = document.createElement('div');
+    wrap.className = 'kb-wrap';
+    img.parentNode.insertBefore(wrap, img);
+    wrap.appendChild(img);
+    img.classList.add('kb-img');
+    return img;
+  }
+
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(en => {
+      const img = en.target;
+      const kbImg = ensureKB(img);
+      if (!kbImg) return;
+
+      if (en.isIntersecting) {
+        if (!kbImg.__kbInit) {
+          const v = randomKBVars();
+          const wrap = kbImg.closest('.kb-wrap');
+          wrap.style.setProperty('--kb-x0', v.x0);
+          wrap.style.setProperty('--kb-y0', v.y0);
+          wrap.style.setProperty('--kb-x1', v.x1);
+          wrap.style.setProperty('--kb-y1', v.y1);
+          wrap.style.setProperty('--kb-s0', String(v.s0));
+          wrap.style.setProperty('--kb-s1', String(v.s1));
+          wrap.style.setProperty('--kb-duration', v.duration);
+
+          // PRE-SEED so hover doesn't jump
+          kbImg.style.transform = `translate(${v.x0}, ${v.y0}) scale(${v.s0})`;
+
+          kbImg.__kbInit = true;
+        }
+      }
+    });
+  }, { root: null, threshold: 0.35 });
+
+  function observeAll() {
+    // Images inside grid objects marked as image
+    grid.querySelectorAll('.object.image img, .object[data-type="image"] img').forEach(img => io.observe(img));
+  }
+
+  // Initial pass
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', observeAll, { once: true });
+  } else {
+    observeAll();
+  }
+
+  // Watch for new/changed tiles (e.g., after Strapi loads or state switches)
+  const mo = new MutationObserver((muts) => {
+    muts.forEach(m => {
+      m.addedNodes?.forEach(node => {
+        if (node.nodeType !== 1) return;
+        node.querySelectorAll?.('.object.image img, .object[data-type="image"] img').forEach(img => io.observe(img));
+        if (node.matches?.('.object.image img, .object[data-type="image"] img')) io.observe(node);
+      });
+    });
+  });
+  mo.observe(grid, { childList: true, subtree: true });
 })();
 
 // === Clicking a single item in the gallery opens the object detail ===
