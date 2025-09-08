@@ -1447,6 +1447,8 @@ function refreshSlideInsVisibility() {
 
           // Simple play/pause on click (mirror demo behavior)
           item.addEventListener('click', () => ws.playPause());
+          item.addEventListener('mouseenter', () => { try { ws.play(); } catch {} }, { passive: true });
+          item.addEventListener('mouseleave', () => { try { ws.pause(); } catch {} }, { passive: true });
 
           wsRegistry.set(wave.id, ws);
         }
@@ -1482,6 +1484,86 @@ function refreshSlideInsVisibility() {
     destroyAllAudio();    // clean up for a fresh reopen
   };
 })();
+
+// === Grid audio waveforms (WaveSurfer) ===
+// Creates one WaveSurfer per #grid .object.audio tile; plays on hover, pauses on mouseout.
+(() => {
+  const grid = document.getElementById('grid');
+  if (!grid) return;
+
+  const WS_CONFIG = {
+    waveColor: '#666',
+    progressColor: '#aaa',
+    cursorColor: '#ccc',
+    height: 50,
+    barWidth: 2,
+    barGap: 1,
+    barHeight: 40,
+    normalize: true,
+    responsive: true,
+    interact: true,
+    cursorWidth: 1,
+  };
+
+  const wsMap = new Map(); // key = wave.id, val = ws instance
+
+  function initTile(el) {
+    const wave = el.querySelector('.wave');
+    const src  = el.dataset.audioSrc;
+    if (!wave || !src) return;
+
+    if (!wsMap.has(wave.id)) {
+      const ws = WaveSurfer.create({ ...WS_CONFIG, container: `#${wave.id}` });
+      ws.load(src);
+
+      // Hover behavior
+      el.addEventListener('mouseenter', () => { try { ws.play(); } catch {} }, { passive: true });
+      el.addEventListener('mouseleave', () => { try { ws.pause(); } catch {} }, { passive: true });
+
+      wsMap.set(wave.id, ws);
+    }
+  }
+
+  // Lazy-init when tiles are visible
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(en => {
+      if (!en.isIntersecting) return;
+      initTile(en.target);
+      io.unobserve(en.target);
+    });
+  }, { root: null, threshold: 0.2 });
+
+  function observeAudioTiles(root = grid) {
+    root.querySelectorAll('.object.audio').forEach(el => io.observe(el));
+  }
+
+  // Observe existing tiles now…
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => observeAudioTiles(), { once: true });
+  } else {
+    observeAudioTiles();
+  }
+
+  // …and any tiles added later (cluster/ungrouped changes or Strapi loads)
+  const mo = new MutationObserver((muts) => {
+    muts.forEach(m => {
+      m.addedNodes?.forEach(node => {
+        if (node.nodeType !== 1) return;
+        if (node.classList?.contains('object') && node.classList.contains('audio')) {
+          io.observe(node);
+        }
+        node.querySelectorAll?.('.object.audio').forEach(el => io.observe(el));
+      });
+    });
+  });
+  mo.observe(grid, { childList: true, subtree: true });
+
+  // Optional API: allow grid.js to pause all waves when opening a detail card
+  window.__gridWaves ||= {
+    pauseAll() { wsMap.forEach(ws => { try { ws.pause(); } catch {} }); }
+  };
+})();
+
 
 // === Grid audio waveforms (WaveSurfer) ===
 // Creates a waveform inside each #grid .object.audio .wave, lazy-inits on intersection.
