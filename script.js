@@ -7,7 +7,7 @@ import { Grid } from './grid.js';
 // 'dummy'  → only current dummy data
 // 'mixed'  → dummy data + all groups from Strapi
 // 'strapi' → only all groups from Strapi 
-const DATA_MODE = 'mixed'; // change to 'mixed' or 'strapi' as needed
+const DATA_MODE = 'strapi'; // change to 'mixed' or 'strapi' as needed
 
 // ===== STRAPI SETUP =====
 const STRAPI = {
@@ -472,13 +472,32 @@ async function loadStrapiAllGroupsAndObjects() {
 
   const groupIds = groups.map(g => g.id);
 
-  // 2) Objects for those groups (use populate=* to avoid keyed-populate issues)
-  const objects = await strapiFetchAll('objects', {
-    'filters[group][id][$in]': groupIds.join(','),  // objects that belong to loaded groups
-    'publicationState': 'preview',
-    'populate': '*'
-  });
+  // 2) Objects for those groups — robust fetch (avoids $in bug on relation ids)
+  let objects = [];
+  try {
+    // Try 1: OR of equality checks (very stable in v5)
+    const qp = { publicationState: 'preview', populate: '*' };
+    groupIds.forEach((id, i) => { qp[`filters[$or][${i}][group][id][$eq]`] = String(id); });
+    objects = await strapiFetchAll('objects', qp);
+  } catch (err1) {
+    console.warn('[strapi:objects] $or[$eq] failed, falling back per-group', err1);
+    // Try 2: Query per group id, then de-duplicate
+    const seen = new Set();
+    for (const gid of groupIds) {
+      try {
+        const part = await strapiFetchAll('objects', {
+          'filters[group][id][$eq]': String(gid),
+          'publicationState': 'preview',
+          'populate': '*'
+        });
+        part.forEach(o => { if (!seen.has(o.id)) { seen.add(o.id); objects.push(o); } });
+      } catch (err2) {
+        console.error('[strapi:objects] per-group fetch failed for', gid, err2);
+      }
+    }
+  }
   slog('objects.count', objects.length);
+
 
   // 3) Normalize to app schema
   const normalized = normalizeStrapiToAppSchema(groups, objects);
@@ -865,7 +884,8 @@ function refreshSlideInsVisibility() {
 
   const galleryActive = document.getElementById('group-gallery')?.classList.contains('active');
   const state = window.gridObject?.currentState;
-  const shouldShow = (state === 'ungrouped' || state === 'clustered' || state === 'pre-cluster') && !galleryActive;
+  const detailActive = document.getElementById('detail-content')?.classList.contains('active');
+  const shouldShow = (state === 'ungrouped' || state === 'clustered' || state === 'pre-cluster') && !galleryActive && !detailActive;  
 
   slideIns.classList.toggle('visible', !!shouldShow);
 
@@ -944,6 +964,7 @@ function refreshSlideInsVisibility() {
   
     // 3) Bind fade-ins, counters, WaveSurfer (IO attaches to what's in the DOM now)
     window.__galleryIO__?.onOpen?.();
+    window.__galleryVideos__?.onOpen?.();
   
     // 4) Push a history state so browser Back closes the gallery
     try {
@@ -967,6 +988,7 @@ function refreshSlideInsVisibility() {
   
     // 2) Tear down observers + WaveSurfer instances
     window.__galleryIO__?.onClose?.();
+    window.__galleryVideos__?.onClose?.();
   
     // 3) Remove all dynamic items/columns so next open is fresh
     const box = groupGalleryEl?.querySelector('.gallery-box');
@@ -979,6 +1001,102 @@ function refreshSlideInsVisibility() {
     refreshSlideInsVisibility();
     console.log('[gallery] closed');
   }  
+
+  // === Object Detail screen (full page) ===
+  (function detailScreen() {
+    const gridShellEl    = document.getElementById('grid-shell');
+    const groupGalleryEl = document.getElementById('group-gallery');
+    const detailEl       = document.getElementById('detail-content');
+
+    // Holds return context so Back knows where to go
+    window.__detailCtx = { from: null, gid: null, objectId: null };
+
+    window.openObjectDetail = function ({ objectId, from, gid } = {}) {
+      if (!detailEl) return;
+
+      // Remember where we came from
+      window.__detailCtx = { from: from || null, gid: gid || null, objectId: objectId || null };
+
+      // If we came from gallery: hide it (and detach observers) so nothing interferes
+      if (from === 'gallery' && groupGalleryEl?.classList.contains('active')) {
+        groupGalleryEl.classList.remove('active');
+        window.__galleryIO__?.onClose?.();
+      }
+
+      // Hide grid shell (we'll come back to it on close)
+      if (gridShellEl) gridShellEl.style.display = 'none';
+
+      // Show the detail screen
+      detailEl.classList.add('active');
+
+      // Push a state so browser Back closes detail
+      try {
+        if (!history.state || !history.state.detail) {
+          history.pushState(
+            { detail: true, from: String(from || ''), gid: String(gid || ''), objectId: String(objectId || '') },
+            '',
+            '#detail'
+          );
+        }
+      } catch {}
+
+      refreshSlideInsVisibility();
+      console.log('[detail] opened', window.__detailCtx);
+    };
+
+    window.closeObjectDetail = function ({ viaPopstate = false } = {}) {
+      if (!detailEl?.classList.contains('active')) return;
+
+      detailEl.classList.remove('active');
+
+      const { from, gid } = window.__detailCtx || {};
+
+      if (from === 'gallery') {
+        // Return to the same gallery without flicker
+        if (groupGalleryEl) {
+          groupGalleryEl.classList.add('active');
+          // Re-attach observers/counters
+          window.__galleryIO__?.onOpen?.();
+        }
+        if (gridShellEl) gridShellEl.style.display = 'none';
+      } else {
+        // Return to the grid (clustered/ungrouped card stays as it was)
+        if (gridShellEl) gridShellEl.style.display = '';
+      }
+
+      refreshSlideInsVisibility();
+      console.log('[detail] closed', { viaPopstate, from, gid });
+    };
+
+    // Back button: if detail is active, intercept before gallery handler
+    document.addEventListener('click', (e) => {
+      const back = e.target.closest('#content-back-button');
+      if (!back) return;
+
+      const isDetailActive = detailEl?.classList.contains('active');
+      if (!isDetailActive) return;
+
+      e.preventDefault();
+      e.stopImmediatePropagation();
+
+      if (history.state?.detail) {
+        history.back();
+      } else {
+        window.closeObjectDetail();
+      }
+    }, true); // capture, so we run before the gallery back handler
+
+    // Popstate: close detail if we navigated away from its state
+    window.addEventListener('popstate', () => {
+      const active = detailEl?.classList.contains('active');
+      const stillInDetail =
+        !!history.state?.detail || location.hash === '#detail';
+
+      if (active && !stillInDetail) {
+        window.closeObjectDetail({ viaPopstate: true });
+      }
+    });
+  })();
 
   (function galleryTextFit(){
     const gg = document.getElementById('group-gallery');
@@ -1365,6 +1483,96 @@ function refreshSlideInsVisibility() {
   };
 })();
 
+// === Grid audio waveforms (WaveSurfer) ===
+// Creates a waveform inside each #grid .object.audio .wave, lazy-inits on intersection.
+(() => {
+  const grid = document.getElementById('grid');
+  if (!grid) return;
+
+  // Shared registry and API exposed for grid.js to pause waves on detail open
+  const wsRegistry = new Map();
+  window.__gridWaves = {
+    pauseAll() {
+      wsRegistry.forEach(ws => { try { ws.pause?.(); } catch(_){} });
+    },
+    rescan() {
+      observeAllAudioTiles();
+    }
+  };
+
+  // Same visual config as the gallery (keep UX consistent)
+  const WS_CONFIG = {
+    waveColor: '#666',
+    progressColor: '#aaa',
+    cursorColor: '#ccc',
+    height: 50,
+    barWidth: 2,
+    barGap: 1,
+    barHeight: 40,
+    normalize: true,
+    responsive: true,
+    interact: true,
+    cursorWidth: 1,
+  };
+
+  // Lazy-create when a tile is on screen
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(en => {
+      if (!en.isIntersecting) return;
+      const el = en.target;
+      const wave = el.querySelector('.wave');
+      const src  = el.dataset.audioSrc;
+      if (!wave || !src) return;
+
+      if (!wsRegistry.has(wave.id)) {
+        const ws = WaveSurfer.create({ ...WS_CONFIG, container: `#${wave.id}` });
+        ws.load(src);
+
+        // Simple play/pause toggle on click
+        el.addEventListener('click', (e) => {
+          // don't steal clicks from detail open links etc.
+          if ((e.target.closest('.detail-panel')) || (e.target.tagName === 'A')) return;
+          ws.playPause();
+        });
+
+        wsRegistry.set(wave.id, ws);
+      }
+
+      io.unobserve(el); // only need to init once
+    });
+  }, { root: null, threshold: 0.2 });
+
+  // Observe all existing audio tiles (grid items are built once at load)
+  function observeAllAudioTiles() {
+    grid.querySelectorAll('.object.audio').forEach(el => io.observe(el));
+  }
+
+  // Watch for future .object.audio tiles and observe them when they appear
+  const mo = new MutationObserver((muts) => {
+    muts.forEach(m => {
+      m.addedNodes?.forEach(node => {
+        if (node.nodeType !== 1) return;
+
+        // A tile added directly
+        if (node.classList?.contains('object') && node.classList?.contains('audio')) {
+          io.observe(node);
+        }
+
+        // Or audio tiles added deeper inside a wrapper
+        node.querySelectorAll?.('.object.audio').forEach(el => io.observe(el));
+      });
+    });
+  });
+  mo.observe(grid, { childList: true, subtree: true });
+
+  // Kick it off after the grid is created/populated
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', observeAllAudioTiles, { once: true });
+  } else {
+    observeAllAudioTiles();
+  }
+})();
+
 // === Dynamic gallery renderer (fixed 3 items per column; random item widths 100–200px) ===
 (function galleryRenderer() {
   const gg  = document.getElementById('group-gallery');
@@ -1417,6 +1625,7 @@ function refreshSlideInsVisibility() {
         }, { once: true });
       }
 
+      img.dataset.oid = o.id || '';
       return img;
     }
 
@@ -1431,8 +1640,10 @@ function refreshSlideInsVisibility() {
       vid.style.width  = `${randItemWidth()}px`;   // ← random width
       vid.style.height = 'auto';                   // ← auto height
       vid.style.display = 'block';
-      vid.addEventListener('mouseover', () => { try { vid.play(); } catch {} });
-      vid.addEventListener('mouseout',  () => { try { vid.pause(); } catch {} });
+      //vid.addEventListener('mouseover', () => { try { vid.play(); } catch {} });
+      //vid.addEventListener('mouseout',  () => { try { vid.pause(); } catch {} });
+
+      vid.dataset.oid = o.id || '';
       return vid;
     }
 
@@ -1445,6 +1656,8 @@ function refreshSlideInsVisibility() {
       span.className = 'scaling-text';
       span.textContent = o.text || o.caption || o.title || '';
       d.appendChild(span);
+
+      d.dataset.oid = o.id || '';
       return d;
     }
 
@@ -1457,11 +1670,13 @@ function refreshSlideInsVisibility() {
 
       const wave = document.createElement('div');
       wave.className = 'wave';
-      wave.id = `wave_${o.id || uid()}`;
+      wave.id = `wave_${o.id || uid()}_g`;
       wave.style.width = '100%';                   // fill the item’s random width
       wave.style.height = '50px';
       item.dataset.audioSrc = o.audio || o.src || o.url || '';
       item.appendChild(wave);
+
+      item.dataset.oid = o.id || '';
       return item;
     }
 
@@ -1473,6 +1688,8 @@ function refreshSlideInsVisibility() {
     span.className = 'scaling-text';
     span.textContent = o.title || '[unknown]';
     d.appendChild(span);
+
+    d.dataset.oid = o.id || '';
     return d;
   }
 
@@ -1481,10 +1698,44 @@ function refreshSlideInsVisibility() {
     return all.filter(o => String(o.groupId) === String(gid));
   }
 
+  // Fisher–Yates shuffle (returns a new array)
+  function shuffleArray(src) {
+    const a = src.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  // Heuristic weight so tall items spread out.
+  // Tune the numbers if needed; lower = "lighter", higher = "taller".
+  function estimateGalleryWeight(o) {
+    if (o.video) return 3.0;                     // videos tend to be tall in your layout
+    if (o.image) return 2.6;                     // images a bit less
+    if (o.audio) return 1.0;                     // waveform ~60px
+    if (o.text) {
+      const len = (o.text || '').length;
+      return Math.min(3, 0.6 + len / 140);       // longer text = a bit "heavier"
+    }
+    return 1.0;
+  }
+
+  // Return index of the smallest value in an array
+  function pickLightestIndex(arr) {
+    let idx = 0, min = arr[0] ?? 0;
+    for (let i = 1; i < arr.length; i++) {
+      const v = arr[i] ?? 0;
+      if (v < min) { min = v; idx = i; }
+    }
+    return idx;
+  }
+
   // Public: build the gallery for a given group id (3 items per column)
   window.renderGroupGallery = function(gid) {
     if (!gid) return;
-    const objs = groupObjects(gid);
+    //const objs = groupObjects(gid);
+    const objs = shuffleArray(groupObjects(gid));
 
     const itemsPerCol = 3;
     const colCount = Math.max(1, Math.ceil(objs.length / itemsPerCol));
@@ -1499,11 +1750,13 @@ function refreshSlideInsVisibility() {
       box.appendChild(c);
     }
 
-    // sequentially place: 3 items per column
-    objs.forEach((o, i) => {
+    // Greedy placement: always append to the shortest column so far
+    const colWeights = new Array(cols.length).fill(0);
+    objs.forEach((o) => {
       const el = createGalleryItem(o);
-      const colIndex = Math.floor(i / itemsPerCol);
-      (cols[colIndex] || cols[cols.length - 1]).appendChild(el);
+      const idx = pickLightestIndex(colWeights);
+      cols[idx].appendChild(el);
+      colWeights[idx] += estimateGalleryWeight(o);
     });
 
     requestAnimationFrame(() => {
@@ -1656,6 +1909,80 @@ function refreshSlideInsVisibility() {
   //      history.pushState({ gallery: true }, '', '#group-gallery');
   //    }
 }
+
+// === Gallery videos: autoplay muted, sound on hover, pause when off-screen ===
+(() => {
+  const gg = document.getElementById('group-gallery');
+  if (!gg) return;
+
+  let io = null;
+  let videos = [];
+
+  function bindVideo(v) {
+    // Attributes needed for autoplay on all browsers
+    v.muted = true;
+    v.loop = true;
+    v.autoplay = true;                 // attribute; we'll still call play() via IO
+    v.playsInline = true;              // iOS Safari
+    v.controls = false;
+    v.preload = 'metadata';
+
+    // Sound on hover
+    v.addEventListener('mouseenter', () => { v.muted = false; }, { passive: true });
+    v.addEventListener('mouseleave', () => { v.muted = true;  }, { passive: true });
+  }
+
+  function onIO(entries) {
+    entries.forEach(en => {
+      const v = en.target;
+      if (en.isIntersecting) {
+        v.muted = true;                // ensure autoplay is allowed
+        v.play().catch(() => {});      // ignore user-gesture errors
+      } else {
+        v.pause();
+      }
+    });
+  }
+
+  window.__galleryVideos__ = {
+    onOpen() {
+      // find all <video> elements inside the gallery
+      videos = Array.from(gg.querySelectorAll('video'));
+      videos.forEach(bindVideo);
+
+      // Observe visibility (prefer the scroller if present)
+      const root = gg.querySelector('.gallery-box') || gg;
+      io = new IntersectionObserver(onIO, { root, threshold: 0.5 });
+      videos.forEach(v => io.observe(v));
+    },
+    onClose() {
+      if (io) { io.disconnect(); io = null; }
+      videos.forEach(v => { try { v.pause(); } catch {} v.muted = true; });
+      videos = [];
+    }
+  };
+})();
+
+// === Clicking a single item in the gallery opens the object detail ===
+(function galleryItemToDetail() {
+  const gg = document.getElementById('group-gallery');
+  if (!gg) return;
+
+  const box = gg.querySelector('.gallery-box');
+  if (!box || box._detailBound) return;
+  box._detailBound = true;
+
+  box.addEventListener('click', (e) => {
+    const item = e.target.closest('.item');
+    if (!item) return;
+
+    const oid = item.dataset.oid;
+    if (!oid) return;
+
+    const gid = (history.state && history.state.gid) ? history.state.gid : null;
+    window.openObjectDetail?.({ objectId: oid, from: 'gallery', gid });
+  });
+})();
 
 // START DEFINE CONTROLS
 
