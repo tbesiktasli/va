@@ -883,13 +883,20 @@ function refreshSlideInsVisibility() {
   if (!slideIns) return;
 
   const galleryActive = document.getElementById('group-gallery')?.classList.contains('active');
-  const state = window.gridObject?.currentState;
+  const state        = window.gridObject?.currentState;
   const detailActive = document.getElementById('detail-content')?.classList.contains('active');
-  const shouldShow = (state === 'ungrouped' || state === 'clustered' || state === 'pre-cluster') && !galleryActive && !detailActive;  
+
+  // Detect ad-hoc gallery via history.state or a body class (see Step 2)
+  const isAdhoc = !!history.state?.adhoc || document.body.classList.contains('in-adhoc-gallery');
+
+  // Normally we only show the sidebar in these grid states…
+  const baseAllowedStates = (state === 'ungrouped' || state === 'clustered' || state === 'pre-cluster');
+
+  // …but in ad-hoc gallery we want it visible regardless of state, and even though a gallery is active.
+  const shouldShow = ((baseAllowedStates || isAdhoc) && (!galleryActive || isAdhoc) && !detailActive);
 
   slideIns.classList.toggle('visible', !!shouldShow);
 
-  // When hiding, collapse any expanded panel so it re-opens clean next time
   if (!shouldShow) {
     slideIns.querySelectorAll('.slide-in').forEach(el => {
       el.classList.remove('expanded', 'secondary-open');
@@ -899,7 +906,6 @@ function refreshSlideInsVisibility() {
     });
   }
 
-  // keep your right counter offset in sync with the slide-ins width
   if (typeof updateRightCounterOffset === 'function') updateRightCounterOffset();
 }
 
@@ -975,40 +981,183 @@ function refreshSlideInsVisibility() {
     } catch {}
   
     refreshSlideInsVisibility();
+
+    document.body.classList.add('in-group-gallery');      // was: in-gallery
+
+    // optional cleanup so you don’t keep layout padding:
+    const bar = document.getElementById('selection-bar');      // NEW
+    const ws  = document.getElementById('workspace');          // NEW
+    bar?.classList.remove('show');                             // NEW
+    ws?.classList.remove('has-selection-bar');                 // NEW
+
     console.log('[gallery] opened', { gid });
   }
+
+  // Open gallery for a custom set of objects (e.g., current tag filter)
+  window.openTagsGallery = function(objs = [], titleLines = []) {
+    if (!groupGalleryEl) return;
+
+    // Hide the grid shell, show gallery
+    if (gridShellEl) gridShellEl.style.display = 'none';
+    groupGalleryEl.classList.add('active');
+
+    // Title: each tag on its own line; no group subtitle
+    const tEl = document.querySelector('#group-gallery .title-box h2');
+    const sEl = document.querySelector('#group-gallery .title-box h3');
+    if (tEl) tEl.innerHTML = titleLines.map(s => String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    ).join('<br>');
+    if (sEl) sEl.textContent = '';
+
+    // Fresh content
+    const box = groupGalleryEl.querySelector('.gallery-box');
+    if (box) box.innerHTML = '';
+
+    // Build items/columns from the provided list
+    if (typeof window.renderAdhocGallery === 'function') {
+      window.renderAdhocGallery(objs);
+    }
+
+    // Attach observers and push a gallery history state
+    window.__galleryIO__?.onOpen?.();
+    window.__galleryVideos__?.onOpen?.();
+    window.__galleryImages__?.onOpen?.();
+    try {
+      if (!history.state || !history.state.gallery) {
+        history.pushState({ gallery: true, adhoc: true }, '', '#group-gallery');
+      }
+    } catch {}
+
+    refreshSlideInsVisibility();
+
+    document.body.classList.add('in-gallery', 'in-adhoc-gallery');   // mark ad-hoc mode
+    if (typeof window.renderSelectionBar === 'function') {
+      window.renderSelectionBar();                     // keep the bar visible, but no button
+    }
+  
+    const bar = document.getElementById('selection-bar');      // NEW
+    const ws  = document.getElementById('workspace');          // NEW
+
+    console.log('[gallery] opened (adhoc)', { count: objs.length, titleLines });
+  };
+
+  // Refresh the current ad-hoc gallery from the *current* tag selection
+  window.refreshAdhocGalleryFromTags = function(tagsMaybe) {
+    const gg = document.getElementById('group-gallery');
+    const isActive = gg?.classList.contains('active');
+    // Treat as ad-hoc if we either set a body class or pushed adhoc state
+    const isAdhoc = !!(history.state && history.state.adhoc) || document.body.classList.contains('in-adhoc-gallery');
+    if (!isActive || !isAdhoc) return;
+
+    // Normalize tags to an array
+    const raw = (typeof tagsMaybe !== 'undefined') ? tagsMaybe : (window.activeTags || []);
+    const tags = Array.isArray(raw) ? raw : (raw instanceof Set ? [...raw] : []);
+
+    // 1) Update the title (each tag on its own line; no subtitle)
+    const tEl = document.querySelector('#group-gallery .title-box h2');
+    const sEl = document.querySelector('#group-gallery .title-box h3');
+    if (tEl) tEl.innerHTML = tags.map(s => String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    ).join('<br>');
+    if (sEl) sEl.textContent = '';
+
+    // 2) Recompute which objects match the current filter and re-render
+    const objs = objectsMatchingCurrentFilter();          // you already have this helper
+    const box = gg.querySelector('.gallery-box');
+    if (box) box.innerHTML = '';
+    if (typeof window.renderAdhocGallery === 'function') {
+      window.renderAdhocGallery(objs);                    // reuse your gallery item builder
+    }
+
+    // 3) Re-attach observers (same as openTagsGallery did)
+    window.__galleryIO__?.onOpen?.();
+    window.__galleryVideos__?.onOpen?.();
+    window.__galleryImages__?.onOpen?.();
+  };
   
   function closeGallery(options = {}) {
     const viaPopstate = !!options.viaPopstate;
   
-    // 1) Reset scroll so next open starts at the beginning
     try {
       groupGalleryEl?.scrollTo({ left: 0, top: 0, behavior: 'auto' });
       groupGalleryEl?.querySelector('.gallery-box')?.scrollTo?.({ left: 0, top: 0, behavior: 'auto' });
     } catch {}
   
-    // 2) Tear down observers + WaveSurfer instances
     window.__galleryIO__?.onClose?.();
     window.__galleryVideos__?.onClose?.();
     window.__galleryImages__?.onClose?.();
   
-    // 3) Remove all dynamic items/columns so next open is fresh
     const box = groupGalleryEl?.querySelector('.gallery-box');
     if (box) box.innerHTML = '';
   
-    // 4) Hide gallery, show grid shell
     groupGalleryEl.classList.remove('active');
     if (gridShellEl) gridShellEl.style.display = '';
   
+    // 👇 critical bits
+    document.body.classList.remove('in-group-gallery');
+    document.body.classList.remove('in-adhoc-gallery');
+    if (typeof window.renderSelectionBar === 'function') {
+      window.renderSelectionBar();
+    }
+  
     refreshSlideInsVisibility();
+
+    document.body.classList.remove('in-group-gallery', 'in-adhoc-gallery');
+    if (typeof window.renderSelectionBar === 'function') {
+      window.renderSelectionBar();           // if tags are still selected, bar (and button) come back
+    }
+
     console.log('[gallery] closed');
-  }  
+  }
+  
 
   // === Object Detail screen (full page) ===
   (function detailScreen() {
     const gridShellEl    = document.getElementById('grid-shell');
     const groupGalleryEl = document.getElementById('group-gallery');
     const detailEl       = document.getElementById('detail-content');
+
+    // Render ONLY the primary slot (title or hero media) in the detail view
+    function renderDetailPrimary(obj) {
+      if (!detailEl || !obj) return;
+
+      // Update location in the header (safe to do each time)
+      const locEl = detailEl.querySelector('.content-header .location');
+      if (locEl) locEl.textContent = obj.groupLocation || '';
+
+      // Work only inside the primary slot
+      const slot = detailEl.querySelector('#detail-primary');
+      if (!slot) return;
+
+      // basic escape
+      const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+      // Replace the slot content according to object type
+      switch (obj.type) {
+        case 'image':
+          slot.innerHTML = obj.image
+            ? `<figure><img class="hero-media" src="${esc(obj.image)}" alt="${esc(obj.text || 'Image')}" /></figure>`
+            : `<h1>${esc(obj.text || 'Untitled image')}</h1>`;
+          break;
+
+        case 'video':
+          slot.innerHTML = obj.video
+            ? `<figure><video class="hero-media" controls playsinline><source src="${esc(obj.video)}"></video></figure>`
+            : `<h1>${esc(obj.text || 'Untitled video')}</h1>`;
+          break;
+
+        case 'audio':
+          slot.innerHTML = obj.audio
+            ? `<figure><audio class="hero-media" controls><source src="${esc(obj.audio)}"></audio></figure>`
+            : `<h1>${esc(obj.text || 'Untitled audio')}</h1>`;
+          break;
+
+        case 'text':
+        default:
+          slot.innerHTML = `<h1>${esc(obj.text || 'Untitled')}</h1>`;
+          break;
+      }
+    }
 
     // Holds return context so Back knows where to go
     window.__detailCtx = { from: null, gid: null, objectId: null };
@@ -1018,6 +1167,15 @@ function refreshSlideInsVisibility() {
 
       // Remember where we came from
       window.__detailCtx = { from: from || null, gid: gid || null, objectId: objectId || null };
+
+      // Look up the object from in-memory data and render the primary slot
+      const allObjects = (window.gridObject?.objects || window.objects || []);
+      const obj = allObjects.find(o => String(o.id) === String(objectId));
+      if (obj) {
+        renderDetailPrimary(obj);
+      } else {
+        console.warn('[detail] object not found for id:', objectId);
+      }
 
       // If we came from gallery: hide it (and detach observers) so nothing interferes
       if (from === 'gallery' && groupGalleryEl?.classList.contains('active')) {
@@ -1277,7 +1435,6 @@ function refreshSlideInsVisibility() {
       if (isGrouped && objEl) {
         e.preventDefault();
         e.stopPropagation();
-        //openGallery();
         const obj = (window.gridObject?.objects || objects || []).find(o => String(o.id) === String(objEl.id));
         const gid = obj?.groupId;
         openGallery(gid);
@@ -1855,6 +2012,47 @@ function refreshSlideInsVisibility() {
       window.__galleryTextFit?.refresh?.();
     });
   };
+
+  // Build gallery from an explicit object list (tags selection)
+ // Build gallery from an explicit object list (same layout rules as groups)
+window.renderAdhocGallery = function(objs = []) {
+  const gg  = document.getElementById('group-gallery');
+  const box = gg?.querySelector('.gallery-box');
+  if (!gg || !box) return;
+
+  // 1) fresh columns: 3 items per column → ceil(N/3) columns
+  const N = Array.isArray(objs) ? objs.length : 0;
+  const itemsPerCol = 3;
+  const colCount = Math.max(1, Math.ceil(N / itemsPerCol));
+
+  box.innerHTML = '';
+  const cols = [];
+  for (let i = 0; i < colCount; i++) {
+    const c = document.createElement('div');
+    c.className = 'column';
+    cols.push(c);
+    box.appendChild(c);
+  }
+
+  // 2) same placement: greedy to the shortest column using the same weights
+  const colWeights = new Array(colCount).fill(0);
+
+  // Optional: mimic group gallery randomness
+  const list = (typeof shuffleArray === 'function') ? shuffleArray([...objs]) : [...objs];
+
+  list.forEach((o) => {
+    const el = createGalleryItem(o);           // <-- reuse existing builder
+    const idx = pickLightestIndex(colWeights); // <-- reuse existing helper
+    cols[idx].appendChild(el);
+    colWeights[idx] += estimateGalleryWeight(o);
+  });
+
+  // 3) same post-pass as groups (if you call counts/text-fit there)
+  requestAnimationFrame(() => {
+    window.__galleryIO__?._updateCounts?.();
+    window.__galleryTextFit?.refresh?.();
+  });
+};
 })();
 
 // === Invisible item counters (left/right) scoped to #group-gallery ===
@@ -1973,10 +2171,7 @@ function refreshSlideInsVisibility() {
         history.back();
       } else {
         // Fallback: close directly if no history state
-        if (groupGalleryEl) groupGalleryEl.classList.remove('active');
-        if (gridShellEl) gridShellEl.style.display = '';
-        window.__galleryIO__?.onClose?.();
-        console.log('[gallery] closed (direct)');
+        window.closeGallery?.();
       }
     }, true);
 
@@ -1985,20 +2180,10 @@ function refreshSlideInsVisibility() {
       const active = groupGalleryEl?.classList.contains('active');
       const stillInGallery = !!history.state?.gallery || location.hash === '#gallery' || location.hash === '#group-gallery';
       if (active && !stillInGallery) {
-        // We navigated away from the gallery state -> close it and show grid again
-        groupGalleryEl.classList.remove('active');
-        if (gridShellEl) gridShellEl.style.display = '';
-        window.__galleryIO__?.onClose?.();
-        console.log('[gallery] closed (popstate)');
+        window.closeGallery?.({ viaPopstate: true });
       }
     });
   }
-
-  // 3) Push a history state whenever we open the gallery (call from your openGallery())
-  //    Add these two lines inside your existing openGallery() AFTER you add `.active`:
-  //    if (!history.state || !history.state.gallery) {
-  //      history.pushState({ gallery: true }, '', '#group-gallery');
-  //    }
 }
 
 // === Gallery videos: autoplay muted, sound on hover, pause when off-screen ===
@@ -2315,6 +2500,34 @@ document.getElementById('reset-grid')?.addEventListener('click', (e) => {
 
 // END DEFINE CONTROLS
 
+// ===== Off-grid Debug Harness =====
+window.OFFGRID = window.OFFGRID || {};
+const OFFGRID = window.OFFGRID;
+OFFGRID.debug = OFFGRID.debug || new URLSearchParams(location.search).has('debug');
+OFFGRID.log = (...args) => { if (OFFGRID.debug) console.debug('[offgrid]', ...args); };
+OFFGRID.table = (rows) => { if (OFFGRID.debug && rows?.length) console.table(rows); };
+OFFGRID.version = 'offgrid-debug-2025-09-16-01';
+
+OFFGRID.flash = (el, color = 'magenta') => {
+  if (!el) return;
+  el.classList.add('offgrid-highlight');
+  el.style.setProperty('--offgrid-highlight-color', color);
+  setTimeout(() => el.classList.remove('offgrid-highlight'), 900);
+};
+
+// quick helpers you can call from console
+window.testOffgrid = (dir, tag=null) => flyToNearest?.(dir, tag);
+window.scanOffgrid = (dir=null, tag=null) => {
+  const out = __collectOffscreenCandidates({tag});
+  OFFGRID.table(out.map(x => ({
+    id: x.id, side: x.side, sep: Math.round(x.sep),
+    dCenter: Math.round(x.dCenter),
+    dxL: Math.round(x.dxL), dxR: Math.round(x.dxR), dyT: Math.round(x.dyT), dyB: Math.round(x.dyB)
+  })));
+  if (dir) OFFGRID.log('filtered', dir, out.filter(x => x.side === dir).map(x => x.id));
+  return out;
+};
+
 // --- Off-grid counters (Top/Bottom/Left/Right) ---
 const workspaceEl = document.getElementById('workspace');
 const gridEl = document.getElementById('grid');
@@ -2403,31 +2616,266 @@ function updateOffgridCounters() {
       host.classList.add('has-breakdown');
       const wrap = document.createElement('span');
       wrap.className = 'breakdown';
+    
       for (const t of selectedTags) {
+        const n = perTag[t] || 0;
+    
+        // separator
         const sep = document.createElement('span');
         sep.className = 'sep';
         sep.textContent = ' / ';
         wrap.appendChild(sep);
-
-        const n = perTag[t] || 0;
+    
+        // ONE CLICKABLE SEGMENT per tag
+        const seg = document.createElement('span');
+        seg.className = 'offgrid-seg';
+        seg.setAttribute('role', 'button');
+        seg.tabIndex = 0;
+        seg.dataset.dir = dir;
+        seg.dataset.tag = t;
+        seg.title = n > 0
+          ? `Show nearest ${dir} item with tag “${t}”`
+          : `No ${dir} items with tag “${t}”`;
+        if (!n) seg.classList.add('is-zero');
+    
+        // number
         const cnt = document.createElement('span');
         cnt.className = 'tag-count';
         cnt.textContent = String(n);
-        // Use your stable tag color map if available
         if (typeof tagColors !== 'undefined' && tagColors[t]) {
           cnt.style.color = tagColors[t];
         }
-        wrap.appendChild(cnt);
-
-        const word = document.createElement('span');
-        word.textContent = ' Elements';
-        wrap.appendChild(word);
+        seg.appendChild(cnt);
+    
+        // dot
+        const dot = document.createElement('span');
+        dot.className = 'tag-dot';
+        dot.textContent = ' •';
+        if (typeof tagColors !== 'undefined' && tagColors[t]) {
+          dot.style.color = tagColors[t];
+        }
+        seg.appendChild(dot);
+    
+        wrap.appendChild(seg);
       }
       host.appendChild(wrap);
-    }
+
+      const valueEl = node.querySelector('.value');
+      if (valueEl) {
+        valueEl.textContent = String(total);
+        // make totals clickable
+        valueEl.classList.add('offgrid-total');
+        valueEl.dataset.dir = dir;
+        valueEl.title = total > 0
+          ? `Show nearest ${dir} item`
+          : `No ${dir} items`;
+      }
+    }    
   };
 
+  // right before render('top'), render('bottom'), ...
+  OFFGRID.lastCounters = JSON.parse(JSON.stringify(data));
+  OFFGRID.log('counters snapshot', OFFGRID.lastCounters);
+
   render('top'); render('bottom'); render('left'); render('right');
+
+  // after render(...) calls
+  // Attach once, outside of any render cycle
+  (function bindOffgridDelegates(){
+    const root = document.getElementById('workspace');
+    if (!root || root._offgridDelegatesBound) return;
+    root._offgridDelegatesBound = true;
+
+    root.addEventListener('click', (e) => {
+      const hit = e.target.closest('.offgrid-seg, .offgrid-total');
+      if (!hit) return;
+    
+      const container = hit.closest('.count-invisible-objects');
+      const dir = hit.dataset.dir || (container ? container.id.replace('offgrid-','') : null);
+      const tag = hit.classList.contains('offgrid-seg') ? (hit.dataset.tag || null) : null;
+    
+      OFFGRID.log('CLICK', { dir, tag, el: hit });
+    
+      // show what counters think for that dir/tag
+      const perDir = OFFGRID.lastCounters?.[dir];
+      if (perDir) {
+        const n = tag ? (perDir.perTag?.[tag] || 0) : perDir.total;
+        OFFGRID.log('counters say', { dir, tag, count: n });
+      } else {
+        OFFGRID.log('no counter snapshot for', dir);
+      }
+    
+      flyToNearest(dir, tag);
+    });    
+
+    // keyboard: Enter/Space on focused segments
+    root.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const hit = e.target.closest('.offgrid-seg, .offgrid-total');
+      if (!hit) return;
+      e.preventDefault();
+      const container = hit.closest('.count-invisible-objects');
+      const dir = hit.dataset.dir || (container ? container.id.replace('offgrid-','') : null);
+      const tag = hit.classList.contains('offgrid-seg') ? hit.dataset.tag || null : null;
+      if (dir) flyToNearest(dir, tag);
+    });
+  })();
+
+}
+
+// === Off-grid navigation helpers ===
+
+function worldCenterForObject(obj) {
+  const state = window.gridObject?.currentState || 'ungrouped';
+  if (state === 'clustered' && obj.cluster_x != null && obj.cluster_y != null) {
+    return { x: obj.cluster_x + obj.width / 2, y: obj.cluster_y + obj.height / 2 };
+  }
+  if ((state === 'grouped' || state === 'pre-cluster') && obj.group_x != null && obj.group_y != null) {
+    return { x: obj.group_x + obj.width / 2, y: obj.group_y + obj.height / 2 };
+  }
+
+  // compute, then (optionally) log
+  const x = obj.grid_x + obj.width / 2;
+  const y = obj.grid_y + obj.height / 2;
+  OFFGRID.log('world center for', obj.id, 'state=', window.gridObject?.currentState, { x, y });
+  return { x, y };
+}
+
+function __collectOffscreenCandidates({ tag = null } = {}) {
+  const workspaceEl = document.getElementById('workspace');
+  const gridEl = document.getElementById('grid');
+  if (!workspaceEl || !gridEl) return [];
+
+  const vp = workspaceEl.getBoundingClientRect();
+  const eps = 0.5;
+
+  const vcx = (vp.left + vp.right) / 2;
+  const vcy = (vp.top  + vp.bottom) / 2;
+
+  const out = [];
+  for (const el of gridEl.querySelectorAll('.object')) {
+    const r = el.getBoundingClientRect();
+
+    // fully outside?
+    const fullyOff =
+      (r.right <= vp.left + eps)  || // left
+      (r.left  >= vp.right - eps) || // right
+      (r.bottom<= vp.top  + eps)  || // top
+      (r.top   >= vp.bottom - eps);  // bottom
+    if (!fullyOff) continue;
+
+    if (tag) {
+      const tags = (el.dataset.tags || '').split(',').map(s => s.trim()).filter(Boolean);
+      if (!tags.includes(tag)) continue;
+    }
+
+    const dxL = vp.left - r.right;
+    const dxR = r.left - vp.right;
+    const dyT = vp.top  - r.bottom;
+    const dyB = r.top  - vp.bottom;
+
+    let side = 'left', sep = dxL;
+    if (dxR > sep) { side = 'right'; sep = dxR; }
+    if (dyT > sep) { side = 'top';   sep = dyT; }
+    if (dyB > sep) { side = 'bottom'; sep = dyB; }
+
+    const cx = (r.left + r.right) / 2;
+    const cy = (r.top  + r.bottom) / 2;
+    const dCenter = Math.hypot(cx - vcx, cy - vcy);
+
+    out.push({ el, id: el.id, side, sep, dCenter, dxL, dxR, dyT, dyB, rect: r });
+  }
+  return out;
+}
+
+function findNearestOffscreen({ dir, tag = null }) {
+  const workspaceEl = document.getElementById('workspace');
+  const gridEl = document.getElementById('grid');
+  if (!workspaceEl || !gridEl) return null;
+
+  const vp = workspaceEl.getBoundingClientRect();
+  let best = { el: null, d: Infinity };
+
+  const items = Array.from(gridEl.querySelectorAll('.object'));
+  for (const el of items) {
+    const r = el.getBoundingClientRect();
+
+    // must be fully off-screen
+    const overlaps = !(r.right <= vp.left || r.left >= vp.right || r.bottom <= vp.top || r.top >= vp.bottom);
+    if (overlaps) continue;
+
+    // classify side exactly like the counters do
+    const dTop    = Math.max(vp.top    - r.bottom, 0);
+    const dBottom = Math.max(r.top     - vp.bottom, 0);
+    const dLeft   = Math.max(vp.left   - r.right, 0);
+    const dRight  = Math.max(r.left    - vp.right, 0);
+
+    let side = 'top', maxD = dTop;
+    if (dBottom > maxD) { side = 'bottom'; maxD = dBottom; }
+    if (dLeft   > maxD) { side = 'left';   maxD = dLeft;   }
+    if (dRight  > maxD) { side = 'right';  maxD = dRight;  }
+
+    if (side !== dir) continue;
+
+    if (tag) {
+      const tags = (el.dataset.tags || '').split(',').map(s=>s.trim()).filter(Boolean);
+      if (!tags.includes(tag)) continue;
+    }
+
+    // “nearest” = smallest distance to viewport center
+    const cx = (r.left + r.right) / 2;
+    const cy = (r.top  + r.bottom) / 2;
+    const vcx = (vp.left + vp.right) / 2;
+    const vcy = (vp.top  + vp.bottom) / 2;
+    const d = Math.hypot(cx - vcx, cy - vcy);
+
+    if (d < best.d) best = { el, d };
+  }
+
+  return best.el; // ← IMPORTANT: return the element (not id)
+}
+
+function flyToNearest(dir, tag = null) {
+  // 0) sanity + debug
+  const el = findNearestOffscreen({ dir, tag });
+  if (!el) { console.debug('[offgrid] no target element', { dir, tag }); return; }
+
+  const grid = document.getElementById('grid');
+  const zoom = window.gridObject?.zoomLevel || 1;
+  const left = parseFloat(grid?.style.left) || 0;
+  const top  = parseFloat(grid?.style.top)  || 0;
+
+  // 1) try to resolve the object from the data model
+  const id  = el.id;
+  const obj = window.gridObject?.objects?.find(o => o.id === id);
+
+  let world;
+  if (obj) {
+    world = worldCenterForObject(obj);  // uses state-aware world coords
+    console.debug('[offgrid] target via model', { id, state: window.gridObject?.currentState, world });
+  } else {
+    // 2) fallback: infer world coords from the DOM rect
+    const r  = el.getBoundingClientRect();
+    const cx = (r.left + r.right) / 2;
+    const cy = (r.top  + r.bottom) / 2;
+    world = { x: (cx - left) / zoom, y: (cy - top) / zoom };
+    console.debug('[offgrid] model miss → using DOM fallback', { id, zoom, left, top, world });
+  }
+
+  // 3) center + clamp using Grid’s camera helpers (animated)
+  const before = { x: left, y: top, zoom };
+  window.gridObject.centerViewportOnWorldPoint(world.x, world.y, true);
+  //window.gridObject.clampCameraToBounds(true);
+  setTimeout(() => window.gridObject.clampCameraToBounds?.(true), 650);
+  console.debug('[offgrid] camera', { before, after: { left: grid.style.left, top: grid.style.top, zoom } });
+
+  // 4) optional: quick visual pulse on the target
+  el.classList.add('focus-pulse');
+  setTimeout(() => el.classList.remove('focus-pulse'), 600);
+}
+
+function summarizeRect(r) {
+  return { left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) };
 }
 
 // Observe grid pan/zoom (style changes), viewport resize, and object visibility
@@ -2785,6 +3233,12 @@ function initSlideInTags() {
     updateTagAvailability();
     updateObjectGlowsWithGradient();
     renderSelectionBar();
+
+    // If we are in ad-hoc gallery, live-refresh the items
+    if (typeof window.refreshAdhocGalleryFromTags === 'function') {
+      window.refreshAdhocGalleryFromTags();
+    }
+
     syncDetailTagHighlights();
   });
 
@@ -3247,6 +3701,30 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+function objectsMatchingCurrentFilter() {
+  const all = window.gridObject?.objects || [];
+  const tags = [...(window.activeTags || [])];
+  const mode = (window.TAG_MODE || 'OR').toUpperCase();
+
+  // Respect tag scoping if enabled
+  let candidates = all;
+  // 🔧 FIX: normalize group ids so "s42" and 42 match
+  if (window.TAG_GROUP_POLICY === 'SCOPED' && window.activeTagGroupId != null) {
+    const normalize = v => String(v).replace(/^s/i, ''); // strip leading 's'
+    const gid = normalize(window.activeTagGroupId);
+    candidates = candidates.filter(o => normalize(o.groupId) === gid);
+  }
+
+  if (tags.length === 0) return candidates;
+
+  return candidates.filter(o => {
+    const own = new Set(o.tags || []);
+    return (mode === 'AND')
+      ? tags.every(t => own.has(t))
+      : tags.some(t => own.has(t));
+  });
+}
+
 // === Selected Tags Bottom Bar ===
 function renderSelectionBar() {
   const bar  = document.getElementById('selection-bar');
@@ -3254,16 +3732,44 @@ function renderSelectionBar() {
   const ws   = document.getElementById('workspace');
   if (!bar || !list || !ws) return;
 
+  // --- derive tags array robustly (supports Set or Array) ---
+  const raw = window.activeTags;
+  const tags = Array.isArray(raw) ? raw
+            : (raw instanceof Set) ? [...raw]
+            : [];
+
+  // Always clear existing content first
   list.innerHTML = '';
 
-  if (!window.activeTags || activeTags.size === 0) {
+  let actions = bar.querySelector('.sb-actions');
+  if (actions) actions.innerHTML = '';
+
+  // Hide the bar while ANY gallery is open
+  if (document.body.classList.contains('in-group-gallery')) {
     bar.classList.remove('show');
     ws.classList.remove('has-selection-bar');
     return;
   }
 
-  // Create a pill for each selected tag
-  [...activeTags].forEach(tag => {
+  // No tags selected → hide the bar and ensure no stale UI remains
+  if (tags.length === 0) {
+    bar.classList.remove('show');
+    ws.classList.remove('has-selection-bar');
+    // Also remove the actions node altogether (optional, keeps DOM clean)
+    if (actions) actions.remove();
+    return;
+  }
+
+  // If we are currently viewing the ad-hoc gallery, live-refresh it
+  if (document.getElementById('group-gallery')?.classList.contains('active')) {
+    // history.state.adhoc or the body class identifies ad-hoc mode
+    if ((history.state && history.state.adhoc) || document.body.classList.contains('in-adhoc-gallery')) {
+      window.refreshAdhocGalleryFromTags?.(tags);
+    }
+  }
+
+  // --- Create a pill for each selected tag (center area) ---
+  for (const tag of tags) {
     const li = document.createElement('li');
     li.dataset.tag = tag;
     li.innerHTML = `${tag} <span class="x" aria-hidden="true">×</span>`;
@@ -3275,11 +3781,35 @@ function renderSelectionBar() {
       li.style.boxShadow = `${color}66 0 0 8px`;
     }
     list.appendChild(li);
-  });
+  }
 
+  // --- Right-side actions (Create new gallery) ---
+  actions = bar.querySelector('.sb-actions');
+  if (!actions) {
+    actions = document.createElement('div');
+    actions.className = 'sb-actions';
+    bar.appendChild(actions);
+  }
+  actions.innerHTML = '';
+
+  if (!document.body.classList.contains('in-adhoc-gallery')) {
+    const btn = document.createElement('button');           // keep a <button>, not an <a>
+    btn.type = 'button';
+    btn.className = 'button btn-create-gallery';            // reuse gallery’s .button styles
+    btn.innerHTML = '<span class="text">Create new gallery</span><span class="icon">→</span>';  
+    btn.addEventListener('click', () => {
+      const objs = objectsMatchingCurrentFilter();
+      window.openTagsGallery(objs, tags);
+    });
+    actions.appendChild(btn);
+  }
+
+  // Finally, show the bar
   bar.classList.add('show');
   ws.classList.add('has-selection-bar');
 }
+
+window.renderSelectionBar = renderSelectionBar;
 
 function initSelectionBar() {
   const bar = document.getElementById('selection-bar');
