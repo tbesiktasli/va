@@ -633,6 +633,55 @@ header {
   padding-left: 100px;
 }
 
+/* Media hero in the detail view */
+#detail-content .hero-media {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  outline: 1px solid #1d1d1d; /* matches your theme’s strokes */
+  background: #fff;
+}
+#detail-content video.hero-media,
+#detail-content audio.hero-media {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Primary slot: keep the media centered */
+#detail-content #detail-primary {
+  display: flex;
+  justify-content: center;
+}
+
+/* Limit the frame so mega-wide assets don’t span too far */
+#detail-content #detail-primary > figure {
+  margin: 0;
+  max-width: min(100%, var(--detail-media-max-w, 1000px)); /* cap width */
+}
+
+/* The hero media itself:
+   - never exceeds the column width
+   - never exceeds a portion of the viewport height
+   - preserves aspect ratio automatically
+*/
+#detail-content .hero-media {
+  display: block;
+  max-width: 100%;
+  max-height: var(--detail-media-max-h, 70vh);   /* cap height responsively */
+  width: auto;
+  height: auto;
+  object-fit: contain;                           /* safe for video; harmless for img */
+  background: #fff;
+  outline: 1px solid #1d1d1d;
+}
+
+/* Make video/audio controls span the frame width */
+#detail-content video.hero-media,
+#detail-content audio.hero-media {
+  width: 100%;
+  max-width: 100%;
+}
+
 #slide-ins .vertical-content {
   padding-left: 50px;
 }
@@ -861,7 +910,7 @@ header {
 #selection-bar {
   position: fixed;
   left: 0;
-  right: 0;
+  right: var(--slideins-visible, 0px); /* ← subtracts live sidebar width */
   bottom: 0;
   height: var(--header-h);                /* same height as header */
   background: #FAF7F3;                    /* same background as header */
@@ -872,9 +921,23 @@ header {
   padding: 0 12px;
   z-index: 1300;                          /* above counters/FAB, below overlay menu */
 }
-#selection-bar.show { display: flex; }
+#selection-bar.show { 
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;  /* [spacer] [tags] [actions] */
+  align-items: center;
+}
 
-#selection-bar .tags {
+/* Use gallery's .button style in the selection bar, but no big top margin */
+#selection-bar .button { 
+  margin-top: 0;        /* gallery's .button has margin-top:60px; not wanted here */
+  background: #FAF7F3;
+}
+#selection-bar .button:hover {
+  cursor: pointer;
+}
+
+#selection-bar .tags {                /* center column */
+  grid-column: 2;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -896,6 +959,16 @@ header {
   font-weight: 700;
   line-height: 1;
 }
+
+#selection-bar .sb-actions {          /* right column */
+  grid-column: 3;
+  justify-self: end;
+  display: flex;
+  gap: 8px;
+}
+
+/* Hide bar only in GROUP gallery, show it in custom/adhoc */
+.in-group-gallery #selection-bar { display: none !important; }
 
 /* When selection bar is visible, push up bottom overlays by its height */
 #workspace.has-selection-bar #offgrid-bottom { bottom: calc(8px + var(--header-h)); }
@@ -1403,6 +1476,35 @@ header {
 #workspace .count-invisible-objects .rot.has-breakdown .value,
 #group-gallery > .count-invisible-objects .rot.has-breakdown .value {
   margin-right: 0;
+}
+
+#workspace .count-invisible-objects .breakdown .tag-dot {
+  margin-left: .15em;   /* small breathing room after number */
+  font-weight: 700;     /* match the visual emphasis of counts */
+}
+
+/* Make counters feel clickable */
+#workspace .count-invisible-objects .offgrid-total,
+#workspace .count-invisible-objects .offgrid-seg {
+  cursor: pointer;
+}
+
+#workspace .count-invisible-objects .offgrid-seg.is-zero {
+  opacity: .5;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* quick visual cue when a target is chosen */
+.offgrid-highlight {
+  outline: 3px solid var(--offgrid-highlight-color, magenta);
+  outline-offset: 2px;
+  animation: offgridPulse .9s ease-out 1;
+}
+@keyframes offgridPulse {
+  0% { outline-color: transparent; }
+  30% { outline-color: var(--offgrid-highlight-color, magenta); }
+  100% { outline-color: transparent; }
 }
 
 /* === Ken Burns (pan + subtle zoom) === */
