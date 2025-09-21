@@ -206,6 +206,38 @@
     color: inherit;
   }
 
+  /* Right-column wrapper for meta/info (date, group, tags, link) */
+  .detail-panel .detail-info {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* Portrait: media left, info right */
+  .detail-panel.portrait {
+    /* switch from vertical rows to a two-column grid */
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-auto-rows: min-content;
+    align-items: start;
+    gap: 16px;
+  }
+
+  /* Let the media stretch to fill its column (and center its content as before) */
+  .detail-panel.portrait .detail-media {
+    align-self: stretch;
+    display: grid;
+    place-items: center;
+  }
+
+  /* Keep images/videos contained */
+  .detail-panel .detail-media img,
+  .detail-panel .detail-media video {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
   .object-glow {
     position: absolute;
     inset: -6px;                 /* extends a little outside the card */
@@ -327,6 +359,31 @@ header {
 .header-right img {
   width: 25px;
   height: 25px;
+}
+
+/* Typewriter caret for header-left */
+#header-left.typing {
+  position: relative;
+}
+
+#header-left.typing::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  right: -2px;           /* tiny gap after the last letter */
+  width: 1px;
+  height: 1.1em;
+  background: #1d1d1d;   /* match your header text color */
+  animation: headerCaretBlink 1s steps(1) infinite;
+  opacity: 1;
+}
+
+@keyframes headerCaretBlink { 50% { opacity: 0; } }
+
+/* If user prefers reduced motion, no blinking */
+@media (prefers-reduced-motion: reduce) {
+  #header-left.typing::after { animation: none; }
 }
 
 #content {
@@ -914,7 +971,6 @@ header {
   bottom: 0;
   height: var(--header-h);                /* same height as header */
   background: #FAF7F3;                    /* same background as header */
-  border-top: 1px solid #1d1d1d;
   display: none;                          /* toggled via .show */
   align-items: center;
   justify-content: center;                /* center the pills horizontally */
@@ -1536,4 +1592,67 @@ header {
     animation: none !important;
     transform: none !important;
   }
+}
+
+/* === Header burger (rect-mode, consolidated) === */
+:root {
+  /* SIZE: bump this to make the burger larger */
+  --burger-width: 34px;               /* ← change this to the size you want */
+  --burger-height: calc(var(--burger-width) * 0.7142857); /* 20/28 keeps viewBox ratio */
+  /* idle offset for middle bar and subtle hover distances */
+  --burger-offset: 3px;   /* middle starts 3px to the right */
+  --hover-mid-left: 1px;  /* on hover: middle ends 1px to the right (i.e., moves left from +3px -> +1px) */
+  --hover-top-right: 1px; /* top nudges right by 1px */
+  --hover-bot-right: 0.5px; /* bottom nudges right by 0.5px */
+  /* NEW: thickness control (increase these for thicker lines) */
+  --burger-bar-thickness: 1.3px;   /* ← tweak this */
+  --burger-bar-radius:    0.65px;  /* corner radius to match thickness/2 */
+}
+
+.menu-trigger {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 6px;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--header-fg, #1d1d1d);     /* currentColor for bars */
+  /* avoid global hover “boldening” or filters */
+  font-weight: 400;
+  filter: none;
+}
+
+.burger { overflow: visible; }
+
+
+/* Rect bars: use fill only; never scale → thickness stays constant */
+.burger--rect .bar {
+  fill: currentColor;
+  stroke: none;
+  height: var(--burger-bar-thickness); /* ← thickness here */
+  rx: var(--burger-bar-radius);        /* rounded ends that match */
+  transform: translateX(0);             /* base transform */
+  transition: transform 220ms cubic-bezier(.2,.8,.2,1);
+  shape-rendering: crispEdges;          /* crisp 1px edges */
+}
+
+/* Middle bar offset (your look) */
+.burger .bar--mid { transform: translateX(var(--burger-offset)); }
+
+/* Hover (reverse): middle moves slightly LEFT; top/bottom slightly RIGHT */
+.menu-trigger:hover .burger--rect .bar--mid { transform: translateX(var(--hover-mid-left)); }
+.menu-trigger:hover .burger--rect .bar--top { transform: translateX(var(--hover-top-right)); }
+.menu-trigger:hover .burger--rect .bar--bot { transform: translateX(var(--hover-bot-right)); }
+
+/* Reduced motion: no animation */
+@media (prefers-reduced-motion: reduce) {
+  .burger--rect .bar { transition: none; }
+}
+
+/* Size you already had for the header-right area */
+.header-right { display: flex; justify-content: flex-end; }
+.header-right .menu-trigger svg {
+  width: var(--burger-width);
+  height: var(--burger-height);
 }
