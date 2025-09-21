@@ -813,6 +813,9 @@ window.gridObject = null;
     console.log('[data] mode=', DATA_MODE, 'groups=', Object.keys(loaded.groupMeta).length, 'objects=', loaded.objects.length);
     gridObject = new Grid('grid', objects, {});
     window.gridObject = gridObject;
+    // wire header + set initial copy
+    window.__wireHeaderToGrid?.();
+    window.__dispatchViewChange?.();
   } catch (err) {
     console.error('Failed to load data / init grid:', err);
     alert('Strapi load failed. Check the console for details (network/permissions).');
@@ -909,6 +912,27 @@ function refreshSlideInsVisibility() {
   if (typeof updateRightCounterOffset === 'function') updateRightCounterOffset();
 }
 
+// Collapse all Discover Connections panels (keep the container visible)
+function collapseDiscoverSidebar() {
+  const wrap = document.getElementById('slide-ins');
+  if (!wrap) return;
+
+  wrap.querySelectorAll('.slide-in').forEach(el => {
+    el.classList.remove('expanded', 'secondary-open');
+    el.querySelector('.vertical-content')?.classList.remove('visible');
+    const btn = el.querySelector('.close-btn');
+    if (btn) btn.textContent = '←';
+  });
+
+  // keep layout math in sync with the new (collapsed) width
+  if (typeof updateRightCounterOffset === 'function') {
+    updateRightCounterOffset();
+  }
+}
+
+// (optional) expose for debugging / future reuse
+window.collapseDiscoverSidebar = collapseDiscoverSidebar;
+
 // === GROUPED MODE: click any object -> open gallery; other modes unaffected ===
 // DEBUG: log clicks on the grid; when grouped, log the object clicked
 {
@@ -983,6 +1007,8 @@ function refreshSlideInsVisibility() {
     refreshSlideInsVisibility();
 
     document.body.classList.add('in-group-gallery');      // was: in-gallery
+    document.body.dataset.currentGroupId = String(gid);
+    window.__dispatchViewChange();
 
     // optional cleanup so you don’t keep layout padding:
     const bar = document.getElementById('selection-bar');      // NEW
@@ -1029,8 +1055,10 @@ function refreshSlideInsVisibility() {
     } catch {}
 
     refreshSlideInsVisibility();
+    collapseDiscoverSidebar?.();
 
     document.body.classList.add('in-gallery', 'in-adhoc-gallery');   // mark ad-hoc mode
+    window.__dispatchViewChange();
     if (typeof window.renderSelectionBar === 'function') {
       window.renderSelectionBar();                     // keep the bar visible, but no button
     }
@@ -1095,7 +1123,11 @@ function refreshSlideInsVisibility() {
   
     // 👇 critical bits
     document.body.classList.remove('in-group-gallery');
+    delete document.body.dataset.currentGroupId;
+    window.__dispatchViewChange();
+
     document.body.classList.remove('in-adhoc-gallery');
+    window.__dispatchViewChange();
     if (typeof window.renderSelectionBar === 'function') {
       window.renderSelectionBar();
     }
@@ -1103,6 +1135,7 @@ function refreshSlideInsVisibility() {
     refreshSlideInsVisibility();
 
     document.body.classList.remove('in-group-gallery', 'in-adhoc-gallery');
+    window.__dispatchViewChange();
     if (typeof window.renderSelectionBar === 'function') {
       window.renderSelectionBar();           // if tags are still selected, bar (and button) come back
     }
@@ -1189,6 +1222,21 @@ function refreshSlideInsVisibility() {
       // Show the detail screen
       detailEl.classList.add('active');
 
+      // Mark: we are in the full-page detail view
+      document.body.classList.add('in-detail-page');
+
+      // (Optional but useful) remember which object is open — used for the "Research project in …" text
+      try {
+        const all = window.gridObject?.objects || window.objects || [];
+        const obj = all.find(o => String(o.id) === String(objectId));
+        window._lastDetailObject = obj || null;
+      } catch {
+        window._lastDetailObject = null;
+      }
+
+      // Notify the header updater
+      window.__dispatchViewChange?.();
+
       // Push a state so browser Back closes detail
       try {
         if (!history.state || !history.state.detail) {
@@ -1208,6 +1256,13 @@ function refreshSlideInsVisibility() {
       if (!detailEl?.classList.contains('active')) return;
 
       detailEl.classList.remove('active');
+
+      // Unmark: we left the full-page detail
+      document.body.classList.remove('in-detail-page');
+      window._lastDetailObject = null;
+
+      // Notify the header updater
+      window.__dispatchViewChange?.();
 
       const { from, gid } = window.__detailCtx || {};
 
@@ -3619,39 +3674,77 @@ function initSlideIns() {
 
 // --- Full-screen overlay menu (burger) ---
 function initOverlayMenu() {
-  const burger = document.getElementById('burger-btn');
-  const overlay = document.getElementById('overlay-menu');
+  // Works with: <button id="menu-button" class="menu-trigger">…</button>
+  // …or legacy: <img id="burger-btn" …>
+  const trigger =
+    document.getElementById('menu-button') ||
+    document.querySelector('.menu-trigger') ||
+    document.getElementById('burger-btn');
+
+  const overlay  = document.getElementById('overlay-menu');
   const closeBtn = document.getElementById('overlay-close');
-  const mainItems = overlay?.querySelectorAll('.menu-item');
-  const subMenu = document.getElementById('sub-menu');
+  if (!overlay) return; // nothing to do
+
+  const mainItems = overlay.querySelectorAll('.menu-item');
+  const subMenu   = document.getElementById('sub-menu');
 
   const subItemsMap = {
     viralatmospheres: ['Blah','Blub'],
-    about: ['The Research Project','Summer School','The Book'],
-    projects: ['Project One','Project Two','Project Three'],
-    team: ['Member One','Member Two','Member Three']
+    about:            ['The Research Project','Summer School','The Book'],
+    projects:         ['Project One','Project Two','Project Three'],
+    team:             ['Member One','Member Two','Member Three']
   };
 
   function setActiveMenu(target){
-    if (!overlay) return;
     mainItems.forEach(i => i.classList.remove('active'));
     overlay.querySelector(`.menu-item[data-target="${target}"]`)?.classList.add('active');
+
     subMenu.innerHTML = '';
     (subItemsMap[target] || []).forEach(text => {
       const div = document.createElement('div');
+      div.className = 'sub-item';
       div.textContent = text;
-      div.classList.add('sub-item');
       div.addEventListener('click', () => {
-        subMenu.querySelectorAll('.sub-item').forEach(i=>i.classList.remove('active'));
+        subMenu.querySelectorAll('.sub-item').forEach(i => i.classList.remove('active'));
         div.classList.add('active');
       });
       subMenu.appendChild(div);
     });
   }
 
-  burger?.addEventListener('click', () => { overlay.classList.add('active'); setActiveMenu('viralatmospheres'); });
-  closeBtn?.addEventListener('click', () => overlay.classList.remove('active'));
-  mainItems?.forEach(i => i.addEventListener('click', () => setActiveMenu(i.dataset.target)));
+  const openOverlay = (e) => {
+    e?.preventDefault();
+    overlay.classList.add('active');
+    setActiveMenu('viralatmospheres');      // default section
+    closeBtn?.focus?.();                    // accessibility nicety
+  };
+
+  const closeOverlay = (e) => {
+    e?.preventDefault();
+    overlay.classList.remove('active');
+  };
+
+  // Open/close bindings
+  trigger?.addEventListener('click', openOverlay);
+  // Keyboard open on Enter/Space for the button
+  trigger?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') openOverlay(e);
+  });
+
+  closeBtn?.addEventListener('click', closeOverlay);
+
+  // Click outside (backdrop) closes
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeOverlay(e);
+  });
+
+  // ESC closes
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeOverlay(e);
+  });
+
+  // Main items switch the active submenu
+  mainItems.forEach(i => i.addEventListener('click', () => setActiveMenu(i.dataset.target)));
 }
 
 // Run once DOM is ready (keep your existing DOMContentLoaded handlers)
@@ -3724,6 +3817,186 @@ function objectsMatchingCurrentFilter() {
       : tags.some(t => own.has(t));
   });
 }
+
+// ==== Header-left dynamic copy (centralised) ====
+const HEADER_COPY = {
+  home: 'Home',
+  connections: 'Make new connections',
+  research: (loc) => `Research project in ${loc || '—'}`
+};
+
+// Expose the setter in case you want to call it directly
+function setHeaderLeft(mode, ctx = {}) {
+  const el = document.getElementById('header-left');
+  if (!el) return;
+
+  let text = '';
+  switch (mode) {
+    case 'home':         text = HEADER_COPY.home; break;
+    case 'connections':  text = HEADER_COPY.connections; break;
+    case 'research':     text = HEADER_COPY.research(ctx.location); break;
+    default:             text = ''; break;
+  }
+
+  HeaderTyper.type(el, text, {
+    // tweak if you want a slower/faster feel
+    minDelay: 14,
+    maxDelay: 32,
+    punctPause: 160,
+    caret: true
+  });
+}
+window.setHeaderLeft = setHeaderLeft;
+
+// Single place that decides what the header should show right now
+function refreshHeaderLeftFromState() {
+  const body = document.body;
+  const grid = window.gridObject; 
+
+  // Object detail (full page) or Group Gallery → "Research project in <location>"
+  if (body.classList.contains('in-group-gallery')) {
+    const gid = body.dataset.currentGroupId;
+    // GROUP_LABELS[gid] is already built from your group metadata
+    // see where you computed it from groupMetaById[...] .location
+    // (GROUP_LABELS creation is in your script already). :contentReference[oaicite:0]{index=0}
+    const loc = gid
+    ? (window.groupMetaById?.[gid]?.location || window.GROUP_LABELS?.[gid] || '')
+    : '';
+    return setHeaderLeft('research', { location: loc });
+  }
+
+  if (body.classList.contains('in-detail-page')) {
+    // set on open detail (see below)
+    const obj = window._lastDetailObject || null;
+    const loc = obj?.groupLocation || '';
+    // objects carry groupLocation already when created. :contentReference[oaicite:1]{index=1}
+    return setHeaderLeft('research', { location: loc });
+  }
+
+  // Adhoc (custom) gallery → “Make new connections”
+  if (body.classList.contains('in-adhoc-gallery')) {
+    return setHeaderLeft('connections');
+  }
+
+  // Grid states
+  const state = grid?.currentState; // 'grouped' | 'clustered' | 'ungrouped' | 'pre-cluster'
+  if (state === 'grouped')      return setHeaderLeft('home');
+  if (state === 'clustered' || state === 'ungrouped' || state === 'pre-cluster') {
+    return setHeaderLeft('connections');
+  }
+
+  // Fallback
+  setHeaderLeft('home');
+}
+window.refreshHeaderLeftFromState = refreshHeaderLeftFromState;
+
+// Fire a single custom event whenever the view changes.
+// We hook header updates to this event.
+function dispatchViewChange() {
+  document.dispatchEvent(new CustomEvent('app:viewchange', {
+    detail: {
+      bodyClasses: [...document.body.classList],
+      gridState: window.gridObject?.currentState || null,
+      currentGroupId: document.body.dataset.currentGroupId || null
+    }
+  }));
+}
+document.addEventListener('app:viewchange', refreshHeaderLeftFromState);
+
+// Patch grid mode-switch so the header updates automatically
+function wireHeaderToGrid() {
+  const g = window.gridObject;
+  if (!g || g.__headerWired) return;
+  g.__headerWired = true;
+
+  const _group   = g.groupObjects?.bind(g);
+  const _cluster = g.clusterGroupedObjects?.bind(g);
+  const _ungroup = g.ungroupObjects?.bind(g);
+
+  if (_group) {
+    g.groupObjects = function(...args) {
+      const out = _group(...args);
+      setTimeout(dispatchViewChange, 0);
+      return out;
+    };
+  }
+  if (_cluster) {
+    g.clusterGroupedObjects = function(...args) {
+      const out = _cluster(...args);
+      setTimeout(dispatchViewChange, 0);
+      return out;
+    };
+  }
+  if (_ungroup) {
+    g.ungroupObjects = function(...args) {
+      const out = _ungroup(...args);
+      setTimeout(dispatchViewChange, 0);
+      return out;
+    };
+  }
+}
+
+// Call this *once* after grid is created (see next step)
+window.__wireHeaderToGrid = wireHeaderToGrid;
+window.__dispatchViewChange = dispatchViewChange;
+
+// ==== Header-left typewriter (cancelable) ====
+const HeaderTyper = (() => {
+  let token = 0;
+
+  const defaults = {
+    minDelay: 12,     // ms between chars
+    maxDelay: 30,
+    punctPause: 180,  // extra pause after , . ; : ! ?
+    caret: true
+  };
+
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const rand  = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
+
+  async function type(el, text, opts = {}) {
+    if (!el) return;
+    const o = { ...defaults, ...opts };
+
+    // Cancel any previous typing
+    const my = ++token;
+
+    // Respect reduced-motion
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    if (reduced) {
+      el.classList.remove('typing');
+      el.textContent = text;
+      return;
+    }
+
+    el.classList.toggle('typing', !!o.caret);
+
+    // If text is identical, avoid retyping
+    if (el.textContent === text) {
+      el.classList.remove('typing');
+      return;
+    }
+
+    el.textContent = '';
+    const letters = Array.from(String(text)); // handles emoji / surrogate pairs
+
+    for (let i = 0; i < letters.length; i++) {
+      if (my !== token) return; // canceled by a newer call
+      el.textContent += letters[i];
+
+      let d = rand(o.minDelay, o.maxDelay);
+      if (/[.,;:!?]/.test(letters[i])) d += o.punctPause;
+      await sleep(d);
+    }
+
+    if (my !== token) return;
+    el.classList.remove('typing');
+  }
+
+  function cancel() { token++; }
+
+  return { type, cancel };
+})();
 
 // === Selected Tags Bottom Bar ===
 function renderSelectionBar() {
