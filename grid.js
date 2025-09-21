@@ -240,8 +240,16 @@ export class Grid {
       const ocy = obj.grid_y + obj.height / 2;
     
       // Expand IN PLACE (keep center fixed)
-      const W = width  || size;
-      const H = height || size;
+      let W = width  || size;
+      let H = height || size;
+
+      // If the focused object is portrait image/video, add +100px width
+      const objIsPortraitMedia =
+        (obj && (obj.type === 'image' || obj.type === 'video')) &&
+        ((obj.height || 0) > (obj.width || 0));
+
+      if (objIsPortraitMedia) W += 100;
+
       const targetLeft = ocx - W / 2;
       const targetTop  = ocy - H / 2;
       const dx = targetLeft - obj.grid_x;
@@ -334,18 +342,26 @@ export class Grid {
       const panel = document.createElement('div');
       panel.className = 'detail-panel';
       panel.innerHTML = `
-        <button class="detail-close" aria-label="Close">×</button>
+      <button class="detail-close" aria-label="Close">×</button>
+      <div class="detail-media">
+        ${obj.type === 'image' ? `<img src="${obj.image}" alt="">` : ''}
+        ${obj.type === 'text'  ? `<div class="detail-text">${obj.text}</div>` : ''}
+        ${obj.type === 'video' ? `<video src="${obj.video}" controls playsinline style="width:100%;height:auto"></video>` : ''}
+        ${obj.type === 'audio' ? `<audio src="${obj.audio}" controls style="width:100%"></audio>` : ''}
+      </div>
+      <div class="detail-info">
         <div class="detail-date">${obj.date || ''}</div>
-        <div class="detail-media">
-          ${obj.type === 'image' ? `<img src="${obj.image}" alt="">` : ''}
-          ${obj.type === 'text'  ? `<div class="detail-text">${obj.text}</div>` : ''}
-          ${obj.type === 'video' ? `<video src="${obj.video}" controls playsinline style="width:100%;height:auto"></video>` : ''}
-          ${obj.type === 'audio' ? `<audio src="${obj.audio}" controls style="width:100%"></audio>` : ''}
-        </div>
         <div class="detail-group">${obj.groupLocation || ''}</div>
         <ul class="detail-tags tags">${(obj.tags||[]).map(t=>`<li>${t}</li>`).join('')}</ul>
         <a class="detail-link" href="#" target="_blank" rel="noopener">Open</a>
-      `;
+      </div>
+    `;
+
+    // Add 'portrait' layout class when image/video is taller than wide
+    if ((obj.type === 'image' || obj.type === 'video') && ((obj.height || 0) > (obj.width || 0))) {
+      panel.classList.add('portrait');
+    }
+
       el.appendChild(panel);
       requestAnimationFrame(() => panel.classList.add('visible'));
     
@@ -411,8 +427,14 @@ export class Grid {
       const el = document.getElementById(obj.id);
     
       // Detail size = half of ungrouped in both dimensions
-      const width  = 500;
+      let width  = 500;
       const height = 500;
+      
+      const objIsPortraitMedia =
+        (obj && (obj.type === 'image' || obj.type === 'video')) &&
+        ((obj.height || 0) > (obj.width || 0));
+      
+      if (objIsPortraitMedia) width += 100;
     
       // Cluster/group center in world space
       const g = this.groups?.[obj.groupId];
@@ -492,18 +514,26 @@ export class Grid {
         const panel = document.createElement('div');
         panel.className = 'detail-panel';
         panel.innerHTML = `
-          <button class="detail-close" aria-label="Close">×</button>
+        <button class="detail-close" aria-label="Close">×</button>
+        <div class="detail-media">
+          ${obj.type === 'image' ? `<img src="${obj.image}" alt="">` : ''}
+          ${obj.type === 'text'  ? `<div class="detail-text">${obj.text}</div>` : ''}
+          ${obj.type === 'video' ? `<video src="${obj.video}" controls playsinline style="width:100%;height:auto"></video>` : ''}
+          ${obj.type === 'audio' ? `<audio src="${obj.audio}" controls style="width:100%"></audio>` : ''}
+        </div>
+        <div class="detail-info">
           <div class="detail-date">${obj.date || ''}</div>
-          <div class="detail-media">
-            ${obj.type === 'image' ? `<img src="${obj.image}" alt="">` : ''}
-            ${obj.type === 'text'  ? `<div class="detail-text">${obj.text}</div>` : ''}
-            ${obj.type === 'video' ? `<video src="${obj.video}" controls playsinline style="width:100%;height:auto"></video>` : ''}
-            ${obj.type === 'audio' ? `<audio src="${obj.audio}" controls style="width:100%"></audio>` : ''}
-          </div>
           <div class="detail-group">${obj.groupLocation || ''}</div>
           <ul class="detail-tags tags">${(obj.tags||[]).map(t=>`<li>${t}</li>`).join('')}</ul>
           <a class="detail-link" href="#" target="_blank" rel="noopener">Open</a>
-        `;
+        </div>
+      `;
+
+        // Add 'portrait' layout class when image/video is taller than wide
+        if ((obj.type === 'image' || obj.type === 'video') && ((obj.height || 0) > (obj.width || 0))) {
+          panel.classList.add('portrait');
+        }
+
         el.appendChild(panel);
         requestAnimationFrame(() => panel.classList.add('visible'));
         panel.querySelector('.detail-close')?.addEventListener('click', (ev) => {
@@ -564,107 +594,7 @@ export class Grid {
       el.addEventListener('transitionend', onEnd);
     
       this.currentState = 'detail';
-    }
-
-    // Clustered detail: slide the clicked card to the group's center, then expand.
-    enterDetailFromCluster(objectId, { width = 520, height = 360, margin = 80 } = {}) {
-      if (this.currentState !== 'clustered' || this._detail?.active) return;
-    
-      const obj = this.objects.find(o => o.id === objectId);
-      if (!obj) return;
-      const el = document.getElementById(obj.id);
-    
-      // Group center in world space
-      const g = this.groups?.[obj.groupId];
-      const cx = g ? g.x : (obj.cluster_x + obj.width / 2);
-      const cy = g ? g.y : (obj.cluster_y + obj.height / 2);
-      const z  = this.zoomLevel || 1;
-    
-      // Save prev + mark active (note prevState = 'clustered', and we didn't push others)
-      this._detail = {
-        active: true, id: obj.id, width, height, margin,
-        prevState: this.currentState,
-        pushed: false,
-        prev: {
-          width: obj.width,
-          height: obj.height,
-          bg: el.style.backgroundImage || '',
-          transform: el.style.transform || '',
-          className: el.className
-        }
-      };
-    
-      // Lift above others & fade small content
-      el.classList.add('is-detail', 'detail-fade-out');
-      if (obj.type === 'image') el.style.backgroundImage = 'none';
-      this.pauseAllVideos?.();
-    
-      // --- Stage 1: slide to group center (keep current size) ---
-      const targetLeft1 = cx - obj.width / 2;
-      const targetTop1  = cy - obj.height / 2;
-      const dx1 = targetLeft1 - obj.grid_x;
-      const dy1 = targetTop1  - obj.grid_y;
-      requestAnimationFrame(() => {
-        el.style.transform = `translate(${dx1 * z}px, ${dy1 * z}px)`;
-      });
-    
-      // Center camera on the group center
-      this.centerViewportOnWorldPoint(cx, cy, /*animate*/ true);
-      this._startPanLoop?.();
-    
-      // After the slide finishes, expand to (width x height) while keeping center fixed
-      const expand = () => {
-        const targetLeft2 = cx - width / 2;
-        const targetTop2  = cy - height / 2;
-        const dx2 = targetLeft2 - obj.grid_x;
-        const dy2 = targetTop2  - obj.grid_y;
-        el.style.width  = `${width * z}px`;
-        el.style.height = `${height * z}px`;
-        el.style.transform = `translate(${dx2 * z}px, ${dy2 * z}px)`;
-    
-        // Build the same detail panel UI as ungrouped
-        const panel = document.createElement('div');
-        panel.className = 'detail-panel';
-        panel.innerHTML = `
-          <button class="detail-close" aria-label="Close">×</button>
-          <div class="detail-date">${obj.date || ''}</div>
-          <div class="detail-media">
-            ${obj.type === 'image' ? `<img src="${obj.image}" alt="">` : ''}
-            ${obj.type === 'text'  ? `<div class="detail-text">${obj.text}</div>` : ''}
-            ${obj.type === 'video' ? `<video src="${obj.video}" controls playsinline style="width:100%;height:auto"></video>` : ''}
-            ${obj.type === 'audio' ? `<audio src="${obj.audio}" controls style="width:100%"></audio>` : ''}
-          </div>
-          <div class="detail-group">${obj.groupLocation || ''}</div>
-          <ul class="detail-tags tags">${(obj.tags||[]).map(t=>`<li>${t}</li>`).join('')}</ul>
-          <a class="detail-link" href="#" target="_blank" rel="noopener">Open</a>
-        `;
-        el.appendChild(panel);
-        requestAnimationFrame(() => panel.classList.add('visible'));
-        panel.querySelector('.detail-close')?.addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          this.exitDetail();
-        });
-
-        // Open full-page object detail from clustered detail card
-        panel.querySelector('.detail-link')?.addEventListener('click', (ev) => {
-          ev.preventDefault();
-          ev.stopPropagation();
-          window.openObjectDetail?.({ objectId: obj.id, from: 'clustered', gid: obj.groupId });
-        });
-      };
-
-      // Transition-end for the initial slide; fallback timeout to be safe
-      const to = setTimeout(expand, 520);
-      const onEnd = (e) => {
-        if (e && e.propertyName !== 'transform') return;
-        el.removeEventListener('transitionend', onEnd);
-        clearTimeout(to);
-        expand();
-      };
-      el.addEventListener('transitionend', onEnd);
-    
-      this.currentState = 'detail';
-    }    
+    } 
 
     exitDetail() {
       if (!this._detail?.active) return Promise.resolve();
