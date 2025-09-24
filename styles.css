@@ -686,8 +686,64 @@ header {
 }
 
 #detail-content .vertical-content {
+  position: relative;               /* so absolutely-positioned children have a ref */
   width: calc(100% - 120px);
-  padding-left: 100px;
+  --vc-pad-left: 100px;             /* keep this in sync with your design */
+  --vc-pad-right: 0px;              /* set if you ever add right padding */
+  padding-left: var(--vc-pad-left);
+}
+
+/* Sticky rail that spans into the left/right padding (so prev sits in the gutter) */
+#detail-content .vertical-content .detail-nav-arrows {
+  position: sticky;
+  top: 10vh;                                   /* your request */
+  z-index: 10;
+  pointer-events: none;                         /* wrapper ignores clicks */
+
+  /* stretch the rail beyond the content box into the paddings */
+  margin-left: calc(-1 * var(--vc-pad-left));
+  margin-right: calc(-1 * var(--vc-pad-right));
+  width: calc(100% + var(--vc-pad-left) + var(--vc-pad-right));
+
+  /* let children absolutely position without shifting layout */
+  height: 0;                                    /* no extra flow height */
+}
+
+/* Counter chips, pinned left/right, rotated */
+#detail-content .vertical-content .detail-nav-arrow {
+  position: absolute;               /* ← stay at edges regardless of sibling */
+  top: 0;
+  pointer-events: auto;             /* clickable despite wrapper having none */
+  border: 1px solid #1d1d1d;
+  background: #FAF7F3;
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 0.6em;
+  font-style: italic;
+  letter-spacing: 1px;
+  line-height: 1;
+  box-shadow: 0 2px 8px rgba(0,0,0,.12);
+}
+
+/* Keep them on their sides even if the other hides */
+#detail-content .vertical-content .detail-nav-arrow.prev {
+  left: 0;
+  transform: rotate(-90deg);
+  transform-origin: center;
+  cursor: w-resize;      /* leftwards cursor for “previous” */
+  user-select: none;     /* avoid selecting the “x / y” text */
+}
+#detail-content .vertical-content .detail-nav-arrow.next {
+  right: 0;
+  transform: rotate(90deg);
+  transform-origin: center;
+  cursor: e-resize;      /* rightwards cursor for “next” */
+  user-select: none;
+}
+
+/* When JS sets btn.hidden = true, don’t collapse layout */
+#detail-content .vertical-content .detail-nav-arrow[hidden] {
+  display: none !important;         /* the other one won’t move because it’s absolute */
 }
 
 /* Media hero in the detail view */
@@ -704,6 +760,12 @@ header {
   max-width: 100%;
 }
 
+/* WaveSurfer on the detail page (match gallery look) */
+#detail-content .detail-media.audio .wave {
+  width: 100%;
+  height: 70px; /* keep in sync with DETAIL_WS_CONFIG.height */
+}
+
 /* Primary slot: keep the media centered */
 #detail-content #detail-primary {
   display: flex;
@@ -712,9 +774,10 @@ header {
 
 /* Limit the frame so mega-wide assets don’t span too far */
 #detail-content #detail-primary > figure {
-  margin: 0;
-  max-width: min(100%, var(--detail-media-max-w, 1000px)); /* cap width */
-}
+    margin: 0;
+    width: min(100%, var(--detail-media-max-w, 1000px)); /* definite width */
+    box-sizing: border-box;
+  }
 
 /* The hero media itself:
    - never exceeds the column width
