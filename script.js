@@ -432,23 +432,45 @@ async function strapiFetch(path, params = {}) {
 }
 
 // Fetch ALL pages for a collection endpoint (logs each page)
+// Fetch ALL pages for a collection endpoint (robust against maxLimit/pageCount issues)
+// Fetch ALL pages robustly, using the server-reported effective page size
+// Fetch ALL pages robustly: keep paging until the API returns an empty page.
+// Also break if a page doesn't add anything new (safety against servers that ignore page).
 async function strapiFetchAll(path, baseParams = {}) {
   let page = 1;
   const acc = [];
+  const seenIds = new Set();   // dedupe and detect no-progress pages
+
   while (true) {
     slog('PAGE', path, { page, pageSize: STRAPI.pageSize });
     const data = await strapiFetch(path, {
       ...baseParams,
       'pagination[page]': page,
       'pagination[pageSize]': STRAPI.pageSize,
+      'pagination[withCount]': true
     });
+
     const arr = (data && data.data) || [];
     slog('PAGE:items', arr.length);
-    acc.push(...arr);
-    const meta = data?.meta?.pagination;
-    if (!meta || page >= meta.pageCount) break;
+
+    // Append only new items (by Strapi entity id)
+    let added = 0;
+    for (const it of arr) {
+      if (!it || seenIds.has(it.id)) continue;
+      seenIds.add(it.id);
+      acc.push(it);
+      added++;
+    }
+
+    // Stop conditions (any one is enough):
+    // 1) Empty page => no more data
+    // 2) Page added nothing new => backend ignored page param or we reached the end
+    // 3) Safety upper bound on pages
+    if (arr.length === 0 || added === 0 || page > 2000) break;
+
     page++;
   }
+
   slog('TOTAL', path, acc.length);
   return acc;
 }
@@ -478,7 +500,7 @@ async function loadStrapiAllGroupsAndObjects() {
     // Try 1: OR of equality checks (very stable in v5)
     const qp = { publicationState: 'preview', populate: '*' };
     groupIds.forEach((id, i) => { qp[`filters[$or][${i}][group][id][$eq]`] = String(id); });
-    objects = await strapiFetchAll('objects', qp);
+    objects = await strapiFetchAll('live', qp);
   } catch (err1) {
     console.warn('[strapi:objects] $or[$eq] failed, falling back per-group', err1);
     // Try 2: Query per group id, then de-duplicate
@@ -487,7 +509,7 @@ async function loadStrapiAllGroupsAndObjects() {
       try {
         const part = await strapiFetchAll('objects', {
           'filters[group][id][$eq]': String(gid),
-          'publicationState': 'preview',
+          'publicationState': 'live',
           'populate': '*'
         });
         part.forEach(o => { if (!seen.has(o.id)) { seen.add(o.id); objects.push(o); } });
@@ -1150,6 +1172,52 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     const groupGalleryEl = document.getElementById('group-gallery');
     const detailEl       = document.getElementById('detail-content');
 
+    // --- detail-page prev/next UI (inside vertical-content) ---
+    function attachDetailNavUI() {
+      const vc = detailEl?.querySelector('.vertical-content');
+      if (!vc || vc.querySelector('.detail-nav-arrows')) return; // already added
+
+      const wrap = document.createElement('div');
+      wrap.className = 'detail-nav-arrows';
+      wrap.innerHTML = `
+        <button class="detail-nav-arrow prev" type="button" aria-label="Previous object"></button>
+        <button class="detail-nav-arrow next" type="button" aria-label="Next object"></button>
+      `;
+      // put arrows at the top *inside* vertical-content
+      vc.prepend(wrap);
+
+      // wire the buttons
+      wrap.querySelector('.detail-nav-arrow.prev')
+          ?.addEventListener('click', () => { if (typeof window.stepDetail === 'function') window.stepDetail(-1); });
+      wrap.querySelector('.detail-nav-arrow.next')
+          ?.addEventListener('click', () => { if (typeof window.stepDetail === 'function') window.stepDetail(+1); });
+    }
+
+    // Ensure the arrows exist as soon as the detail module initializes
+    attachDetailNavUI();
+
+
+    let __detailWave = null;
+    function destroyDetailWave() {
+      try { __detailWave?.destroy(); } catch {}
+      __detailWave = null;
+    }
+
+    // Keep the look identical to the gallery waves
+    const DETAIL_WS_CONFIG = {
+      waveColor: '#666',
+      progressColor: '#aaa',
+      cursorColor: '#ccc',
+      height: 50,     // if you want a taller hero, e.g. 90, also change CSS below
+      barWidth: 2,
+      barGap: 1,
+      barHeight: 40,
+      normalize: true,
+      responsive: true,
+      interact: true,
+      cursorWidth: 1,
+    };
+
     // Render ONLY the primary slot (title or hero media) in the detail view
     function renderDetailPrimary(obj) {
       if (!detailEl || !obj) return;
@@ -1179,11 +1247,36 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
             : `<h1>${esc(obj.text || 'Untitled video')}</h1>`;
           break;
 
-        case 'audio':
-          slot.innerHTML = obj.audio
-            ? `<figure><audio class="hero-media" controls><source src="${esc(obj.audio)}"></audio></figure>`
-            : `<h1>${esc(obj.text || 'Untitled audio')}</h1>`;
+        case 'audio': {
+          const src = obj.audio;
+          if (!src) {
+            slot.innerHTML = `<h1>${esc(obj.text || 'Untitled audio')}</h1>`;
+            break;
+          }
+        
+          // ensure previous detail waveform is gone
+          destroyDetailWave();
+        
+          // render just a container for WaveSurfer (no native controls)
+          const id = `detail-wave-${obj.id || 'x'}`;
+          slot.innerHTML = `
+            <figure class="detail-media audio">
+              <div id="${id}" class="wave" aria-label="Waveform"></div>
+            </figure>
+          `;
+        
+          // create the waveform
+          __detailWave = WaveSurfer.create({ ...DETAIL_WS_CONFIG, container: `#${id}` });
+          __detailWave.load(src);
+        
+          // same behavior as gallery: click toggles, hover plays, leave pauses
+          const container = slot.querySelector(`#${id}`);
+          container?.addEventListener('click', () => __detailWave?.playPause());
+          container?.addEventListener('mouseenter', () => { try { __detailWave?.play(); } catch {} }, { passive: true });
+          container?.addEventListener('mouseleave', () => { try { __detailWave?.pause(); } catch {} }, { passive: true });
+        
           break;
+        }          
 
         case 'text':
         default:
@@ -1192,11 +1285,154 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       }
     }
 
+    let __detailWS = null;
+    let __detailWS_RO = null;
+    
+    function initDetailWave() {
+      const waveDiv = document.getElementById('detail-wave');
+      if (!waveDiv || !waveDiv.dataset.src) return;
+    
+      // Clean up any previous instance
+      try { __detailWS_RO?.disconnect(); } catch {}
+      try { __detailWS?.destroy(); } catch {}
+      __detailWS = null; __detailWS_RO = null;
+    
+      // Create WaveSurfer
+      __detailWS = WaveSurfer.create({
+        container: waveDiv,
+        height: 64,          // should match CSS height
+        responsive: true,    // let it resize
+        normalize: true
+        // waveColor / progressColor optional – reuse your prefs if you have them
+      });
+    
+      __detailWS.load(waveDiv.dataset.src);
+    
+      // Keep it in sync with layout changes
+      __detailWS_RO = new ResizeObserver(() => {
+        try { __detailWS?.resize(); } catch {}
+      });
+      __detailWS_RO.observe(waveDiv);
+    }    
+
     // Holds return context so Back knows where to go
     window.__detailCtx = { from: null, gid: null, objectId: null };
 
+    // Holds current nav state across clicks
+    window.__detailNav = null; // { order: [id1,id2,...], index: 0, gid: '...' }
+
+    // Compute ordered ID list for the current object's group
+    function buildDetailNavFor(obj) {
+      const all = (window.gridObject?.objects || window.objects || []);
+      const groupId = String(obj.groupId);
+      const inGroup = all.filter(o => String(o.groupId) === groupId);
+      const ordered = inGroup.slice().sort(window.galleryComparator);
+      return {
+        order: ordered.map(o => String(o.id)),
+        index: ordered.findIndex(o => String(o.id) === String(obj.id)),
+        gid: groupId
+      };
+    }
+
+    // Create or reuse nav for this object's group
+    function ensureDetailNav(obj) {
+      const g = String(obj.groupId);
+      if (!window.__detailNav || window.__detailNav.gid !== g) {
+        window.__detailNav = buildDetailNavFor(obj);
+      } else {
+        // If we jumped here via direct open, ensure index matches the currently opened id
+        const i = window.__detailNav.order.indexOf(String(obj.id));
+        if (i >= 0) window.__detailNav.index = i;
+      }
+      updateDetailNavUI();
+    }
+
+    // Enable/disable arrows at the ends
+    function updateDetailNavUI() {
+      const nav = window.__detailNav;
+      if (!nav) return;
+      const prevBtn = document.querySelector('#detail-content .vertical-content .detail-nav-arrow.prev');
+      const nextBtn = document.querySelector('#detail-content .vertical-content .detail-nav-arrow.next');
+      const total = nav.order.length;
+      const i = nav.index; // 0-based
+      if (prevBtn) {
+        if (i <= 0) {
+          prevBtn.hidden = true;
+          prevBtn.textContent = '';
+          prevBtn.setAttribute('aria-disabled', 'true');
+        } else {
+          prevBtn.hidden = false;
+          prevBtn.textContent = `${i} / ${total}`; // previous item number (1-based)
+          prevBtn.removeAttribute('aria-disabled');
+          prevBtn.setAttribute('aria-label', `Go to item ${i} of ${total}`);
+        }
+      }
+      if (nextBtn) {
+        if (i >= total - 1) {
+          nextBtn.hidden = true;
+          nextBtn.textContent = '';
+          nextBtn.setAttribute('aria-disabled', 'true');
+        } else {
+          nextBtn.hidden = false;
+          nextBtn.textContent = `${i + 2} / ${total}`; // next item number (1-based)
+          nextBtn.removeAttribute('aria-disabled');
+          nextBtn.setAttribute('aria-label', `Go to item ${i + 2} of ${total}`);
+        }
+      }
+    }
+
+    // Go -1 / +1 within the cached order (no wrap)
+    function stepDetail(delta) {
+      const nav = window.__detailNav;
+      if (!nav) return;
+      let nextIndex = nav.index + delta;
+      if (nextIndex < 0 || nextIndex >= nav.order.length) return; // stop at ends
+
+      nav.index = nextIndex;
+      const nextId = nav.order[nextIndex];
+
+      // Keep same context, but swap objectId
+      const ctx = window.__detailCtx || {};
+      window.openObjectDetail({ objectId: nextId, from: ctx.from || null, gid: ctx.gid || null });
+    }
+    // after the closing brace of function stepDetail(delta) { ... }
+    window.stepDetail = stepDetail;
+
+    // --- keyboard navigation for detail view (← prev, → next) ---
+    (function addDetailKeyboardNav() {
+      const detailEl = document.getElementById('detail-content');
+
+      // Ignore key presses while typing in inputs/textareas/contentEditable
+      function isTypingTarget(el) {
+        if (!el) return false;
+        const tag = el.tagName;
+        const editable = el.isContentEditable;
+        return editable ||
+              tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+      }
+
+      document.addEventListener('keydown', (e) => {
+        // Only when the detail page is open/visible
+        if (!detailEl || !detailEl.classList.contains('active')) return;
+        if (isTypingTarget(e.target)) return;
+
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          window.stepDetail?.(-1);
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          window.stepDetail?.(+1);
+        }
+      });
+    })();
+
     window.openObjectDetail = function ({ objectId, from, gid } = {}) {
       if (!detailEl) return;
+
+      // pause any grid waves so we don't hear two audios at once
+      window.__gridWaves?.pauseAll?.();
+      // make sure previous detail waveform is gone before rendering a new one
+      destroyDetailWave();
 
       // Remember where we came from
       window.__detailCtx = { from: from || null, gid: gid || null, objectId: objectId || null };
@@ -1206,6 +1442,7 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       const obj = allObjects.find(o => String(o.id) === String(objectId));
       if (obj) {
         renderDetailPrimary(obj);
+        ensureDetailNav(obj);
       } else {
         console.warn('[detail] object not found for id:', objectId);
       }
@@ -1221,6 +1458,13 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
       // Show the detail screen
       detailEl.classList.add('active');
+
+      // Defer WaveSurfer init until after #detail-content is visible and laid out
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          initDetailWave();
+        });
+      });
 
       // Mark: we are in the full-page detail view
       document.body.classList.add('in-detail-page');
@@ -1254,6 +1498,12 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
     window.closeObjectDetail = function ({ viaPopstate = false } = {}) {
       if (!detailEl?.classList.contains('active')) return;
+
+      try { __detailWS_RO?.disconnect(); } catch {}
+      try { __detailWS?.destroy(); } catch {}
+      __detailWS = null; __detailWS_RO = null;
+
+      destroyDetailWave();
 
       detailEl.classList.remove('active');
 
@@ -1995,6 +2245,27 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     d.dataset.oid = o.id || '';
     return d;
   }
+
+    // ---- Deterministic gallery order (detail-page-only for now) ----
+  function galleryComparator(a, b) {
+    // Primary: by a stable timestamp if available (earlier first)
+    const ta = a.date ? new Date(a.date).getTime() : Number.POSITIVE_INFINITY;
+    const tb = b.date ? new Date(b.date).getTime() : Number.POSITIVE_INFINITY;
+    if (ta !== tb) return ta - tb;
+
+    // Secondary: by type (consistent grouping of media kinds)
+    const w = { image: 1, text: 2, video: 3, audio: 4 };
+    const da = (w[a.type] || 999) - (w[b.type] || 999);
+    if (da) return da;
+
+    // Tertiary: by human text if present
+    const sa = (a.text || a.title || '').localeCompare(b.text || b.title || '');
+    if (sa) return sa;
+
+    // Fallback: by id to be fully deterministic
+    return String(a.id).localeCompare(String(b.id));
+  }
+  window.galleryComparator = window.galleryComparator || galleryComparator;
 
   function groupObjects(gid) {
     const all = (window.gridObject?.objects || window.objects || []);
