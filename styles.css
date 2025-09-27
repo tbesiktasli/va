@@ -4,6 +4,8 @@
   --offgrid-left: 8px;    /* fixed left margin for left counter */
   --offgrid-right: 8px;   /* base right margin; JS adds slide-in visible width to this */
   --side-gap: 8px;
+  --main-bg-color: #fffaf5;
+  --object-text-border-color: #4c4741;
 }
 
 * {
@@ -11,13 +13,11 @@
     padding: 0;
   }
 
-  html {
-    font-family: Arial, sans-serif;
-  } 
+  html { font-family: "Albert Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", "DejaVu Sans", sans-serif; }
 
   body {
     overflow-x: hidden;
-    background-color: #FAF7F3;
+    background-color: var(--main-bg-color);
   }
 
   .header-center, h1, h2, h3, object, .wide-content .gallery-box .column .item.text, .vertical-content .topics {
@@ -90,7 +90,7 @@
     /* Grid view: reuse gallery text styling */
   #grid .object.text {
     box-sizing: border-box;               /* keep absolute size even with padding */
-    border: 1px solid #1d1d1d;
+    border: 1px solid var(--object-text-border-color);
     padding: 20px;
     background-color: #fff;
 
@@ -104,6 +104,7 @@
 
   #grid .object.text .scaling-text {
     display: block;
+    min-width: 0; /* let the span shrink within the flex card */
     max-width: 100%;
     white-space: normal;
     word-break: break-word;
@@ -321,7 +322,7 @@
 .fab:active { transform: scale(0.98); }
 
 /* Optional: show a pressed state when in that mode */
-.fab.is-active { background: #FAF7F3; }
+.fab.is-active { background: var(--main-bg-color); }
 
 #main {
   height: 100vh;
@@ -542,7 +543,7 @@ header {
   justify-content: center;
   align-items: center;
   box-sizing: border-box;
-  border: 1px solid #1d1d1d;
+  border: 1px solid var(--object-text-border-color);
   padding: 20px;
   background-color: white;
 }
@@ -588,7 +589,7 @@ header {
   height: 100%;
   width: 40px;
   transition: width 0.4s ease;
-  background-color: #FAF7F3;
+  background-color: var(--main-bg-color);
   box-sizing: border-box;
 }
 
@@ -715,7 +716,7 @@ header {
   top: 0;
   pointer-events: auto;             /* clickable despite wrapper having none */
   border: 1px solid #1d1d1d;
-  background: #FAF7F3;
+  background: var(--main-bg-color);
   border-radius: 10px;
   padding: 6px 10px;
   font-size: 0.6em;
@@ -747,13 +748,6 @@ header {
 }
 
 /* Media hero in the detail view */
-#detail-content .hero-media {
-  display: block;
-  max-width: 100%;
-  height: auto;
-  outline: 1px solid #1d1d1d; /* matches your theme’s strokes */
-  background: #fff;
-}
 #detail-content video.hero-media,
 #detail-content audio.hero-media {
   width: 100%;
@@ -768,8 +762,12 @@ header {
 
 /* Primary slot: keep the media centered */
 #detail-content #detail-primary {
-  display: flex;
-  justify-content: center;
+  display: block;                /* normal flow, no implicit centering */
+}
+  
+#detail-content #detail-primary h1 {
+  text-align: left;              /* headline left-aligned */
+  margin: 0 0 1rem 0;
 }
 
 /* Limit the frame so mega-wide assets don’t span too far */
@@ -792,7 +790,6 @@ header {
   height: auto;
   object-fit: contain;                           /* safe for video; harmless for img */
   background: #fff;
-  outline: 1px solid #1d1d1d;
 }
 
 /* Make video/audio controls span the frame width */
@@ -800,6 +797,19 @@ header {
 #detail-content audio.hero-media {
   width: 100%;
   max-width: 100%;
+}
+
+/* Landscape images/videos: full width of the column */
+#detail-content #detail-primary .detail-media.landscape .hero-media {
+  width: 100%;
+  margin: 0;
+}
+
+/* Portrait images/videos: centered, not stretched full width */
+#detail-content #detail-primary .detail-media.portrait .hero-media {
+  width: auto;
+  max-width: min(70%, 800px);   /* tweak to taste */
+  margin: 0 auto;
 }
 
 #slide-ins .vertical-content {
@@ -860,7 +870,7 @@ header {
   display: flex;
   flex-direction: column;
   gap: 0.5rem; /* spacing between rows */
-  font-family: sans-serif;
+  font-family: "Albert Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", "DejaVu Sans", sans-serif;
 }
 
 .flex-table .row {
@@ -1033,7 +1043,7 @@ header {
   right: var(--slideins-visible, 0px); /* ← subtracts live sidebar width */
   bottom: 0;
   height: var(--header-h);                /* same height as header */
-  background: #FAF7F3;                    /* same background as header */
+  background: var(--main-bg-color);                    /* same background as header */
   display: none;                          /* toggled via .show */
   align-items: center;
   justify-content: center;                /* center the pills horizontally */
@@ -1049,7 +1059,7 @@ header {
 /* Use gallery's .button style in the selection bar, but no big top margin */
 #selection-bar .button { 
   margin-top: 0;        /* gallery's .button has margin-top:60px; not wanted here */
-  background: #FAF7F3;
+  background: var(--main-bg-color);
 }
 #selection-bar .button:hover {
   cursor: pointer;
@@ -1252,7 +1262,7 @@ header {
 
 /* Unified colors for menu slide-ins */
 #slide-ins .slide-in[data-mode="menu"]{
-  --slide-bg: #FAF7F3;                    /* same as your slide-in background */
+  --slide-bg: var(--main-bg-color);                    /* same as your slide-in background */
   --separator-color: rgba(0,0,0,.12);     /* light divider */
 }
 
@@ -1333,7 +1343,7 @@ header {
   font-size: 0.7rem;
   font-weight: 600;
   padding: 6px 10px;
-  background: #FAF7F3;
+  background: var(--main-bg-color);
   border-right: 1px solid #1d1d1d;
 }
 .tag-match-toggle .seg {
@@ -1394,13 +1404,12 @@ header {
 #overlay-menu {
   position: fixed;
   inset: 0;
-  background: #FAF7F3;
+  background: var(--main-bg-color);
   color: #1d1d1d;
   z-index: 9999;
   display: none;
   flex-direction: column;
   padding: 0px 10px 60px 100px;
-  font-family: "Arial", sans-serif;
 }
 
 #overlay-menu.active {
@@ -1511,7 +1520,7 @@ header {
   font-size: 0.5em;
   border-radius: 10px;
   color: #1d1d1d;
-  background-color: #FAF7F3;
+  background-color: var(--main-bg-color);
 }
 
 .count-invisible-objects .value {
@@ -1569,10 +1578,16 @@ header {
   align-items: center;
   justify-content: center;
   padding: 6px;
-  background: #FAF7F3;          /* same as top/bottom */
+  background: var(--main-bg-color);          /* same as top/bottom */
   border-radius: 10px;           /* same radius */
   box-shadow: 0 1px 3px rgba(0,0,0,.06);
   white-space: nowrap;
+}
+
+/* Ensure a hard space between number and the trailing label inside rotated counters */
+#workspace .count-invisible-objects .rot .value::after,
+#group-gallery > .count-invisible-objects .rot .value::after {
+  content: "\00a0"; /* NBSP */
 }
 
 .count-invisible-objects.left  .rot {
@@ -1612,6 +1627,19 @@ header {
   opacity: .5;
   cursor: default;
   pointer-events: none;
+}
+
+#workspace .count-invisible-objects,
+#group-gallery > .count-invisible-objects {
+  font-family: "Noto Serif", serif !important;
+  font-style: italic !important;
+  font-weight: 400; /* adjust to 700 if you want bolder numbers/text */
+  font-size: 9px;
+}
+
+#detail-content .detail-nav-arrows button {
+  font-family: "Noto Serif", serif !important;
+  font-style: italic !important;
 }
 
 /* quick visual cue when a target is chosen */
