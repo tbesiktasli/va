@@ -1218,6 +1218,30 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       cursorWidth: 1,
     };
 
+    // Decide orientation and add a class to the figure: 'landscape' | 'portrait'
+    function setMediaOrientation(figureEl, kind, el) {
+      function apply(w, h) {
+        if (!figureEl) return;
+        figureEl.classList.remove('landscape', 'portrait');
+        figureEl.classList.add((w >= h) ? 'landscape' : 'portrait');
+      }
+      if (kind === 'image') {
+        const img = el;
+        if (img.naturalWidth && img.naturalHeight) {
+          apply(img.naturalWidth, img.naturalHeight);
+        } else {
+          img.addEventListener('load', () => apply(img.naturalWidth, img.naturalHeight), { once: true });
+        }
+      } else if (kind === 'video') {
+        const vid = el;
+        if (vid.videoWidth && vid.videoHeight) {
+          apply(vid.videoWidth, vid.videoHeight);
+        } else {
+          vid.addEventListener('loadedmetadata', () => apply(vid.videoWidth, vid.videoHeight), { once: true });
+        }
+      }
+    }
+
     // Render ONLY the primary slot (title or hero media) in the detail view
     function renderDetailPrimary(obj) {
       if (!detailEl || !obj) return;
@@ -1235,17 +1259,31 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
       // Replace the slot content according to object type
       switch (obj.type) {
-        case 'image':
+        case 'image': {
           slot.innerHTML = obj.image
-            ? `<figure><img class="hero-media" src="${esc(obj.image)}" alt="${esc(obj.text || 'Image')}" /></figure>`
+            ? `<figure class="detail-media image">
+                 <img class="hero-media" src="${esc(obj.image)}" alt="${esc(obj.text || 'Image')}">
+               </figure>`
             : `<h1>${esc(obj.text || 'Untitled image')}</h1>`;
+          const fig = slot.querySelector('figure.detail-media.image');
+          const img = fig?.querySelector('img.hero-media');
+          if (fig && img) setMediaOrientation(fig, 'image', img);
           break;
+        }
 
-        case 'video':
+        case 'video': {
           slot.innerHTML = obj.video
-            ? `<figure><video class="hero-media" controls playsinline><source src="${esc(obj.video)}"></video></figure>`
+            ? `<figure class="detail-media video">
+                 <video class="hero-media" controls playsinline preload="metadata">
+                   <source src="${esc(obj.video)}">
+                 </video>
+               </figure>`
             : `<h1>${esc(obj.text || 'Untitled video')}</h1>`;
+          const fig = slot.querySelector('figure.detail-media.video');
+          const vid = fig?.querySelector('video.hero-media');
+          if (fig && vid) setMediaOrientation(fig, 'video', vid);
           break;
+        }
 
         case 'audio': {
           const src = obj.audio;
@@ -1279,9 +1317,10 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
         }          
 
         case 'text':
-        default:
+        default: {
           slot.innerHTML = `<h1>${esc(obj.text || 'Untitled')}</h1>`;
           break;
+        }
       }
     }
 
