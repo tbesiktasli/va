@@ -9,6 +9,7 @@ function fitTextToContainer(container, maxFontSize = 100, minFontSize = 6) {
   span.style.display = 'inline-block';
   span.style.whiteSpace = 'pre-wrap';
   span.style.wordWrap = 'break-word';
+  span.style.minWidth = '0';  // allow flex item to shrink inside flex container
 
     // Account for container padding so text fits inside the card
   const cs = getComputedStyle(container);
@@ -16,12 +17,13 @@ function fitTextToContainer(container, maxFontSize = 100, minFontSize = 6) {
   const padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
   const availW = Math.max(0, container.clientWidth  - padX);
   const availH = Math.max(0, container.clientHeight - padY);
+  span.style.maxWidth = `${availW}px`;
 
   while (low <= high) {
     const mid = (low + high) >> 1;
     span.style.fontSize = `${mid}px`;
 
-    const fits = span.offsetWidth <= container.clientWidth && span.offsetHeight <= container.clientHeight;
+    const fits = (span.scrollWidth <= availW) && (span.scrollHeight <= availH);
 
     if (fits) {
       fontSize = mid;
@@ -33,7 +35,7 @@ function fitTextToContainer(container, maxFontSize = 100, minFontSize = 6) {
 
   span.style.fontSize = `${fontSize}px`;
 }
-
+window.fitTextToContainer = fitTextToContainer;
 
 export class Grid {
     constructor(gridId='grid', objects, groups) {
@@ -43,6 +45,11 @@ export class Grid {
       this.objects = objects;
       this.groups = groups || {};
       this.zoomLevel = 1;
+      // NEW: display config (initial/reset zoom)
+      this.display = {
+        // change this default to make everything appear larger/smaller at start
+        baseZoom: 0.8, // e.g. 1.25 for bigger, 0.85 for smaller
+      };
       this._grid = [];
       this.currentState = 'grouped';
       this._detail = { active: false };
@@ -60,10 +67,27 @@ export class Grid {
       this.gridSectionDimension = {
         'width': 200,
         'height': 180,
-        'marginX': 60,
-        'marginY': 40,
+        'marginX': 80, // was 60
+        'marginY': 60, // was 40
         'offsetX': 40,
       }
+
+      // NEW: per-mode spacing configuration
+      this.spacing = {
+        ungrouped: {
+          // distance between sections (i.e., distance between objects in ungrouped view)
+          sectionGapX: this.gridSectionDimension.marginX,
+          sectionGapY: this.gridSectionDimension.marginY,
+        },
+        cluster: {
+          // minimum pixels between items inside a cluster
+          itemGap: 25, // was 12
+          // extra clearance between clusters beyond their footprint radii
+          groupGap: 100,
+          // global multiplier applied to cluster radii before center layout
+          spread: 1.25,
+        }
+      };
       
       this.createGrid();
       this.addObjectsRandomly();
@@ -74,6 +98,17 @@ export class Grid {
       this.initWheelBlock();
       //this.groupObjects();
       this.groupObjectsInstant();
+      // NEW: apply initial base zoom once the grouped view is in place
+      if (this.display?.baseZoom && this.display.baseZoom !== 1) {
+        this.resetZoomToBase(/*animate*/ false);
+        // After first paint, refit once more (layout is fully settled)
+        requestAnimationFrame(() => this._refitAllText?.());
+
+        // When web fonts finish loading, refit again (fixes first-load overflow)
+        if (document.fonts && document.fonts.ready) {
+          document.fonts.ready.then(() => this._refitAllText?.());
+        }
+      }
     }
 
     _vw() { return this.viewportEl?.clientWidth  || window.innerWidth; }
@@ -733,6 +768,87 @@ export class Grid {
       this.htmlGridElement.style.width  = `${this.gridDimension.width}px`;
       this.htmlGridElement.style.height = `${this.gridDimension.height}px`;
     }
+
+    // Recompute section coordinates & object base positions after changing section margins.
+    // Keeps objects in their existing sections and preserves their local offset within the section.
+    _reflowUngroupedGrid() {
+      const total = this.objects.length;
+      const gridSectionCountX = Math.ceil(Math.sqrt(total));
+      const gridSectionCountY = Math.ceil(total / gridSectionCountX);
+
+      const oldGrid = this._grid.slice(); // preserve section order & object assignments
+
+      // Update overall grid dimension from current margins
+      this.gridDimension.width  =
+        gridSectionCountX * this.gridSectionDimension.width +
+        (gridSectionCountX - 1) * this.gridSectionDimension.marginX;
+      this.gridDimension.height =
+        gridSectionCountY * this.gridSectionDimension.height +
+        (gridSectionCountY - 1) * this.gridSectionDimension.marginY;
+
+      this.htmlGridElement.style.width  = `${this.gridDimension.width}px`;
+      this.htmlGridElement.style.height = `${this.gridDimension.height}px`;
+
+      // Rebuild section coordinates in the SAME order as before
+      const newGrid = [];
+      for (let row = 0; row < gridSectionCountY; row++) {
+        for (let col = 0; col < gridSectionCountX; col++) {
+          newGrid.push({
+            x: this.gridSectionDimension.width * col + this.gridSectionDimension.marginX * col,
+            y: this.gridSectionDimension.height * row + this.gridSectionDimension.marginY * row,
+            object_id: oldGrid[newGrid.length]?.object_id ?? ''
+          });
+        }
+      }
+      this._grid = newGrid;
+
+      // Move each object to the same relative offset inside its (unchanged) section index
+      const byId = new Map(this.objects.map(o => [o.id, o]));
+      const count = Math.min(oldGrid.length, newGrid.length);
+      for (let i = 0; i < count; i++) {
+        const oid = oldGrid[i]?.object_id;
+        if (!oid) continue;
+
+        const obj = byId.get(oid);
+        if (!obj) continue;
+
+        const prev = oldGrid[i];
+        const next = newGrid[i];
+
+        const offX = obj.grid_x - prev.x;
+        const offY = obj.grid_y - prev.y;
+
+        const maxOffX = Math.max(0, this.gridSectionDimension.width  - obj.width);
+        const maxOffY = Math.max(0, this.gridSectionDimension.height - obj.height);
+
+        obj.grid_x = next.x + Math.min(Math.max(0, offX), maxOffX);
+        obj.grid_y = next.y + Math.min(Math.max(0, offY), maxOffY);
+
+        const el = document.getElementById(obj.id);
+        if (el) {
+          el.style.left = `${obj.grid_x}px`;
+          el.style.top  = `${obj.grid_y}px`;
+          if (this.currentState === 'ungrouped') {
+            el.style.transform = ''; // base position = grid_x/grid_y
+          }
+        }
+      }
+
+      if (this.currentState === 'ungrouped') {
+        this.fitToView('ungrouped', 160);
+        this._syncPanStateFromDom?.();
+      }
+    }
+
+    // Public setter: change distance in ungrouped view at any time.
+    // Usage: grid.setUngroupedGap(80) or grid.setUngroupedGap(80, 60)
+    setUngroupedGap(gapX, gapY = gapX) {
+      this.spacing.ungrouped.sectionGapX = gapX;
+      this.spacing.ungrouped.sectionGapY = gapY;
+      this.gridSectionDimension.marginX = gapX;
+      this.gridSectionDimension.marginY = gapY;
+      this._reflowUngroupedGrid();
+    }
   
     addObjectsRandomly() {
       for(const object of this.objects) {
@@ -1017,6 +1133,15 @@ export class Grid {
       }
     }
 
+      // Refit all text tiles currently in the DOM
+    _refitAllText() {
+      for (const o of this.objects) {
+        if (o.type !== 'text') continue;
+        const el = document.getElementById(o.id);
+        if (el) fitTextToContainer(el);
+      }
+    }
+
     // Convenience wrappers
     fitToView(view, padding = 160) {
       const b = this.getBoundsFor(view);
@@ -1053,6 +1178,39 @@ export class Grid {
       this.centerViewportOnWorldPoint(cx, cy, animate);
       this.clampCameraToBounds(false);
       this._syncPanStateFromDom?.();
+    }
+
+    // NEW: set zoom to an absolute value (not a multiplier), then optionally center
+    setZoomAbsolute(targetZoom, { center = true, animate = true } = {}) {
+      const current = this.zoomLevel || 1;
+      if (!isFinite(targetZoom) || targetZoom <= 0) return;
+      const factor = targetZoom / current;
+      if (Math.abs(factor - 1) < 1e-6) return;
+
+      this.zoom(factor);
+
+      if (center) {
+        const view = (this.currentState === 'pre-cluster') ? 'grouped' : this.currentState;
+        const b = this.getBoundsFor(view);
+        const cx = (b.minX + b.maxX) / 2;
+        const cy = (b.minY + b.maxY) / 2;
+        this.centerViewportOnWorldPoint(cx, cy, animate);
+        this.clampCameraToBounds(false);
+        this._syncPanStateFromDom?.();
+      }
+    }
+
+    // NEW: snap back to your configured base zoom
+    resetZoomToBase(animate = true) {
+      const z = (this.display?.baseZoom ?? 1);
+      this.setZoomAbsolute(z, { center: true, animate });
+    }
+
+    // Optional: change baseZoom at runtime; apply immediately if you want
+    setBaseZoom(z, { apply = false, animate = true } = {}) {
+      this.display = this.display || {};
+      this.display.baseZoom = z;
+      if (apply) this.resetZoomToBase(animate);
     }
 
     zoom(factor) {
@@ -1093,6 +1251,16 @@ export class Grid {
         // Re-enable transform animations on the next frame so future state switches animate
         requestAnimationFrame(() => {
           document.body.classList.remove('zooming');
+
+          // NEW: one more pass next frame so layout has fully settled
+          requestAnimationFrame(() => {
+            for (const obj of this.objects) {
+              if (obj.type === 'text') {
+                const el = document.getElementById(obj.id);
+                if (el) fitTextToContainer(el);
+              }
+            }
+          });
         });
     }
 
@@ -1252,6 +1420,18 @@ export class Grid {
       this.applyGroupedScatter(scatterStep, jitter);
     }
 
+    // Public setter: tune cluster spacing knobs
+    // Usage examples:
+    //   grid.setClusterGaps({ item: 16 })                // more space inside clusters
+    //   grid.setClusterGaps({ group: 140 })              // more space between clusters
+    //   grid.setClusterGaps({ spread: 1.35 })            // globally push clusters apart
+    //   grid.setClusterGaps({ item: 16, group: 140, spread: 1.35 })
+    setClusterGaps({ item, group, spread } = {}) {
+      if (typeof item   === 'number') this.spacing.cluster.itemGap  = item;
+      if (typeof group  === 'number') this.spacing.cluster.groupGap = group;
+      if (typeof spread === 'number') this.spacing.cluster.spread   = spread;
+    }
+
     clusterGroupedObjects(event, opts = {}) {
       if (event) event.preventDefault();
     
@@ -1270,11 +1450,11 @@ export class Grid {
     
       // Tunables (you can override from the caller if you want)
       const {
-        spread = 1.25,      // >1 pushes clusters farther apart before “exploding”
-        layoutMargin = 100, // base margin passed to layoutGroupCentersForFootprints
-        preFitPad = 140,    // padding when fitting to footprints (pre-explosion)
-        postFitPad = 160    // padding when fitting to final clustered layout
-      } = opts;
+        spread = (this.spacing?.cluster?.spread ?? 1.25),
+        layoutMargin = (this.spacing?.cluster?.groupGap ?? 100),
+        preFitPad = 140,
+        postFitPad = 160
+      } = opts;      
     
       this.pauseAllVideos?.();
     
@@ -1282,7 +1462,7 @@ export class Grid {
       this.currentState = 'pre-cluster';
     
       // 2) Estimate each group’s cluster footprint (radius)
-      const footprints = this.estimateClusterFootprints(12);
+      const footprints = this.estimateClusterFootprints((this.spacing?.cluster?.itemGap ?? 12));
     
       // 3) Increase required radii to create more inter-cluster distance
       for (const gid in footprints) {
@@ -1315,7 +1495,7 @@ export class Grid {
           );
     
           const placed = [];
-          const buffer = 12;
+          const buffer = (this.spacing?.cluster?.itemGap ?? 12);
           const maxSpiralRadius = 1600;
           const stepAngle = Math.PI / 12;
           const stepRadius = 10;
