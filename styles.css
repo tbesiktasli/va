@@ -138,6 +138,10 @@
     color: var(--main-font-outline-color);
   }
 
+  #grid .object.text .detail-panel .detail-date-inline, #grid .object.text .detail-panel .detail-group {
+    font-family: "Albert Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", "DejaVu Sans", sans-serif;
+  }
+
   #grid .object.text .scaling-text {
     display: block;
     min-width: 0; /* let the span shrink within the flex card */
@@ -183,7 +187,7 @@
   /* text objects: bigger title-like text */
   .detail-panel.detail-text-object .detail-description {
     font-size: 1.5rem;       /* or 1.05rem */
-    line-height: 1.8;
+    line-height: 1.3;
   }
 
   .detail-panel.portrait {
@@ -982,6 +986,11 @@ header {
   -webkit-overflow-scrolling: touch;
 }
 
+/* Keep each tile’s intrinsic width; don’t let flex shrink them to 0 */
+#related-objects.related-strip > .item {
+  flex: 0 0 auto;
+}
+
 /* Reuse gallery "item" visuals but limit height inside the strip */
 #related-objects img.item,
 #related-objects video.item {
@@ -1005,7 +1014,12 @@ header {
 #related-objects .item.audio {
   display: flex;
   align-items: center;
-  height: 150px; /* container height, wave inside stays ~50px */
+}
+
+/* Same sizing for waves inside the related strip */
+#related-objects .item.audio .wave {
+  width: 100%;
+  height: 50px;
 }
 
 /* Make items feel clickable */
