@@ -49,6 +49,12 @@ function hoverPlayGuarded(el, ws) {
   el.addEventListener('mouseleave', () => { if (!isGrouped()) { try { ws.pause(); } catch {} } }, { passive: true });
 }
 
+// Always play/pause on hover, regardless of grid grouping
+function hoverPlay(el, ws) {
+  el.addEventListener('mouseenter', () => { try { ws.play(); } catch {} }, { passive: true });
+  el.addEventListener('mouseleave', () => { try { ws.pause(); } catch {} }, { passive: true });
+}
+
 // === MEDIA DEBUG ===
 window.DEBUG_MEDIA = true; // flip to false to mute
 function dlog(...a){ if(window.DEBUG_MEDIA) console.log(...a); }
@@ -1953,6 +1959,8 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
         host.appendChild(el);
       });
+
+      window.__relatedStripAudio?.init();
     }    
 
     let __detailWS = null;
@@ -2103,6 +2111,9 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       window.__gridWaves?.pauseAll?.();
       // make sure previous detail waveform is gone before rendering a new one
       destroyDetailWave();
+
+      // also clear any previous related-strip waves
+      window.__relatedStripAudio?.destroy?.();
 
       // Remember where we came from
       window.__detailCtx = { from: from || null, gid: gid || null, objectId: objectId || null };
@@ -2648,6 +2659,63 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     prevClose?.();
     destroyAllAudio();    // clean up for a fresh reopen
   };
+})();
+
+// === Related strip audio waveforms (WaveSurfer) ===
+// Creates WaveSurfer for each .item.audio inside #related-objects (detail page)
+(() => {
+  const hostSel = '#related-objects';
+  const wsMap = new Map();            // key = wave element, val = ws instance
+
+  function destroyAll() {
+    wsMap.forEach(ws => { try { ws.destroy(); } catch {} });
+    wsMap.clear();
+  }
+
+  function init() {
+    const host = document.querySelector(hostSel);
+    if (!host) return;
+
+    // Start clean each render
+    destroyAll();
+
+    host.querySelectorAll('.item.audio').forEach(item => {
+      const wave = item.querySelector('.wave');
+      const src  = item.dataset.audioSrc;
+      if (!wave || !src) return;
+
+      // Create WS directly on the element (avoids id collisions)
+      const ws = createWave(wave, null);
+
+      // Optional: try peaks first to draw without fetching audio
+      (async () => {
+        try {
+          const peaksUrl = src.replace(/\.[^/.]+$/, '.peaks.json');
+          const r = await fetch(peaksUrl, { cache: 'force-cache' });
+          if (r.ok) {
+            const j = await r.json();
+            const peaks = Array.isArray(j) ? j : (j.data || j.peaks);
+            const duration = j.duration || j.length;
+            if (peaks?.length) ws.load('', peaks, duration);
+          }
+        } catch {}
+      })();
+
+      // Eager-load the audio (match current gallery/grid behavior)
+      ws.load(src);
+
+      // Reuse your hover helpers (no play on hover when grouped)
+      hoverPlay(item, ws);
+
+      // Click toggles play/pause
+      item.addEventListener('click', () => ws.playPause());
+
+      wsMap.set(wave, ws);
+    });
+  }
+
+  // Expose a tiny API so detail open/close can manage these instances
+  window.__relatedStripAudio = { init, destroy: destroyAll };
 })();
 
 // === Grid audio waveforms (WaveSurfer) ===
