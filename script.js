@@ -1916,7 +1916,44 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
         const desc = esc(t.description);
         return `${name ? `<h4>${name}</h4>` : ''}${desc ? `<p>${desc}</p>` : ''}`;
       }).join('');
-    }      
+    }   
+    
+    function renderRelatedObjects(obj) {
+      const host = document.getElementById('related-objects');
+      if (!host || !obj) return;
+    
+      // Pull all objects from memory
+      const all = (window.gridObject?.objects || window.objects || []);
+    
+      // Related = same group, excluding current object
+      const inGroup = all.filter(o =>
+        String(o.groupId) === String(obj.groupId) &&
+        String(o.id) !== String(obj.id)
+      );
+    
+      // Keep consistent ordering with your gallery
+      const ordered = inGroup.slice().sort(window.galleryComparator);
+    
+      // Render
+      host.innerHTML = '';
+      ordered.forEach(o => {
+        // Reuse your existing gallery visuals
+        const el = window.__ui.makeGalleryItem(o);
+    
+        // Jump straight to detail on click
+        el.addEventListener('click', () => {
+          window.openObjectDetail?.({
+            objectId: o.id,
+            from: 'related',          // context tag; nav still works
+            gid: obj.groupId
+          });
+        });
+    
+        el.classList.add('visible');
+
+        host.appendChild(el);
+      });
+    }    
 
     let __detailWS = null;
     let __detailWS_RO = null;
@@ -2076,6 +2113,7 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       if (obj) {
         renderDetailPrimary(obj);
         renderRelatedThemes(obj);
+        renderRelatedObjects(obj);
         ensureDetailNav(obj);
       } else {
         console.warn('[detail] object not found for id:', objectId);
@@ -2920,6 +2958,10 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     d.dataset.oid = o.id || '';
     return d;
   }
+
+  // Make the gallery item builder reusable outside the gallery IIFE
+  window.__ui = window.__ui || {};
+  window.__ui.makeGalleryItem = createGalleryItem;
 
     // ---- Deterministic gallery order (detail-page-only for now) ----
   function galleryComparator(a, b) {
