@@ -42,14 +42,23 @@ export class Grid {
       this.gridId = gridId;
       this.htmlGridElement = document.getElementById(gridId);
       this.viewportEl = document.getElementById('workspace') || document.documentElement;
+      this.display = {
+        // change this default to make everything appear larger/smaller at start
+        baseZoom: 1, // e.g. 1.25 for bigger, 0.85 for smaller
+        objectScale: 0.8, // NEW: starting size for all objects (1 = keep original)
+      };
       this.objects = objects;
+      // NEW: pre-scale object widths/heights so initial zoom can remain 1
+      const s = (this.display?.objectScale ?? 1);
+      if (s !== 1) {
+        for (const o of this.objects) {
+          o.width  = Math.max(1, Math.round(o.width  * s));
+          o.height = Math.max(1, Math.round(o.height * s));
+        }
+      }
       this.groups = groups || {};
       this.zoomLevel = 1;
       // NEW: display config (initial/reset zoom)
-      this.display = {
-        // change this default to make everything appear larger/smaller at start
-        baseZoom: 0.8, // e.g. 1.25 for bigger, 0.85 for smaller
-      };
       this._grid = [];
       this.currentState = 'grouped';
       this._detail = { active: false };
@@ -88,9 +97,35 @@ export class Grid {
           spread: 1.25,
         }
       };
+
+      this.detailConfig = {
+        // default: square-ish detail
+        ungrouped: {
+          width: 480,
+          height: 480,
+          // explicit portrait dimensions
+          portraitWidth: 560,
+          portraitHeight: 400,
+          margin: 80,
+        },
+        clustered: {
+          width: 480,
+          height: 480,
+          portraitWidth: 560,
+          portraitHeight: 400,
+          margin: 80,
+        },
+      };
       
       this.createGrid();
       this.addObjectsRandomly();
+      // ✨ NEW: snapshot initial ungrouped layout so we can always go back to it
+      for (const o of this.objects) {
+        if (o._ungroupedX == null) {
+          o._ungroupedX = o.grid_x;
+          o._ungroupedY = o.grid_y;
+        }
+      }
       this.computeDynamicGroupCenters();
       this.applyGroupedScatter(this.GROUPED_SPREAD, this.GROUPED_JITTER);
       this.fitToView('grouped', 200);
@@ -98,6 +133,12 @@ export class Grid {
       this.initWheelBlock();
       //this.groupObjects();
       this.groupObjectsInstant();
+      // Always do a post-paint text refit (even without base zoom)
+      requestAnimationFrame(() => this._refitAllText?.());
+      // And again once web fonts are fully ready
+      if (document.fonts?.ready) {
+        document.fonts.ready.then(() => this._refitAllText?.());
+      }
       // NEW: apply initial base zoom once the grouped view is in place
       if (this.display?.baseZoom && this.display.baseZoom !== 1) {
         this.resetZoomToBase(/*animate*/ false);
@@ -262,13 +303,159 @@ export class Grid {
       }
     }    
 
-    enterDetail(objectId, { size = 500, margin = 80, width, height } = {}) {
+    _formatDetailDate(dateLike) {
+      if (!dateLike) return '';
+      const d = new Date(dateLike);
+      if (isNaN(d.getTime())) return '';
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const yyyy = d.getFullYear();
+      return `${mm} / ${dd} / ${yyyy}`;
+    }
+
+    // Shared inline detail panel for both ungrouped and clustered flows
+    _createInlineDetailPanel(el, obj, {
+      from = this.currentState,
+      onClose = () => {},
+    } = {}) {
+      const panel = document.createElement('div');
+      const formattedDate = this._formatDetailDate(obj.date);
+      // text objects → use Name if present, else Description
+      // everything else → always Description
+      let primaryText = '';
+      if (obj.type === 'text') {
+        primaryText = (obj.name && obj.name.trim())
+          ? obj.name.trim()
+          : (obj.description || '').trim();
+      } else {
+        primaryText = (obj.description || '').trim();
+      }
+      panel.className = 'detail-panel';
+      if (obj.type === 'text') {
+        panel.classList.add('detail-text-object');
+      }
+      panel.innerHTML = `
+        <button class="detail-close" aria-label="Close">
+          <img src="img/icons/close.svg" alt="Close">
+        </button>
+
+        <!-- top date for NON-portrait -->
+        <div class="detail-date-top">${formattedDate}</div>
+        ${
+          (obj.type === 'image' && obj.image) ||
+          (obj.type === 'video' && obj.video) ||
+          (obj.type === 'audio' && obj.audio)
+            ? `
+              <div class="detail-media">
+                ${obj.type === 'image' ? `<img src="${obj.image}" alt="">` : ''}
+                ${obj.type === 'video' ? `<video src="${obj.video}" controls playsinline style="width:100%;height:auto"></video>` : ''}
+                ${obj.type === 'audio' ? `<audio src="${obj.audio}" controls style="width:100%"></audio>` : ''}
+              </div>
+              `
+            : ''
+        }
+        <div class="detail-info">
+          <div class="detail-date-inline">${formattedDate}</div>
+          ${primaryText ? `<div class="detail-description">${primaryText}</div>` : ''}
+          <div class="detail-group">${obj.groupLocation || ''}</div>
+          <ul class="detail-tags tags">${(obj.connectingTags || []).map(t => `<li>${t}</li>`).join('')}</ul>
+          <a class="detail-link" href="#" target="_blank" rel="noopener">
+            Discover
+            <img src="img/icons/arrow_button_33x18px.svg" alt="" class="detail-link-icon">
+          </a>
+        </div>
+      `;
+
+      // portrait layout for portrait media
+      if ((obj.type === 'image' || obj.type === 'video') && ((obj.height || 0) > (obj.width || 0))) {
+        panel.classList.add('portrait');
+      }
+
+      el.appendChild(panel);
+      requestAnimationFrame(() => panel.classList.add('visible'));
+
+      // --- close button
+      panel.querySelector('.detail-close')?.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        onClose();
+      });
+
+      // --- Open → full-page detail
+      const openLink = panel.querySelector('.detail-link');
+      if (openLink) {
+        openLink.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          // keep your current signature
+          window.openObjectDetail?.({
+            objectId: obj.id,
+            from,
+            gid: obj.groupId,
+          });
+        });
+      }
+
+      // --- tags
+      const tagList = panel.querySelector('.detail-tags');
+      if (tagList) {
+        // annotate
+        tagList.querySelectorAll('li').forEach(li => {
+          li.dataset.tag = li.textContent.trim();
+        });
+
+        const repaint = () => {
+          tagList.querySelectorAll('li').forEach(li => {
+            const t = li.dataset.tag;
+            const on = !!(window.activeTags && window.activeTags.has(t));
+            const c  = (window.tagColors && window.tagColors[t]) || '';
+            li.classList.toggle('active', on);
+            li.style.borderColor = on && c ? c : '#000';
+            li.style.color       = on && c ? c : '';
+            li.style.boxShadow   = on && c ? `${c}66 0 0 8px` : '';
+          });
+        };
+
+        // initial paint
+        repaint();
+
+        tagList.addEventListener('click', (ev) => {
+          const li = ev.target.closest('li');
+          if (!li) return;
+          ev.stopPropagation();
+          const tag = li.dataset.tag;
+
+          // call whichever exists
+          if (typeof window.toggleTagFromDetail === 'function') {
+            window.toggleTagFromDetail(tag);
+          } else if (typeof toggleTagFromDetail === 'function') {
+            toggleTagFromDetail(tag);
+          }
+
+          repaint();
+        });
+      }
+
+      return panel;
+    }
+
+    enterDetail(objectId, opts = {}) {
       if (this.currentState !== 'ungrouped' || this._detail?.active) return;
     
       const obj = this.objects.find(o => o.id === objectId);
       if (!obj) return;
     
       const el = document.getElementById(obj.id);
+
+      // centralize sizes
+      const baseCfg = (this.detailConfig && this.detailConfig.ungrouped) ? this.detailConfig.ungrouped : {};
+      const {
+        size   = baseCfg.size   ?? baseCfg.width ?? 500,
+        margin = baseCfg.margin ?? 80,
+        width,
+        height,
+        portraitWidth  = baseCfg.portraitWidth  ?? baseCfg.width  ?? size,
+        portraitHeight = baseCfg.portraitHeight ?? baseCfg.height ?? size,
+      } = opts;
     
       // Focus object center (world coords)
       const ocx = obj.grid_x + obj.width / 2;
@@ -283,7 +470,10 @@ export class Grid {
         (obj && (obj.type === 'image' || obj.type === 'video')) &&
         ((obj.height || 0) > (obj.width || 0));
 
-      if (objIsPortraitMedia) W += 100;
+      if (objIsPortraitMedia) {
+        W = portraitWidth;
+        H = portraitHeight;
+      }
 
       const targetLeft = ocx - W / 2;
       const targetTop  = ocy - H / 2;
@@ -374,81 +564,16 @@ export class Grid {
       }
     
       // Add the detail panel UI and fade it in
-      const panel = document.createElement('div');
-      panel.className = 'detail-panel';
-      panel.innerHTML = `
-      <button class="detail-close" aria-label="Close">×</button>
-      <div class="detail-media">
-        ${obj.type === 'image' ? `<img src="${obj.image}" alt="">` : ''}
-        ${obj.type === 'text'  ? `<div class="detail-text">${obj.text}</div>` : ''}
-        ${obj.type === 'video' ? `<video src="${obj.video}" controls playsinline style="width:100%;height:auto"></video>` : ''}
-        ${obj.type === 'audio' ? `<audio src="${obj.audio}" controls style="width:100%"></audio>` : ''}
-      </div>
-      <div class="detail-info">
-        <div class="detail-date">${obj.date || ''}</div>
-        <div class="detail-group">${obj.groupLocation || ''}</div>
-        <ul class="detail-tags tags">${(obj.tags||[]).map(t=>`<li>${t}</li>`).join('')}</ul>
-        <a class="detail-link" href="#" target="_blank" rel="noopener">Open</a>
-      </div>
-    `;
-
-    // Add 'portrait' layout class when image/video is taller than wide
-    if ((obj.type === 'image' || obj.type === 'video') && ((obj.height || 0) > (obj.width || 0))) {
-      panel.classList.add('portrait');
-    }
-
-      el.appendChild(panel);
-      requestAnimationFrame(() => panel.classList.add('visible'));
-    
-      // Close handlers
-      panel.querySelector('.detail-close')?.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        this.exitDetail();
+      // Add the detail panel UI and fade it in (shared)
+      this._createInlineDetailPanel(el, obj, {
+        from: 'ungrouped',
+        onClose: () => this.exitDetail(),
       });
-
-      // Detail tag clicks: reseed global selection (toggle-aware) and sync chip colors
-      const tagList = panel.querySelector('.detail-tags');
-      if (tagList) {
-        // annotate chips so we can read the tag
-        tagList.querySelectorAll('li').forEach(li => {
-          li.dataset.tag = li.textContent.trim();
-        });
-        tagList.addEventListener('click', (ev) => {
-          const li = ev.target.closest('li');
-          if (!li) return;
-          ev.stopPropagation();
-          reseedTagsFromDetail(li.dataset.tag); // now toggles if clicked twice
-          // reflect active visuals locally in this detail list, too
-          tagList.querySelectorAll('li').forEach(el => {
-            const t = el.dataset.tag;
-            //const on = activeTags.has(t);
-            const on = !!(window.activeTags && window.activeTags.has(t));
-            //const c  = tagColors?.[t];
-            const c  = (window.tagColors && window.tagColors[t]) || '';
-            el.classList.toggle('active', on);
-            el.style.borderColor = on && c ? c : '#000';
-            el.style.color       = on && c ? c : '';
-            el.style.boxShadow   = on && c ? `${c}66 0 0 8px` : '';
-          });
-        });
-      }
 
       const onEsc = (e) => { if (e.key === 'Escape') this.exitDetail(); };
       window.addEventListener('keydown', onEsc, { once: true });
-
-      // NEW: make sure clicking Open always navigates, not bubble/close
-      panel.querySelector('.detail-link')?.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-
-        // If you want to pass context (object id / group) to the demo page:
-        // const url = `demo-sidebars.html?id=${encodeURIComponent(obj.id)}&group=${encodeURIComponent(obj.groupName || obj.groupId)}`;
-        // window.location.href = url;
-
-        // Plain navigation:
-        window.openObjectDetail?.({ objectId: obj.id, from: this.currentState, gid: obj.groupId });
-      });
     
+      this.prevState = this.currentState;
       this.currentState = 'detail';
     }
 
@@ -462,14 +587,20 @@ export class Grid {
       const el = document.getElementById(obj.id);
     
       // Detail size = half of ungrouped in both dimensions
-      let width  = 500;
-      const height = 500;
+      const cfg = this.detailConfig.clustered;
+      let width  = cfg.width ?? 500;
+      let height = cfg.height ?? 500;
+      const portraitWidth  = cfg.portraitWidth  ?? width;
+      const portraitHeight = cfg.portraitHeight ?? height;
       
       const objIsPortraitMedia =
         (obj && (obj.type === 'image' || obj.type === 'video')) &&
         ((obj.height || 0) > (obj.width || 0));
       
-      if (objIsPortraitMedia) width += 100;
+      if (objIsPortraitMedia) {
+        width  = portraitWidth;
+        height = portraitHeight;
+      }
     
       // Cluster/group center in world space
       const g = this.groups?.[obj.groupId];
@@ -546,77 +677,11 @@ export class Grid {
         el.style.transform = `translate(${dx2}px, ${dy2}px)`;
     
         // Build detail panel UI (reuse your ungrouped panel structure)
-        const panel = document.createElement('div');
-        panel.className = 'detail-panel';
-        panel.innerHTML = `
-        <button class="detail-close" aria-label="Close">×</button>
-        <div class="detail-media">
-          ${obj.type === 'image' ? `<img src="${obj.image}" alt="">` : ''}
-          ${obj.type === 'text'  ? `<div class="detail-text">${obj.text}</div>` : ''}
-          ${obj.type === 'video' ? `<video src="${obj.video}" controls playsinline style="width:100%;height:auto"></video>` : ''}
-          ${obj.type === 'audio' ? `<audio src="${obj.audio}" controls style="width:100%"></audio>` : ''}
-        </div>
-        <div class="detail-info">
-          <div class="detail-date">${obj.date || ''}</div>
-          <div class="detail-group">${obj.groupLocation || ''}</div>
-          <ul class="detail-tags tags">${(obj.tags||[]).map(t=>`<li>${t}</li>`).join('')}</ul>
-          <a class="detail-link" href="#" target="_blank" rel="noopener">Open</a>
-        </div>
-      `;
-
-        // Add 'portrait' layout class when image/video is taller than wide
-        if ((obj.type === 'image' || obj.type === 'video') && ((obj.height || 0) > (obj.width || 0))) {
-          panel.classList.add('portrait');
-        }
-
-        el.appendChild(panel);
-        requestAnimationFrame(() => panel.classList.add('visible'));
-        panel.querySelector('.detail-close')?.addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          this.exitDetail();
+        // Shared panel builder
+        this._createInlineDetailPanel(el, obj, {
+          from: 'clustered',
+          onClose: () => this.exitDetail(),
         });
-
-        // Open full-page object detail from clustered detail card
-        const openLink = panel.querySelector('.detail-link');
-        if (openLink) {
-          openLink.addEventListener('click', (ev) => {
-            ev.preventDefault();
-            ev.stopPropagation();
-            window.openObjectDetail?.({ objectId: obj.id, from: 'clustered', gid: obj.groupId });
-          });
-        }
-
-        // Detail tags (clustered): paint on open and repaint after clicks
-        const tagList = panel.querySelector('.detail-tags');
-        if (tagList) {
-          // annotate each chip with data-tag
-          tagList.querySelectorAll('li').forEach(li => {
-            li.dataset.tag = li.textContent.trim();
-          });
-          // painter used on open and after each change
-          const paintDetailChips = () => {
-            tagList.querySelectorAll('li').forEach(el => {
-              const t  = el.dataset.tag;
-              const on = !!(window.activeTags && window.activeTags.has(t));
-              const c  = (window.tagColors && window.tagColors[t]) || '';
-              el.classList.toggle('active', on);
-              el.style.borderColor = (on && c) ? c : '#000';
-              el.style.color       = (on && c) ? c : '';
-              el.style.boxShadow   = (on && c) ? `${c}66 0 0 8px` : '';
-            });
-          };
-          tagList.addEventListener('click', (ev) => {
-            const li = ev.target.closest('li');
-            if (!li) return;
-            ev.stopPropagation();
-            // reseed global selection, sync menu, glows, counters
-            reseedTagsFromDetail(li.dataset.tag);
-
-            // repaint chips with the current selection/colors
-            paintDetailChips();
-          });
-        }
-
       };
     
       const to = setTimeout(expand, 520);
@@ -628,6 +693,7 @@ export class Grid {
       };
       el.addEventListener('transitionend', onEnd);
     
+      this.prevState = this.currentState;
       this.currentState = 'detail';
     } 
 
@@ -876,7 +942,10 @@ export class Grid {
         if (object.type === 'image') {
           const url = String(object.image || '');
           const img = new Image();
-          img.onload = () => { objectDiv.style.backgroundImage = `url("${url.replace(/"/g, '%22')}")`; };
+          img.onload = () => {
+            objectDiv.style.backgroundImage = `url("${url.replace(/"/g, '%22')}")`;
+            window.DEBUG_MEDIA && console.debug('[grid:image-set]', { id: object.id, cssW: object.width, cssH: object.height, url });
+          };
           img.onerror = () => {
             // Fallback: show an <img> so you at least see a broken icon (useful for debugging 404/CORS)
             img.style.width = '100%';
@@ -918,25 +987,69 @@ export class Grid {
           });
         }
 
+        // === AUDIO TILE ===
         if (object.type === 'audio') {
-          objectDiv.classList.add('audio');            // so we can target it
-          objectDiv.dataset.audioSrc = object.audio;   // WaveSurfer will read from here
-        
-          const wave = document.createElement('div');
-          wave.className = 'wave';
-          wave.id = `wave_${object.id}_o`;               // unique per tile
-        
-          // place at the bottom of the tile
-          wave.style.position = 'absolute';
-          wave.style.left = '0';
-          wave.style.bottom = '0';
-          wave.style.width = '100%';
-          wave.style.height = '50px';
-        
-          objectDiv.appendChild(wave);
+          const waveWrap = document.createElement('div');
+          waveWrap.className = 'wave-wrap';
+          objectDiv.appendChild(waveWrap);
+
+          // 1) Create WaveSurfer WITHOUT url (won’t fetch audio)
+          const ws = WaveSurfer.create({
+            container: waveWrap,
+            height: 48,
+            interact: false,
+            waveColor: '#9aa0a6',
+            progressColor: '#1a73e8',
+            cursorWidth: 0,
+          });
+          objectDiv.__ws = ws;
+
+          // 2) OPTIONAL: draw waveform from precomputed peaks (no audio fetch)
+          //    We try to find a peaks JSON next to the audio: foo.mp3 -> foo.peaks.json
+          let peaks, duration;
+          (async () => {
+            try {
+              const peaksUrl = object.audio.replace(/\.[^/.]+$/, '.peaks.json');
+              const r = await fetch(peaksUrl, { cache: 'force-cache' });
+              if (r.ok) {
+                const json = await r.json();
+                // support either { data: [...], duration: <sec> } or a plain array
+                peaks = Array.isArray(json) ? json : (json.data || json.peaks || undefined);
+                duration = (json.duration || json.length || object.duration || undefined);
+                if (peaks && peaks.length) {
+                  // Draw waveform from peaks only; still no audio fetched
+                  ws.load('', peaks, duration);
+                }
+              }
+            } catch (e) { /* no peaks available — fine */ }
+          })();
+          // 3) Lazy-load audio ONLY on hover (first time)
+          //let loaded = false;
+          //objectDiv.addEventListener('mouseenter', () => {
+          //  if (loaded) return;
+          //  loaded = true;
+          //  // load with peaks if we have them (keeps the drawn shape, just attaches audio)
+          //  ws.load(object.audio, peaks, duration);
+          //  // optionally: auto-play on hover
+          //  // ws.once('ready', () => ws.play());
+          //});
+
+          // TEMP: eager-load (disable hover-lazy)
+          ws.load(object.audio, peaks, duration);
+          // keep optional hover play/pause hygiene
+          objectDiv.addEventListener('mouseenter', () => { try { ws.play?.(); } catch {} });
+          objectDiv.addEventListener('mouseleave', () => { try { ws.pause?.(); } catch {} });
+
+          // 4) Optional hygiene
+          objectDiv.addEventListener('mouseleave', () => {
+            if (ws.isPlaying && ws.isPlaying()) ws.pause();
+          });
         }
         
-        objectDiv.dataset.tags = object.tags.join(",");
+        const tagList = (object.connectingTags && object.connectingTags.length)
+          ? object.connectingTags
+          : (object.tags || []);
+        objectDiv.dataset.tags = tagList.join(",");
   
         // Add a gradient shadow layer
         const glowDiv = document.createElement("div");
@@ -1075,6 +1188,10 @@ export class Grid {
         if (o.group_initial_x != null) { o.group_initial_x += offsetX; o.group_initial_y += offsetY; }
         if (o.group_x != null)         { o.group_x         += offsetX; o.group_y         += offsetY; }
         if (o.cluster_x != null)       { o.cluster_x       += offsetX; o.cluster_y       += offsetY; }
+        if (o._ungroupedX != null) {
+          o._ungroupedX += offsetX;
+          o._ungroupedY += offsetY;
+        }
       }
       for (const gid in this.groups) {
         if (this.groups[gid]) {
@@ -1275,71 +1392,112 @@ export class Grid {
   
     groupObjects(event) {
       if (event) event.preventDefault();
-      // if a cluster animation was queued, cancel it
       if (this._clusterTimer) { clearTimeout(this._clusterTimer); this._clusterTimer = null; }
-      // Close any open detail when changing grid mode
       if (this._detail?.active) { this.exitDetail(); }
-      
-      // If we’re returning from cluster/pre-cluster, move piles back to the compact centers first.
-      if (this.currentState === 'clustered' || this.currentState === 'pre-cluster') {
-        // re-center piles to the saved compact centers, then we’re done
+    
+      const wasClustered = (this.currentState === 'clustered' || this.currentState === 'pre-cluster');
+      if (wasClustered && this.baseGroupCenters) {
         this.movePilesToNewCenters(this.baseGroupCenters, this.GROUPED_SPREAD, this.GROUPED_JITTER);
-        this.fitToView('grouped', 200);
-        this._syncPanStateFromDom();
-        this.currentState = 'grouped';
-        this._applyTransformsForCurrentState?.();
-        return;
       }
-      
-      // already in grouped (or coming from ungrouped) — just animate to current grouped targets
-      this.pauseAllVideos();
-      this.currentState = 'grouped';
-      // If we are coming from UNGROUPED, shrink grid back to grouped bounds
-      // (the ungrouped fit expanded gridDimension; this resets it)
+    
       this.fitToView('grouped', 200);
       this._syncPanStateFromDom();
-      this._applyTransformsForCurrentState();
-    }
+    
+      this.currentState = 'grouped';
+      this._applyTransformsForCurrentState?.();   // → this triggers the CSS transition
+    
+      // ✅ give the transition time to run (same as cluster: ~520ms)
+      setTimeout(() => {
+        // if user already left grouped, don't bake
+        if (this.currentState !== 'grouped') return;
+
+        // 1) turn transitions OFF for all objects
+        for (const o of this.objects) {
+          const el = document.getElementById(o.id);
+          if (!el) continue;
+          el.style.transition = 'none';
+        }
+
+        // 2) bake grouped positions with transitions OFF
+        for (const o of this.objects) {
+          if (o._ungroupedX == null) {
+            o._ungroupedX = o.grid_x;
+            o._ungroupedY = o.grid_y;
+          }
+          o.grid_x = o.group_x;
+          o.grid_y = o.group_y;
+
+          const el = document.getElementById(o.id);
+          if (!el) continue;
+          el.style.left = o.grid_x + 'px';
+          el.style.top  = o.grid_y + 'px';
+          el.style.transform = ''; // now this will NOT animate
+        }
+
+        // 3) restore transitions on next frame for future mode switches
+        requestAnimationFrame(() => {
+          for (const o of this.objects) {
+            const el = document.getElementById(o.id);
+            if (!el) continue;
+            el.style.transition = '';
+          }
+        });
+      }, 520);
+
+    }      
 
     groupObjectsInstant() {
       this.pauseAllVideos();
       this.currentState = 'grouped';
-      
+    
       const z = this.zoomLevel || 1;
+    
+      // FRAME 0: put everything in grouped position with transitions OFF
       for (const object of this.objects) {
         const el = document.getElementById(object.id);
+        if (!el) continue;
+    
         const dx = (object.group_x - object.grid_x) * z;
         const dy = (object.group_y - object.grid_y) * z;
-        // disable animation just for this first paint
+    
+        // kill any CSS transition for the first paint
         el.style.transition = 'none';
         el.style.transform = `translate(${dx}px, ${dy}px)`;
       }
-
-      // restore CSS transitions on the next frame so future state changes animate
+    
+      // FRAME 1: bake grouped coords into left/top, still with transitions OFF
       requestAnimationFrame(() => {
         for (const object of this.objects) {
           const el = document.getElementById(object.id);
-          el.style.transition = ''; // back to stylesheet (transform 0.5s ease)
-        }
-      });
-    }
-
-    // Re-apply CSS transforms based on the *current* state
-    /*
-    _applyTransformsForCurrentState() {
-      for (const o of this.objects) {
-        const el = document.getElementById(o.id);
-        if (!el) continue;
-        if (this.currentState === 'ungrouped') {
+          if (!el) continue;
+    
+          // remember original ungrouped spot the first time
+          if (object._ungroupedX == null) {
+            object._ungroupedX = object.grid_x;
+            object._ungroupedY = object.grid_y;
+          }
+    
+          // write grouped as the new base
+          object.grid_x = object.group_x;
+          object.grid_y = object.group_y;
+    
+          el.style.left = object.grid_x + 'px';
+          el.style.top  = object.grid_y + 'px';
+    
+          // now we can drop the transform without any animation
           el.style.transform = '';
-        } else if (this.currentState === 'grouped') {
-          el.style.transform = `translate(${o.group_x - o.grid_x}px, ${o.group_y - o.grid_y}px)`;
-        } else if (this.currentState === 'clustered') {
-          el.style.transform = `translate(${o.cluster_x - o.grid_x}px, ${o.cluster_y - o.grid_y}px)`;
         }
-      }
-    }
-    */
+    
+        // FRAME 2: only now restore transitions for future mode changes
+        requestAnimationFrame(() => {
+          for (const object of this.objects) {
+            const el = document.getElementById(object.id);
+            if (!el) continue;
+            el.style.transition = ''; // back to stylesheet value
+          }
+        });
+      });
+    }    
 
     // --- Estimate per-group cluster footprints (radius) ---
     estimateClusterFootprints(padding = 10) {
@@ -1408,16 +1566,38 @@ export class Grid {
       return centers;
     }
 
-    // --- Move group piles to new centers (keeps grouped scatter), animated ---
+    // --- Move group piles to new centers (preserve current scatter), animated ---
     movePilesToNewCenters(newCenters, scatterStep = 16, jitter = 6) {
-      // update centers
+      // 1) remember old centers so we can shift existing member positions
+      const oldCenters = {};
+      if (this.groups) {
+        for (const gid in this.groups) {
+          const g = this.groups[gid];
+          if (g && typeof g.x === 'number' && typeof g.y === 'number') {
+            oldCenters[gid] = { x: g.x, y: g.y };
+          }
+        }
+      }
+
+      // 2) write new centers
       for (const gid in newCenters) {
         if (!this.groups[gid]) this.groups[gid] = {};
         this.groups[gid].x = newCenters[gid].x;
         this.groups[gid].y = newCenters[gid].y;
       }
-      // recompute grouped scatter targets
-      this.applyGroupedScatter(scatterStep, jitter);
+
+      // 3) shift each object's grouped target by the center delta
+      //    (this avoids rebuilding the spiral = no visible "jump to grouped")
+      for (const obj of this.objects) {
+        const gid = obj.groupId;
+        const prev = oldCenters[gid];
+        const next = newCenters[gid];
+        if (!prev || !next) continue;
+        const dx = next.x - prev.x;
+        const dy = next.y - prev.y;
+        obj.group_x += dx;
+        obj.group_y += dy;
+      }
     }
 
     // Public setter: tune cluster spacing knobs
@@ -1440,6 +1620,9 @@ export class Grid {
       // Close any open detail when changing grid mode
       if (this._detail?.active) { this.exitDetail(); }
 
+      // 🆕 remember where we are coming from
+      const prevState = this.currentState;
+
       // grid.js – inside clusterGroupedObjects(event, opts = {}) { ... }
       if (this.currentState === 'clustered') {
         // Keep transforms consistent and ensure camera is legal; no re-fit jump.
@@ -1460,6 +1643,22 @@ export class Grid {
     
       // 1) Mark state
       this.currentState = 'pre-cluster';
+
+      // 🆕 If we were in a non-grouped layout (e.g. UNGROUPED), do an *instant*
+      // snap to grouped **and bake it** so the next cluster animation starts
+      // from grouped, not from ungrouped.
+      // If we were in a non-grouped layout (e.g. UNGROUPED), do **not** force
+      // an invisible snap to grouped. We only need to make sure transitions
+      // are ON so the cluster animation can run smoothly from the current pose.
+      if (prevState !== 'grouped' && prevState !== 'pre-cluster' && prevState !== 'clustered') {
+        for (const obj of this.objects) {
+          const el = document.getElementById(obj.id);
+          if (el) {
+            // in case previous view temporarily disabled transitions
+            el.style.transition = '';
+          }
+        }
+      }
     
       // 2) Estimate each group’s cluster footprint (radius)
       const footprints = this.estimateClusterFootprints((this.spacing?.cluster?.itemGap ?? 12));
@@ -1549,42 +1748,108 @@ export class Grid {
             el.style.transform = `translate(${dx}px, ${dy}px)`;
           });
         }
-    
+
         // 8) Done
         this.currentState = 'clustered';
         this.fitToView('clustered', postFitPad);
         this._syncPanStateFromDom?.();
+
+        // 🟡 bake clustered positions one frame later
+        requestAnimationFrame(() => {
+          // if user already switched view, don't overwrite
+          if (this.currentState !== 'clustered') return;
+          for (const obj of this.objects) {
+            // keep ungrouped backup
+            if (obj._ungroupedX == null) {
+              obj._ungroupedX = obj.grid_x;
+              obj._ungroupedY = obj.grid_y;
+            }
+            const cx = obj.cluster_x ?? obj.group_x;
+            const cy = obj.cluster_y ?? obj.group_y;
+            if (cx == null || cy == null) continue;
+            obj.grid_x = cx;
+            obj.grid_y = cy;
+            const el = document.getElementById(obj.id);
+            if (!el) continue;
+            el.style.left = obj.grid_x + 'px';
+            el.style.top  = obj.grid_y + 'px';
+            el.style.transform = '';
+          }
+        });
       }, 520);
     }    
   
     ungroupObjects(event) {
 
       if (event) event.preventDefault();
-      // Close any open detail when changing grid mode
       if (this._detail?.active) { this.exitDetail(); }
-
+    
       const prev = this.currentState;
+    
+      // 1) set state + let CSS animate to ungrouped targets
       this.currentState = 'ungrouped';
       console.log('ungroup objects');
-      // If we’re coming from clustered/pre-cluster, restore compact centers now
-      if ((prev === 'clustered' || prev === 'pre-cluster') && this.baseGroupCenters) {
-        if (this._clusterTimer) { clearTimeout(this._clusterTimer); this._clusterTimer = null; }
-        for (const gid in this.baseGroupCenters) {
-          if (!this.groups[gid]) this.groups[gid] = {};
-          this.groups[gid].x = this.baseGroupCenters[gid].x;
-          this.groups[gid].y = this.baseGroupCenters[gid].y;
+    
+      const z = this.zoomLevel || 1;
+      for (const obj of this.objects) {
+        const el = document.getElementById(obj.id);
+        if (!el) continue;
+    
+        if (obj._ungroupedX != null) {
+          const dx = (obj._ungroupedX - obj.grid_x) * z;
+          const dy = (obj._ungroupedY - obj.grid_y) * z;
+          el.style.transform = `translate(${dx}px, ${dy}px)`;
+        } else {
+          el.style.transform = '';
         }
-        // Recompute grouped scatter targets around the restored centers (no DOM anim)
-        this.applyGroupedScatter?.(this.GROUPED_SPREAD, this.GROUPED_JITTER);
       }
-  
-      for(const object of this.objects) {
-        const element = document.getElementById(object.id);
-        element.style.transform = '';
-      }
-
-      this.fitToView('ungrouped', 160)
-    }
+    
+      // ⛔️ REMOVED: this.fitToView('ungrouped', 160);
+    
+      setTimeout(() => {
+        // 1) turn transitions off while we bake
+        for (const obj of this.objects) {
+          const el = document.getElementById(obj.id);
+          if (el) el.style.transition = 'none';
+        }
+    
+        // 2) restore/bake the ungrouped positions into the main coords
+        for (const obj of this.objects) {
+          if (obj._ungroupedX != null) {
+            obj.grid_x = obj._ungroupedX;
+            obj.grid_y = obj._ungroupedY;
+            const el = document.getElementById(obj.id);
+            if (el) {
+              el.style.left = obj.grid_x + 'px';
+              el.style.top  = obj.grid_y + 'px';
+              el.style.transform = '';
+            }
+          }
+        }
+    
+        // 3) ✅ NOW resize the grid to the *actual* ungrouped box
+        this.fitToView('ungrouped', 160);
+    
+        // 4) if we’re coming from clustered/pre-cluster, restore compact centers
+        if ((prev === 'clustered' || prev === 'pre-cluster') && this.baseGroupCenters) {
+          if (this._clusterTimer) { clearTimeout(this._clusterTimer); this._clusterTimer = null; }
+          for (const gid in this.baseGroupCenters) {
+            if (!this.groups[gid]) this.groups[gid] = {};
+            this.groups[gid].x = this.baseGroupCenters[gid].x;
+            this.groups[gid].y = this.baseGroupCenters[gid].y;
+          }
+          this.applyGroupedScatter?.(this.GROUPED_SPREAD, this.GROUPED_JITTER);
+        }
+    
+        // 5) restore transitions on next frame
+        requestAnimationFrame(() => {
+          for (const obj of this.objects) {
+            const el = document.getElementById(obj.id);
+            if (el) el.style.transition = '';
+          }
+        });
+      }, 520);
+    }     
   
     resetGrid(event) {
       this.recenterToViewport();
@@ -1709,6 +1974,7 @@ export class Grid {
       
         this.htmlGridElement.style.left = `${p.currentX}px`;
         this.htmlGridElement.style.top  = `${p.currentY}px`;
+        //this.htmlGridElement.style.transform = `translate3d(${p.currentX}px, ${p.currentY}px, 0)`;
       
         // STOP only when CURRENT is very close to TARGET and velocity is tiny
         const posErr = Math.hypot(p.targetX - p.currentX, p.targetY - p.currentY);
