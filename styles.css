@@ -90,7 +90,6 @@
     background-size: cover;
     background-position: center;
     /*background-repeat: 'no-repeat';*/
-    background-color: var(--main-bright-bg-color);
     overflow: visible;
     z-index: 1;
     transition: transform 0.5s ease, width 0.4s ease, height 0.4s ease;
@@ -2155,7 +2154,7 @@ header {
 #research-page.active { display: block; }
 
 #research-page .text-page {
-  padding: 80px 60px;                        /* 150 top/bottom, 100 left/right */
+  padding: 80px 200px;                        /* 150 top/bottom, 100 left/right */
   box-sizing: border-box;
   width: 100%;
 }
@@ -2243,3 +2242,63 @@ header {
   margin: 0 0 12px;
 }
 #research-page .two-col-row .right p:last-child { margin-bottom: 0; }
+
+/* Generic text sub-page layout */
+.text-subpage {
+  padding: 150px 100px;
+  overflow: auto;               /* scrollable content below the header */
+}
+
+/* Typographic system for the text page */
+.text-subpage h2.subhead {
+  font-family: "Albert Sans", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 1.2em;
+  margin: 0 0 20px;
+}
+.text-subpage h1.title {
+  font-family: "Noto Serif", serif;
+  font-weight: 400;
+  font-size: 4em;
+  margin: 0 0 30px;
+}
+.text-subpage p {
+  font-family: "Albert Sans", system-ui, sans-serif;
+  font-size: 1.2em;
+  margin: 0 0 20px;
+}
+.text-subpage p:last-child { margin-bottom: 0; }
+
+/* Icon list (reset) */
+.text-subpage .bullet-list {
+  list-style: none;
+  margin: 50px 0 0;
+  padding: 0;
+}
+.text-subpage .bullet-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+.text-subpage .bullet-list li:last-child { margin-bottom: 0; }
+.text-subpage .bullet-list .ico {
+  width: 10px; height: 12px; flex: none;
+  background: url("img/icons/arrow_counter_10x12px.svg") no-repeat center / contain;
+  transform: rotate(90deg);
+}
+
+/* Two-column rows: 25% / 60% with remaining as gap */
+.text-subpage .two-col-rows { display: grid; gap: 24px; }
+.text-subpage .two-col-row { display: grid; grid-template-columns: 25% 60%; column-gap: 15%; }
+.text-subpage .two-col-row .left h3 {
+  font-family: "Albert Sans", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 1.1em;
+  margin: 0;
+}
+.text-subpage .two-col-row .right p {
+  font-family: "Albert Sans", system-ui, sans-serif;
+  font-size: 0.9em;
+  margin: 0;
+}
