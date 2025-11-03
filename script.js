@@ -247,6 +247,59 @@ async function seedConnectingTagsFromStrapi() {
   }
 }
 
+// === DYNAMIC THEMES (Strapi) ===============================================
+async function fetchStrapiThemes() {
+  if (typeof strapiFetchAll !== 'function') {
+    console.warn('[themes] strapiFetchAll not available – skipping dynamic themes');
+    return [];
+  }
+
+  // Strapi v5 collection name assumed: "themes" -> /api/themes
+  const rows = await strapiFetchAll('themes', {
+    populate: '*',
+    publicationState: 'preview'
+  });
+
+  // Normalize: Name -> title, Description -> paragraphs[]
+  return rows.map(r => {
+    const a = (r && (r.attributes || r)) || {};
+    const name = a.Name || a.name || a.Title || a.title || '';
+    const desc = a.Description || a.description || '';
+
+    // split Description into paragraphs (supports CRLF/LF and blank-line breaks)
+    const paragraphs = Array.isArray(desc)
+      ? desc.filter(Boolean)
+      : String(desc || '')
+          .split(/\r?\n\r?\n|\r?\n/)
+          .map(s => s.trim())
+          .filter(Boolean);
+
+    // id: prefer Strapi id; fallback to slugified name
+    const id = String(r?.id ?? name.toLowerCase().replace(/\s+/g, '-'));
+
+    return { id, title: name || 'Untitled', paragraphs };
+  }).filter(t => t.title);
+}
+
+async function seedThemesFromStrapi() {
+  try {
+    const data = await fetchStrapiThemes();
+    if (!data.length) {
+      console.warn('[themes] no Themes in Strapi – keeping hardcoded list');
+      return;
+    }
+    // Store for UI
+    window.__themesFromStrapi = data;
+
+    // If UI already exists (hot re-render), repaint it
+    if (document.getElementById('themes-section')?.firstChild) {
+      renderThemesUI();
+    }
+  } catch (err) {
+    console.warn('[themes] failed to load from Strapi', err);
+  }
+}
+
 // The group whose tags are currently displayed at the top
 //let currentTagViewGroupId = TAG_GROUPS[0]?.id || null;
 
@@ -3923,6 +3976,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     closeMenuSecondary('#discover-connections');
   });
 
+  await seedThemesFromStrapi();
   renderThemesUI();
 
   // Remove active underline when the Themes section is closed
@@ -4672,9 +4726,13 @@ function renderThemesUI() {
   const host = document.getElementById('themes-section');
   if (!host) return;
 
+  const THEMES_DATA = (window.__themesFromStrapi && window.__themesFromStrapi.length)
+    ? window.__themesFromStrapi
+    : THEMES; // fallback to dummy if Strapi empty/unavailable
+
   host.innerHTML = `
     <ul class="themes-list">
-      ${THEMES.map(t => `
+      ${THEMES_DATA.map(t => `
         <li class="theme-item" data-tid="${t.id}">
           <button type="button" class="theme-link">
             <span class="theme-icon" aria-hidden="true">?</span>
@@ -4692,7 +4750,7 @@ function renderThemesUI() {
 
     const li = btn.closest('.theme-item');
     const tid = li.dataset.tid;
-    const theme = THEMES.find(x => x.id === tid);
+    const theme = THEMES_DATA.find(x => x.id === tid);
     if (!theme) return;
 
     // switch active state to this row
