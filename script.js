@@ -5127,8 +5127,6 @@ function initSlideIns() {
 
 // --- Full-screen overlay menu (burger) ---
 function initOverlayMenu() {
-  // Works with: <button id="menu-button" class="menu-trigger">…</button>
-  // …or legacy: <img id="burger-btn" …>
   const trigger =
     document.getElementById('menu-button') ||
     document.querySelector('.menu-trigger') ||
@@ -5136,16 +5134,23 @@ function initOverlayMenu() {
 
   const overlay  = document.getElementById('overlay-menu');
   const closeBtn = document.getElementById('overlay-close');
-  if (!overlay) return; // nothing to do
+  if (!overlay) return;
 
   const mainItems = overlay.querySelectorAll('.menu-item');
   const subMenu   = document.getElementById('sub-menu');
 
+  // 1) Submenu entries
   const subItemsMap = {
     viralatmospheres: ['Blah','Blub'],
-    about:            ['The Research Project','Summer School','The Book'],
-    projects:         ['Project One','Project Two','Project Three'],
-    team:             ['Member One','Member Two','Member Three']
+    about: ['About MoRePPaR','The Research Project','Summer School','The Book'],
+    projects: ['Project One','Project Two','Project Three'],
+    team: ['Member One','Member Two','Member Three']
+  };
+
+  // 2) Label → subpage id + header-left copy
+  const SUBPAGE_ROUTES = {
+    'About MoRePPaR':       { id: 'subpage-about-moreppar',  header: 'About MoRePPaR' },
+    'The Research Project': { id: 'subpage-about-project',   header: 'About this project' } // optional if you add this id later
   };
 
   function setActiveMenu(target){
@@ -5161,50 +5166,63 @@ function initOverlayMenu() {
         subMenu.querySelectorAll('.sub-item').forEach(i => i.classList.remove('active'));
         div.classList.add('active');
 
-        // Route: open our new page when "The Research Project" is clicked
+        // route to subpage if mapped
+        const route = SUBPAGE_ROUTES[text];
+        if (route) {
+          closeOverlay();
+          openTextSubpage(route.id, route.header);
+        }
+
+        // legacy: open the existing "Research" long page if used
         if (text === 'The Research Project') {
           window.openResearchPage?.();
-          closeOverlay(); // function in initOverlayMenu scope
+          closeOverlay();
         }
       });
       subMenu.appendChild(div);
     });
   }
 
-  const openOverlay = (e) => {
-    e?.preventDefault();
-    overlay.classList.add('active');
-    setActiveMenu('viralatmospheres');      // default section
-    closeBtn?.focus?.();                    // accessibility nicety
-  };
+  const openOverlay = (e) => { e?.preventDefault(); overlay.classList.add('active'); setActiveMenu('viralatmospheres'); closeBtn?.focus?.(); };
+  const closeOverlay = (e) => { e?.preventDefault(); overlay.classList.remove('active'); };
 
-  const closeOverlay = (e) => {
-    e?.preventDefault();
-    overlay.classList.remove('active');
-  };
-
-  // Open/close bindings
   trigger?.addEventListener('click', openOverlay);
-  // Keyboard open on Enter/Space for the button
-  trigger?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') openOverlay(e);
-  });
-
+  trigger?.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') openOverlay(e); });
   closeBtn?.addEventListener('click', closeOverlay);
-
-  // Click outside (backdrop) closes
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) closeOverlay(e);
-  });
-
-  // ESC closes
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeOverlay(e);
-  });
-
-  // Main items switch the active submenu
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeOverlay(e); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeOverlay(e); });
   mainItems.forEach(i => i.addEventListener('click', () => setActiveMenu(i.dataset.target)));
 }
+
+// Show a text sub-page (by id), hide others, and set header-left
+function openTextSubpage(sectionId, headerText) {
+  // 0) Hide grid + any other main views (gallery/detail/research)
+  const gridShell = document.getElementById('grid-shell');
+  if (gridShell) gridShell.style.display = 'none';
+  document.querySelectorAll('.scroll-container-horizontal.active, .scroll-container-vertical.active')
+    .forEach(n => n.classList.remove('active'));
+
+  // 1) Hide all text sub-pages and clear their state
+  document.querySelectorAll('.text-subpage').forEach(s => {
+    s.hidden = true;
+    s.classList.remove('active');
+  });
+
+  // 2) Show the requested one (attribute + class so CSS displays it)
+  const el = document.getElementById(sectionId);
+  if (el) {
+    el.hidden = false;
+    el.classList.add('active');
+  }
+
+  // 3) Header & layout adjustments
+  setHeaderLeft('custom', { text: headerText });
+  if (typeof applyHeaderOffset === 'function') applyHeaderOffset();
+
+  // 4) Focus for a11y
+  el?.focus?.();
+}
+window.openTextSubpage = openTextSubpage;
 
 // Run once DOM is ready (keep your existing DOMContentLoaded handlers)
 document.addEventListener('DOMContentLoaded', () => {
@@ -5297,6 +5315,7 @@ function setHeaderLeft(mode, ctx = {}) {
     case 'home':         text = HEADER_COPY.home; break;
     case 'connections':  text = HEADER_COPY.connections; break;
     case 'research':     text = HEADER_COPY.research(ctx.location); break;
+    case 'custom':       text = ctx.text || ''; break;   // <-- add this
     default:             text = ''; break;
   }
 
@@ -5309,6 +5328,8 @@ function setHeaderLeft(mode, ctx = {}) {
   });
 }
 window.setHeaderLeft = setHeaderLeft;
+
+window.setHeaderLeftText = (t) => setHeaderLeft('custom', { text: t });
 
 // Single place that decides what the header should show right now
 function refreshHeaderLeftFromState() {
