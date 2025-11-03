@@ -1429,6 +1429,49 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
   window.openGroupGallery = openGallery;
 
+  // === Simple text page (Research Project) ===
+  (function simpleTextPage() {
+    const gridShellEl    = document.getElementById('grid-shell');
+    const groupGalleryEl = document.getElementById('group-gallery');
+    const detailEl       = document.getElementById('detail-content');
+    const pageEl         = document.getElementById('research-page');
+
+    function hideAllMainViews() {
+      if (gridShellEl) gridShellEl.style.display = 'none';
+      groupGalleryEl?.classList.remove('active');
+      detailEl?.classList.remove('active');
+    }
+    function showGrid() {
+      if (gridShellEl) gridShellEl.style.display = '';
+    }
+
+    window.openResearchPage = function() {
+      if (!pageEl) return;
+      hideAllMainViews();
+      pageEl.classList.add('active');
+      try {
+        if (!history.state || !history.state.research) {
+          history.pushState({ research: true }, '', '#research');
+        }
+      } catch {}
+      window.__dispatchViewChange?.();
+    };
+
+    window.closeResearchPage = function() {
+      pageEl?.classList.remove('active');
+      showGrid();
+      window.__dispatchViewChange?.();
+    };
+
+    // If user hits BACK after we pushed #research, close the page
+    window.addEventListener('popstate', () => {
+      if (!history.state || !history.state.research) {
+        pageEl?.classList.remove('active');
+        showGrid();
+      }
+    });
+  })();
+
   // Open gallery for a custom set of objects (e.g., current tag filter)
   window.openTagsGallery = function(objs = [], titleLines = []) {
     if (!groupGalleryEl) return;
@@ -5117,6 +5160,12 @@ function initOverlayMenu() {
       div.addEventListener('click', () => {
         subMenu.querySelectorAll('.sub-item').forEach(i => i.classList.remove('active'));
         div.classList.add('active');
+
+        // Route: open our new page when "The Research Project" is clicked
+        if (text === 'The Research Project') {
+          window.openResearchPage?.();
+          closeOverlay(); // function in initOverlayMenu scope
+        }
       });
       subMenu.appendChild(div);
     });
