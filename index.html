@@ -9,6 +9,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Display:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Albert+Sans:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet">
+
 
 </head>
 <body>
@@ -41,42 +43,97 @@
 
       <!-- Top-left controls -->
       <div id="fab-top-left" class="fab-stack">
-        <button id="fab-group" class="fab" title="Group" aria-label="Group">
-          <!-- "group" icon: overlapping circles -->
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12.5a4.5 4.5 0 1 1 0-9a4.5 4.5 0 0 1 0 9Zm6 8a4.5 4.5 0 1 1 0-9a4.5 4.5 0 0 1 0 9Z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M13.2 6.2a4.5 4.5 0 1 1 0 7.6" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
-        </button>
-        <button id="fab-cluster" class="fab" title="Cluster" aria-label="Cluster">
-          <!-- "cluster" icon: central node with satellites -->
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="currentColor"/><circle cx="5" cy="7" r="2" fill="currentColor"/><circle cx="19" cy="7" r="2" fill="currentColor"/><circle cx="6" cy="18" r="2" fill="currentColor"/><circle cx="18" cy="18" r="2" fill="currentColor"/><path d="M7 8l4 3M17 8l-4 3M7 17l4-2M17 17l-4-2" stroke="currentColor" stroke-width="1.4" fill="none"/></svg>
-        </button>
-        <button id="fab-ungroup" class="fab" title="Ungroup (Masonry)" aria-label="Ungroup">
-          <!-- "masonry" icon: bricks -->
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="8" height="4" rx="1" fill="currentColor"/><rect x="13" y="5" width="8" height="4" rx="1" fill="currentColor"/><rect x="3" y="11" width="5" height="4" rx="1" fill="currentColor"/><rect x="9" y="11" width="12" height="4" rx="1" fill="currentColor"/><rect x="3" y="17" width="8" height="4" rx="1" fill="currentColor"/><rect x="13" y="17" width="8" height="4" rx="1" fill="currentColor"/></svg>
-        </button>
-        <button id="fab-fit-all" class="fab" title="Fit All" aria-label="Fit All">
-          <!-- "fit" icon: four corners -->
-          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>
+        <!-- GROUP -->
+        <button id="fab-group" class="fab fab-lg" title="Group" aria-label="Group">
+          <!-- inline of img/icons/link.svg (without XML header) -->
+          <!-- BEGIN link.svg -->
+          <svg fill="currentColor" stroke="currentColor" viewBox="0 0 30.7 30.6" preserveAspectRatio="xMidYMid meet">
+            <path d="M28.7,2c-2.6-2.6-7-2.5-9.7.1l-4.6,4.6c-.3.3-.3.8,0,1.1.3.3.8.3,1.1,0l4.6-4.6c2.1-2.1,5.6-2.1,7.6-.1,2,2,2,5.5-.1,7.6l-4.6,4.6c-.3.3-.3.8,0,1.1s.8.3,1.1,0l4.6-4.6c2.7-2.7,2.7-7.1.1-9.7Z"/>
+            <path d="M15.2,22.8l-4.7,4.7c-2.1,2.1-5.5,2.1-7.5,0-2-2-2-5.5,0-7.5l4.7-4.7c.3-.3.3-.8,0-1.1s-.8-.3-1.1,0l-4.7,4.7c-2.6,2.6-2.7,7,0,9.6s7,2.5,9.6,0l4.7-4.7c.3-.3.3-.8,0-1.1s-.8-.3-1.1,0Z"/>
+            <path d="M20.8,8.6l-12.7,12.7c-.3.3-.3.8,0,1.1s.3.2.5.2.4,0,.5-.2l12.7-12.7c.3-.3.3-.8,0-1.1s-.8-.3-1.1,0Z"/>
           </svg>
+          <!-- END link.svg -->
+        </button>
+      
+        <!-- CLUSTER -->
+        <button id="fab-cluster" class="fab fab-lg" title="Cluster" aria-label="Cluster">
+          <!-- inline of img/icons/map-view.svg (without XML header) -->
+          <!-- BEGIN map-view.svg -->
+          <svg fill="currentColor" stroke="currentColor" viewBox="0 0 33 33" preserveAspectRatio="xMidYMid meet">
+            <path d="M28.3,22.5c-1.2,0-2.3.5-3.1,1.2l-6.3-4.9.9-8.3c2.4-.1,4.3-2.1,4.3-4.6s-2.1-4.6-4.6-4.6-4.6,2.1-4.6,4.6,1.4,3.9,3.4,4.4l-.9,8.2-8.3,3.1c-.6-1.8-2.3-3-4.3-3S.2,20.7.2,23.2s2.1,4.6,4.6,4.6,4.6-2.1,4.6-4.6,0,0,0-.1h0s8.5-3.2,8.5-3.2l6.3,5c-.4.7-.6,1.4-.6,2.2,0,2.5,2.1,4.6,4.6,4.6s4.6-2.1,4.6-4.6-2.1-4.6-4.6-4.6ZM4.7,26.3c-1.7,0-3.1-1.4-3.1-3.1s1.4-3.1,3.1-3.1,3.1,1.4,3.1,3.1-1.4,3.1-3.1,3.1ZM16.3,5.9c0-1.7,1.4-3.1,3.1-3.1s3.1,1.4,3.1,3.1-1.4,3.1-3.1,3.1-3.1-1.4-3.1-3.1ZM28.3,30.2c-1.7,0-3.1-1.4-3.1-3.1s1.4-3.1,3.1-3.1,3.1,1.4,3.1,3.1-1.4,3.1-3.1,3.1Z"/>
+          </svg>
+          <!-- END map-view.svg -->
+        </button>
+      
+        <!-- UNGROUP -->
+        <button id="fab-ungroup" class="fab fab-lg" title="Ungroup (Masonry)" aria-label="Ungroup">
+          <!-- inline of img/icons/Unlink.svg (without XML header) -->
+          <!-- BEGIN Unlink.svg -->
+          <svg fill="currentColor" stroke="currentColor" viewBox="0 0 34 34" preserveAspectRatio="xMidYMid meet">
+            <path d="M28.53,11.65l-4.64,4.64c-.29.29-.77.29-1.06,0h0c-.29-.29-.29-.77,0-1.06l4.64-4.64c2.08-2.08,2.14-5.55.13-7.56s-5.48-1.96-7.56.13l-4.64,4.64c-.29.29-.77.29-1.06,0h0c-.29-.29-.29-.77,0-1.06l4.64-4.64c2.66-2.66,7.09-2.72,9.68-.13s2.53,7.02-.13,9.68Z"/>
+            <path d="M16.28,22.84c.29.29.29.77,0,1.06l-4.69,4.69c-2.63,2.63-7.05,2.67-9.64.08s-2.55-7,.08-9.64l4.69-4.69c.29-.29.77-.29,1.06,0h0c.29.29.29.77,0,1.06l-4.69,4.69c-2.06,2.06-2.09,5.5-.08,7.52s5.46,1.98,7.52-.08l4.69-4.69c.29-.29.77-.29,1.06,0h0Z"/>
+            <path d="M3.66,2.6c-.29-.29-.77-.29-1.06,0s-.29.77,0,1.06l3.01,3.01c.29.29.77.29,1.06,0s.29-.77,0-1.06l-3.01-3.01Z"/>
+            <path d="M5.01,8.58H.75c-.41,0-.75.34-.75.75s.34.75.75.75h4.26c.41,0,.75-.34.75-.75s-.34-.75-.75-.75Z"/>
+            <path d="M9.33,0c-.41,0-.75.34-.75.75v4.26c0,.41.34.75.75.75s.75-.34.75-.75V.75c0-.41-.34-.75-.75-.75Z"/>
+            <path d="M25.09,23.91c-.29-.29-.77-.29-1.06,0s-.29.77,0,1.06l3.01,3.01c.29.29.77.29,1.06,0s.29-.77,0-1.06l-3.01-3.01Z"/>
+            <path d="M29.95,20.5h-4.26c-.41,0-.75.34-.75.75s.34.75.75.75h4.26c.41,0,.75-.34.75-.75s-.34-.75-.75-.75Z"/>
+            <path d="M21.37,24.82c-.41,0-.75.34-.75.75v4.26c0,.41.34.75.75.75s.75-.34.75-.75v-4.26c0-.41-.34-.75-.75-.75Z"/>
+          </svg>
+          <!-- END Unlink.svg -->
         </button>
       </div>
 
       <!-- Bottom-left controls -->
       <div id="fab-bottom-left" class="fab-stack">
-        <button id="fab-zoom-in" class="fab fab-lg" title="Zoom In" aria-label="Zoom In">
-          <!-- big plus -->
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <!-- FIT ALL -->
+        <button id="fab-fit-all" class="fab fab-lg" title="Fit All" aria-label="Fit All">
+          <!-- BEGIN zoom-out_2.svg -->
+          <svg fill="currentColor" stroke="currentColor" viewBox="0 0 33 33" preserveAspectRatio="xMidYMid meet">
+            <path d="M11.43,12.13H.69c-.38,0-.69-.31-.69-.69s.31-.69.69-.69h9.08L.21,1.18C-.06.91-.06.47.21.2s.71-.27.98,0l9.56,9.56V.7c0-.38.31-.69.69-.69s.69.31.69.69v10.74c0,.38-.31.69-.69.69Z"/>
+            <path d="M20.87,11.43V.69c0-.38.31-.69.69-.69s.69.31.69.69v9.08L31.82.21c.27-.27.71-.27.98,0s.27.71,0,.98l-9.56,9.56h9.06c.38,0,.69.31.69.69s-.31.69-.69.69h-10.74c-.38,0-.69-.31-.69-.69Z"/>
+            <path d="M21.57,20.87h10.74c.38,0,.69.31.69.69s-.31.69-.69.69h-9.08l9.56,9.56c.27.27.27.71,0,.98s-.71.27-.98,0l-9.56-9.56v9.06c0,.38-.31.69-.69.69s-.69-.31-.69-.69v-10.74c0-.38.31-.69.69-.69Z"/>
+            <path d="M12.13,21.57v10.74c0,.38-.31.69-.69.69s-.69-.31-.69-.69v-9.08L1.18,32.79c-.27.27-.71.27-.98,0s-.27-.71,0-.98l9.56-9.56H.7c-.38,0-.69-.31-.69-.69s.31-.69.69-.69h10.74c.38,0,.69.31.69.69Z"/>
+          </svg>
+          <!-- END zoom-out_2.svg -->
         </button>
+      
+        <!-- ZOOM IN -->
+        <button id="fab-zoom-in" class="fab fab-lg" title="Zoom In" aria-label="Zoom In">
+          <!-- BEGIN plus.svg -->
+          <svg fill="currentColor" stroke="currentColor" viewBox="0 0 34 34" preserveAspectRatio="xMidYMid meet">
+            <path d="M32.15,15.7h-14.95V.75c0-.41-.34-.75-.75-.75s-.75.34-.75.75v14.95H.75c-.41,0-.75.34-.75.75s.34.75.75.75h14.95v14.95c0,.41.34.75.75.75s.75-.34.75-.75v-14.95h14.95c.41,0,.75-.34.75-.75s-.34-.75-.75-.75Z"/>
+          </svg>
+          <!-- END plus.svg -->
+        </button>
+      
+        <!-- ZOOM OUT -->
         <button id="fab-zoom-out" class="fab fab-lg" title="Zoom Out" aria-label="Zoom Out">
-          <!-- big minus -->
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <!-- BEGIN Minus.svg, not the original one anymore, had issues with centering -->
+            <svg
+            viewBox="0 0 24 24"
+            preserveAspectRatio="xMidYMid meet"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round">
+            <line x1="1" y1="12" x2="24" y2="12"></line>
+          </svg>
+          <!-- END Minus.svg -->
         </button>
       </div>
     </div>
 
     <div id="group-gallery" class="scroll-container-horizontal" data-allow-scroll>
       <!-- Back button to return to grid -->
-      <div id="content-back-button" title="Back">←</div>
+      <div id="content-back-button" title="Back">
+        <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 32" fill="none" aria-hidden="true">
+          <g stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke">
+            <line x1="8" y1="16.5" x2="42" y2="16.5"/>
+            <line x1="8" y1="16.5" x2="16"  y2="7"/>
+            <line x1="8" y1="16.5" x2="16.5" y2="26"/>
+          </g>
+        </svg>
+      </div>
     
       <!-- Gallery-specific counters (independent from grid counters) -->
       <div class="count-invisible-objects left"><span class="rot"><span class="value">0</span> Elements ↑</span></div>
@@ -162,7 +219,15 @@
       <div class="content-header">
           <span class="location">Diepsloot, South Africa</span>
       </div>
-      <div id="content-back-button" onclick="showHorizontal();">&larr;</div>
+      <div id="content-back-button" onclick="showHorizontal();">
+        <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 32" fill="none" aria-hidden="true">
+          <g stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke">
+            <line x1="8" y1="16.5" x2="42" y2="16.5"/>
+            <line x1="8" y1="16.5" x2="16"  y2="7"/>
+            <line x1="8" y1="16.5" x2="16.5" y2="26"/>
+          </g>
+        </svg>
+      </div>
       <div class="vertical-content">
           <div class="content-section multi-column">
               <div class="section-content">
@@ -171,19 +236,7 @@
                         <h1>When to move is to live and to live is to move</h1>
                       </div>
 
-                      <ul class="topics">
-                          <li>Research Project</li>
-                          <li>Covid-19</li>
-                          <li>Memory</li>
-                          <li>Interview-Excerpt</li>
-                          <li>South Africa</li>
-                          <li>Diepsloot</li>
-                          <li>Essential Mobility</li>
-                          <li>Township Residents</li>
-                          <li>State Violence</li>
-                          <li>Dehumanization</li>
-                          <li>Anger</li>
-                      </ul>
+                      <ul class="topics" id="topics-list"></ul>
 
                       <div class="flex-table">
                           <div class="row">
@@ -207,57 +260,7 @@
                       -->
                   </div>
                   <div class="right">
-                      <p>‘Ngeskhathi se “Covid-19” sisokolile kakhulu uyabona. Siyahereza thina kodwa ngeskhathi
-                        leso kwaba nzima’ During “Covid-19” we suffered a lot, you see. We are ‘hustlers’ (baherezi)
-                        but during that time it was difficult. (A young man in his 20’s who stays in Number 4 1 .)</p>  
-                      <p>Martha, a woman in her 50’s further explained and demonstrated what it means to move
-                        when ‘to move is to live’. I met her at her home in Number 13. When I arrived at her home,
-                        she was putting together thin pieces of broken timber, planks, logs, twigs, plastic and paper
-                        in between three rocks which are used as a stand for the pot. The entrance to her house was
-                        make-shift gate of rusty, corrugated metal sheets and mattress spring wires. The cleaning
-                        and bathing water drained from her house through a make-shift gutter to the road. She was
-                        wearing a dark old blue jersey, a long maroon dress, and black, torn tennis shoes. In a low
-                        frail voice, she explained her experiences during “Covid-19”.</p>
-                  
-                      <blockquote>A lot of people lost their jobs. For young mothers after losing a job what(ever) kind of
-                        plan you come up with, the police would come and take it. How was one supposed to
-                        stay at home without any food? You are washing hands and sanitizing, but you have
-                        nothing to eat. You must go out to find vegetables (umroho) in the gardens. We have
-                        no electricity, that is why you see granny is making fire right now. I must go fetch
-                        wood to make the fire. I can’t cook supper now, I am still busy with other things, I’ll
-                        cook it later. “Covid-19”-19 was hard, especially for the young women, because the
-                        parcels were not given to everyone. If one was lucky, they got them and if not, that
-                        was it. They would tell us to stay at home, so how are you going to fetch firewood? 1
-                        litre of paraffin is very expensive. If I am out to fetch wood, I would cook pap 2 and
-                        relish and prepare bathing water for the children, but if I am stuck here, how am I
-                        supposed to do that? […] You put on a mask and go out to the bush and dump-sites.
-                        It was hard, but you tell yourself God will look out for me when I am in the bushes. As
-                        I am telling you that I am going out now to fetch wood, these ones won’t be enough,
-                        so it was hard, too much. 1 litre of paraffin is now R22. It’s finished, you must buy
-                        more kerosene, with what money are you going to buy it?</blockquote>
-                      <p>With the restriction of movement came the hierarchization of who was allowed to stay
-                        mobile. The notion of ‘being essential’ reconfigured social relations and who was entitled to
-                        move. Martha, an unemployed mother who moved around the community collecting
-                        recyclable items to sell, as well as wood, paper, and plastic for domestic fires, was classified
-                        as a non-essential worker. As a result, she was prohibited from leaving her home during the “Covid-19” lockdown. Martha had to keep her family alive through these movements to
-                        gather some resources to start a cooking fire, ask for food parcels from neighbours especially
-                        when she does not receive any. it was either that or starving to death for her and her family.
-                        She chose to move and live. In her own way, she negotiated and exposed the contested
-                        definition of essential work, by convincing herself of the necessity of movement to survive.
-                        The politicized category of essentiality and the need to move was also very much gendered,
-                        with women’s prescribed role as carers pushed to the periphery.</p>
-                      <p>This ‘going to the bushes under God’s eye’ (this expression relates to an expanded interview
-                        referenced above) is going out to look for the essentials which enables her to feed her
-                        family. Even when meeting the soldiers or police could mean punishment or arrest, Martha
-                        had to search. Her gathering and foraging for resources reminded me of the way chickens
-                        scratch the earth for food, an aspect of her life which I understood as ukuhereza. Ukuhereza
-                        refers to the toughest, least-dignified informal work and labour, necessary to secure a single
-                        meal or a two-day supply of food. Ukuhereza is different from hustling, because hustling is
-                        slicker, urban, easier and most importantly, hustling takes place in a context of relative
-                        abundance. Ukuhereza is not occasional, but rather a mode of survival of the poorest.
-                        Ukuhereza is a scratching of the ground when there are no other options, a survival mode
-                        peculiar to spaces such as Diepsloot, that resembles holding on by the fingernails, or the
-                        Afrikaans word ‘vasbyt’, meaning to hang on, and bite hard.</p>
+                    <div id="detail-right"></div>
                   </div>
               </div>
           </div>
@@ -281,13 +284,7 @@
                   <div class="left">
                   </div>
                   <div class="right">
-                      <ul class="tags">
-                          <li>Abandoned</li>
-                          <li>Saxony-Anhalt</li>
-                          <li>Germany</li>
-                          <li>Essential Work</li>
-                          <li>Mobility</li>
-                      </ul>
+                    <ul class="tags" id="detail-tags-lower"></ul>
                   </div>
               </div>
           </div>
@@ -297,22 +294,8 @@
                   <div class="left">
                   </div>
                   <div class="right">
-                      <h4>Essential Im/Mobility</h4>
-                      <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
-                      <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
-                      <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
-                      
-                      <h4>Practices of Navigating Atmospheres of Risk and Security</h4>
-                      <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
-                      <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
-                      <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
-                      
-                      <h4>Affective Dis/Continuities and Re-Acting</h4>
-                      <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
-                      <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
-                      <p>Duis autem vel eum iriure dolor in hendrerit in vulputate velit esse molestie consequat, vel illum dolore eu feugiat nulla facilisis at vero eros et accumsan et iusto odio dignissim qui blandit praesent luptatum zzril delenit augue duis dolore te feugait nulla facilisi. Lorem ipsum dolor sit amet, consectetuer</p>
-
-                      <a class="button" href="#"><span class="text">Explore Theme</span><span class="icon">&rarr;</span></a>
+                    <div id="related-themes"></div>
+                    <a class="button" href="#"><span class="text">Explore Theme</span><span class="icon">&rarr;</span></a>
                   </div>
               </div>
           </div>
@@ -333,7 +316,9 @@
       <!-- data-section-mode one of "accordion", "collapsible", "static" -->
       <div class="slide-in" id="discover-connections" data-mode="menu" data-section-mode="accordion">
         <div class="slide-in-handle">
-          <button class="close-btn" type="button">&larr;</button>
+          <button class="close-btn" type="button">
+            <img src="img/icons/arrow_counter_10x12px.svg" alt="Toggle Sidebar">
+          </button>
           <span class="vertical-text">Discover Connections</span>
         </div>
         <!-- NEW: body wrapper with two columns: secondary + main -->
@@ -351,7 +336,6 @@
             <div class="content-section">
               <h3>Themes</h3>
               <div class="section-content" id="themes-section">
-                <!-- <ul class="tags"><li>Essential Work</li><li>Mobility</li></ul> -->
               </div>
             </div>
             <div class="content-section">
