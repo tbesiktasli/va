@@ -1484,6 +1484,12 @@ header {
 #slide-ins .slide-in[data-mode="menu"].secondary-open .secondary-pane {
   width: var(--secondary-w);
   padding: 12px 14px 16px 14px;
+  /* allow long content to scroll */
+  height: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-gutter: stable both-edges; /* matches main column behavior */
+  -webkit-overflow-scrolling: touch;   /* smoother on iOS */
 }
 
 #slide-ins .slide-in[data-mode="menu"] .vertical-content {
