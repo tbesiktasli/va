@@ -2149,3 +2149,97 @@ header {
   width: var(--burger-width);
   height: var(--burger-height);
 }
+
+/* === Research text page === */
+#research-page { display: none; }              /* follow your .active toggling convention */
+#research-page.active { display: block; }
+
+#research-page .text-page {
+  padding: 80px 60px;                        /* 150 top/bottom, 100 left/right */
+  box-sizing: border-box;
+  width: 100%;
+}
+
+/* Typography */
+#research-page h2 {
+  font-family: "Albert Sans", sans-serif;
+  font-weight: 500;
+  font-size: 0.9em;
+  margin: 0 0 20px;
+  color: var(--main-light-font-outline-color);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+#research-page h1 {
+  font-family: "Noto Serif", serif;            /* you already load this family in <head> */
+  font-size: 2.5em;
+  line-height: 1.1;
+  margin: 0 0 30px;
+}
+
+#research-page p {
+  font-family: "Albert Sans", sans-serif;
+  font-size: 1.2em;
+  margin: 0 0 20px;
+  padding: 0;
+}
+#research-page p:last-of-type { margin-bottom: 0; }
+
+/* Reset list + arrow bullets rotated 90° */
+#research-page ul.arrow-list {
+  list-style: none;
+  padding: 0;
+  margin: 50px 0 0;
+}
+#research-page ul.arrow-list li {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 25px;
+  font-size: 1.2em;
+}
+#research-page ul.arrow-list li a {
+  text-decoration: none;
+  color: var(--main-font-outline-color);
+}
+#research-page ul.arrow-list li:last-child { margin-bottom: 0; }
+#research-page ul.arrow-list li::before {
+  content: "";
+  width: 14px;
+  height: 16px;
+  background: url('img/icons/arrow_counter_10x12px.svg') no-repeat center/contain;
+  transform: rotate(90deg);
+}
+
+/* Stack rows vertically */
+#research-page .two-col-table {
+  display: grid;
+  grid-template-columns: 1fr; /* one column = rows under each other */
+  row-gap: 24px;
+  margin-top: 100px;
+}
+
+/* Each row: two columns side by side */
+#research-page .two-col-row {
+  display: grid;
+  grid-template-columns: 25% 60%;
+  column-gap: 15%;   /* remaining 15% becomes the gutter */
+  align-items: start;
+}
+
+#research-page .two-col-row .left h3 {
+  font-family: "Albert Sans", sans-serif;
+  font-weight: 500;
+  font-size: 0.9em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+#research-page .two-col-row .right p {
+  font-family: "Albert Sans", sans-serif;
+  font-weight: 400;
+  font-size: 0.9em;
+  margin: 0 0 12px;
+}
+#research-page .two-col-row .right p:last-child { margin-bottom: 0; }
