@@ -4,8 +4,42 @@
   --offgrid-left: 8px;    /* fixed left margin for left counter */
   --offgrid-right: 8px;   /* base right margin; JS adds slide-in visible width to this */
   --side-gap: 8px;
+
+  /* main theme colors */
   --main-bg-color: #fffaf5;
+  --main-bg-color-dark: #000;
+  --main-font-outline-color: #1d1d1d;
+  --main-font-outline-color-dark: #fff;
+  --main-light-font-outline-color: #333;
+  --main-light-font-outline-color-dark: #fff;
+  --main-bright-bg-color: #fff;
+  --main-bright-bg-color-dark: #000;
   --object-text-border-color: #4c4741;
+  --object-text-border-color-dark: #fff;
+  --main-light-outline-color: #4c4741;
+  --main-light-outline-color-dark: #fff;
+
+  /* SIZE: bump this to make the burger larger */
+  --burger-width: 34px;               /* ← change this to the size you want */
+  --burger-height: calc(var(--burger-width) * 0.7142857); /* 20/28 keeps viewBox ratio */
+  /* idle offset for middle bar and subtle hover distances */
+  --burger-offset: 3px;   /* middle starts 3px to the right */
+  --hover-mid-left: 1px;  /* on hover: middle ends 1px to the right (i.e., moves left from +3px -> +1px) */
+  --hover-top-right: 1px; /* top nudges right by 1px */
+  --hover-bot-right: 0.5px; /* bottom nudges right by 0.5px */
+  /* NEW: thickness control (increase these for thicker lines) */
+  --burger-bar-thickness: 1.3px;   /* ← tweak this */
+  --burger-bar-radius:    0.65px;  /* corner radius to match thickness/2 */
+  --nav-icon-size: 18px;
+}
+
+:root[data-theme="dark"] {
+  --main-bg-color: var(--main-bg-color-dark);
+  --main-font-outline-color: var(--main-font-outline-color-dark);
+  --main-light-font-outline-color: var(--main-light-font-outline-color-dark);
+  --main-bright-bg-color: var(--main-bright-bg-color-dark);
+  --object-text-border-color: var(--object-text-border-color-dark);
+  --main-light-outline-color: var(--main-light-outline-color-dark);
 }
 
 * {
@@ -18,6 +52,7 @@
   body {
     overflow-x: hidden;
     background-color: var(--main-bg-color);
+    color: var(--main-font-outline-color);
   }
 
   .header-center, h1, h2, h3, object, .wide-content .gallery-box .column .item.text, .vertical-content .topics {
@@ -55,7 +90,7 @@
     background-size: cover;
     background-position: center;
     /*background-repeat: 'no-repeat';*/
-    background-color: #fff;
+    background-color: var(--main-bright-bg-color);
     overflow: visible;
     z-index: 1;
     transition: transform 0.5s ease, width 0.4s ease, height 0.4s ease;
@@ -90,16 +125,17 @@
     /* Grid view: reuse gallery text styling */
   #grid .object.text {
     box-sizing: border-box;               /* keep absolute size even with padding */
-    border: 1px solid var(--object-text-border-color);
+    border: 1px solid var(--main-light-outline-color);
     padding: 20px;
-    background-color: #fff;
+    background-color: var(--main-bright-bg-color);
 
-    /* same serif look as gallery text */
-    font-family: "Noto Serif Display", serif;
+    /* use plain Noto Serif (not Display) */
+    font-family: "Noto Serif", serif;
     font-optical-sizing: auto;
     font-weight: 400;
     font-style: normal;
     font-variation-settings: "wdth" 100;
+    color: var(--main-font-outline-color);
   }
 
   #grid .object.text .scaling-text {
@@ -107,9 +143,9 @@
     min-width: 0; /* let the span shrink within the flex card */
     max-width: 100%;
     white-space: normal;
-    word-break: break-word;
+    /* word-break: break-word; */
     hyphens: auto;
-    line-height: 1.1;
+    line-height: 1.3;
   }
 
   /* WaveSurfer in grid audio tiles */
@@ -133,33 +169,139 @@
     display: grid;
     grid-template-rows: auto 1fr auto auto auto;
     gap: 12px;
-    padding: 18px;
-    background: white;
+    padding: 40px;
+    background-color: var(--main-light-background);
+    border: 1px solid var(--object-text-border-color); /* ← add this line */
     opacity: 0;
     z-index: 10;
     transition: opacity 0.25s ease;
     overflow: hidden;
   }
 
+  /* default detail description (media) stays as is */
+
+  /* text objects: bigger title-like text */
+  .detail-panel.detail-text-object .detail-description {
+    font-size: 1.5rem;       /* or 1.05rem */
+    line-height: 1.8;
+  }
+
+  .detail-panel.portrait {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    grid-template-rows: auto;
+    column-gap: 28px; /* or 32px, pick your taste */
+    align-items: start;
+  }
+
+  /* media column on the left, full height */
+  .detail-panel.portrait .detail-media {
+    grid-column: 1 / 2;
+    grid-row: 1 / 2;
+  }
+
+  /* info on the right */
+  .detail-panel.portrait .detail-info {
+    grid-column: 2 / 3;
+    grid-row: 1 / 2;
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  /* date + group left in portrait */
+  .detail-panel.portrait .detail-date,
+  .detail-panel.portrait .detail-group {
+    text-align: left;
+  }
+
+  /* tags left in portrait */
+  .detail-panel.portrait .detail-tags {
+    justify-content: flex-start;
+  }
+
+  /* link left in portrait */
+  .detail-panel.portrait .detail-link {
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  /* keep the close button in the corner */
+  .detail-panel.portrait .detail-close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+  }
+
   .detail-panel.visible { opacity: 1; }
 
   .detail-close {
     position: absolute;
-    top: 8px; right: 8px;
-    width: 32px; height: 32px;
-    border-radius: 50%;
-    background: #fff;
-    border: 1px solid #ddd;
+    top: 20px;
+    right: 20px;
+    width: 20px;
+    height: 20px;
+    border: none;
+    background: transparent;
+    padding: 0;
     cursor: pointer;
-    font-size: 18px;
-    line-height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .detail-close img {
+    width: 15px;
+    height: 15px;
+    display: block;
   }
 
   .detail-date, .detail-group {
     text-align: center;
-    font-size: 0.9rem;
-    font-style: italic;
-    color: #333;
+    font-size: 0.6rem;
+    font-style: normal;
+    color: var(--main-light-font-outline-color);
+  }
+
+  /* default: non-portrait → top date visible */
+  .detail-date-top {
+    text-align: center;
+    font-size: 0.6rem;
+    font-style: normal;
+    color: var(--main-light-font-outline-color);
+    margin-bottom: 10px;
+  }
+
+  .detail-date-inline {
+    display: none;
+  }
+
+  /* portrait → hide top, show inline in right column */
+  .detail-panel.portrait .detail-date-top {
+    display: none;
+  }
+
+  .detail-panel.portrait .detail-date-inline {
+    display: block;
+    text-align: left;
+    font-size: 0.6rem;
+    font-style: normal;
+    color: var(--main-light-font-outline-color);
+    margin-bottom: 8px;
+  }
+
+  .detail-group {
+    text-transform: uppercase;
+  }
+
+  .detail-description {
+    font-size: 1.1rem;
+    line-height: 1.35;
+    /* match left alignment you introduced */
+    text-align: center;
+    font-family: "Noto Serif Display", serif; /* same as text objects */
+  }
+  .detail-panel.portrait .detail-description {
+    text-align: left;
   }
   
   .detail-media {
@@ -188,6 +330,7 @@
     gap: 6px;
     justify-content: center;
     padding: 0;
+    margin-top: 10px;
   }
   
   .detail-tags li {
@@ -195,16 +338,28 @@
     border: 1px solid #000;
     border-radius: 999px;
     padding: 4px 8px;
-    background: #fff;
+    background-color: var(--main-bright-bg-color);
   }
   
   .detail-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;   /* ← center horizontally */
+    gap: 8px;
+    text-decoration: none;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--main-font-outline-color);
     text-align: center;
+    margin-top: 10px;
+    font-size: 0.8em;
+    font-family: "Albert Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", "DejaVu Sans", sans-serif;
+  }
+  
+  .detail-link-icon {
     display: block;
-    margin: 0 auto;
-    font-size: 0.9rem;
-    text-decoration: underline;
-    color: inherit;
+    width: 20px;
+    height: 10px;
   }
 
   /* Right-column wrapper for meta/info (date, group, tags, link) */
@@ -214,21 +369,11 @@
     gap: 12px;
   }
 
-  /* Portrait: media left, info right */
-  .detail-panel.portrait {
-    /* switch from vertical rows to a two-column grid */
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-auto-rows: min-content;
-    align-items: start;
-    gap: 16px;
-  }
-
   /* Let the media stretch to fill its column (and center its content as before) */
   .detail-panel.portrait .detail-media {
-    align-self: stretch;
-    display: grid;
-    place-items: center;
+    display: flex;
+    align-items: flex-start;  /* top */
+    justify-content: flex-start;
   }
 
   /* Keep images/videos contained */
@@ -241,44 +386,35 @@
 
   .object-glow {
     position: absolute;
-    inset: -6px;                 /* extends a little outside the card */
+    inset: -2px;                 /* extends a little outside the card */
     pointer-events: none;
-    z-index: 3;
+    z-index: 0;
     border-radius: 6px;
   
     /* knobs */
-    --ring: 6px;                 /* ring thickness */
+    --ring: 2px;                 /* ring thickness */
     --glow-opacity: 0.55;        /* ring opacity */
-    --glow-blur: 8px;            /* ring blur */
-    --halo-opacity: 0.35;        /* outer halo opacity */
-    --halo-blur: 22px;           /* outer halo blur */
-    --glow: transparent;         /* set via JS to your gradient */
-  
-    background: var(--glow);
-    padding: var(--ring);
-  
-    /* ring mask (hollow center) */
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-            mask-composite: exclude;
-  
-    /* airy feel */
-    filter: blur(var(--glow-blur)) saturate(1.15);
-    opacity: var(--glow-opacity);
+    --glow-blur: 6px;            /* ring blur */
+    --halo-opacity: 0.8;        /* outer halo opacity */
+    --halo-blur: 16px;           /* outer halo blur */
     mix-blend-mode: screen;      /* “light” the content instead of tinting it */
+    filter: blur(var(--halo-blur));
+    opacity: var(--halo-opacity);
   }
   
   /* soft outer halo */
   .object-glow::before {
     content: "";
     position: absolute;
-    inset: -16px;                /* expand beyond the ring */
+    inset: -2px;                /* expand beyond the ring */
     border-radius: inherit;
     background: var(--glow);
-    filter: blur(var(--halo-blur));
-    opacity: var(--halo-opacity);
-    mix-blend-mode: screen;
     pointer-events: none;
+    padding: calc(var(--ring) + 8px);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
   }  
   
 #controls {
@@ -305,18 +441,39 @@
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  border: 1px solid #1d1d1d;
-  background: #fff;
+  border: 1px solid var(--main-font-outline-color);
+  background: var(--main-bright-bg-color);
   display: grid;
   place-items: center;
   box-shadow: 2px 2px 2px rgba(0,0,0,.12);
   cursor: pointer;
-  color: #1d1d1d;
+  color: var(--main-font-outline-color);
 }
 
-.fab svg { width: 22px; height: 22px; }
-.fab.fab-lg { width: 46px; height: 46px; }     /* bigger for zoom */
-.fab.fab-lg svg { width: 26px; height: 26px; }
+.fab svg,
+.fab img {
+  width: 18px;   /* was 22 */
+  height: 18px;
+  fill: currentColor;
+  stroke: currentColor;
+  display: block;             /* NEW */
+  justify-self: center;       /* NEW */
+  align-self: center;         /* NEW */
+}
+
+.fab.fab-lg {
+  width: 46px;
+  height: 46px;
+}
+
+.fab.fab-lg svg,
+.fab.fab-lg img {
+  width: 20px;   /* was 26 */
+  height: 20px;
+  display: block;             /* NEW */
+  justify-self: center;       /* NEW */
+  align-self: center;         /* NEW */
+}
 
 .fab:hover { box-shadow: 2px 3px 4px rgba(0,0,0,.18); }
 .fab:active { transform: scale(0.98); }
@@ -335,8 +492,8 @@ header {
   position: relative;
   height: 50px;
   padding: 0 20px;
-  border-bottom: 1px solid #1d1d1d;
-  color: #1d1d1d;
+  border-bottom: 1px solid var(--main-font-outline-color);
+  color: var(--main-font-outline-color);
 }
 
 .header-left {
@@ -375,7 +532,7 @@ header {
   right: -2px;           /* tiny gap after the last letter */
   width: 1px;
   height: 1.1em;
-  background: #1d1d1d;   /* match your header text color */
+  background: var(--main-font-outline-color);   /* match your header text color */
   animation: headerCaretBlink 1s steps(1) infinite;
   opacity: 1;
 }
@@ -421,17 +578,32 @@ header {
   position: absolute;
   top: 12px;
   left: 12px;
-  background-color: white;
+  background-color: var(--main-bright-bg-color);
   width: 35px;
   height: 35px;
   border-radius: 100%;
-  border: 1px solid #1d1d1d;
+  border: 1px solid var(--main-font-outline-color);
   line-height: 35px;
   text-align: center;
   font-size: 1.3em;
   cursor: pointer;
   z-index: 9999;
   box-shadow: 2px 2px 2px rgba(209, 209, 209, 1);;
+  display: grid;
+  place-items: center;
+  line-height: 1; /* avoid vertical misalignment with inline SVG */
+  color: var(--main-font-outline-color);             /* darker (uses currentColor) */
+}
+
+#content-back-button svg {
+  width: 26px;             /* tweak to taste: 24–30 works well in a 35px chip */
+  height: auto;
+  display: block;
+}
+
+#content-back-button svg * {
+  vector-effect: non-scaling-stroke;
+  stroke-width: 1;
 }
 
 .wide-content, .vertical-content {
@@ -460,7 +632,7 @@ header {
 }
 
 .wide-content .title-box h2 {
-  font-size: 6em;
+  font-size: 5em;
   line-height: 1.1;
   margin: 0;
   padding: 0;
@@ -482,12 +654,12 @@ header {
 
 .button {
   padding: 6px 12px;
-  border: 1px solid #1d1d1d;
+  border: 1px solid var(--main-font-outline-color);
   display: inline-flex;
   width: auto;
   max-width: max-content;
   text-decoration: none;
-  color: #1d1d1d;
+  color: var(--main-font-outline-color);
   align-items: center;
   box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
 }
@@ -545,7 +717,7 @@ header {
   box-sizing: border-box;
   border: 1px solid var(--object-text-border-color);
   padding: 20px;
-  background-color: white;
+  background-color: var(--main-bright-bg-color);
 }
 
 .wide-content .gallery-box .column .item.text .scaling-text {
@@ -609,7 +781,7 @@ header {
 }
 
 .slide-in-handle {
-  border: 1px solid #1d1d1d;
+  border-left: 1px solid var(--main-font-outline-color);
   border-top: none;
   border-bottom: none;
   width: 40px;
@@ -620,13 +792,24 @@ header {
 }
 
 .slide-in-handle .close-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   position: absolute;
   top: 8px;
   background: none;
   border: none;
-  color: black;
+  color: var(--main-font-outline-color);
   font-size: 1.2rem;
   cursor: pointer;
+}
+
+.slide-in-handle .close-btn img {
+  width: 12px;
+  height: 12px;
+  display: block;
 }
 
 .slide-in-handle .vertical-text {
@@ -634,7 +817,7 @@ header {
   white-space: nowrap;
   font-size: 0.9rem;
   cursor: pointer;
-  color: #1d1d1d;
+  color: var(--main-font-outline-color);
 }
 
 .vertical-content {
@@ -697,7 +880,7 @@ header {
 /* Sticky rail that spans into the left/right padding (so prev sits in the gutter) */
 #detail-content .vertical-content .detail-nav-arrows {
   position: sticky;
-  top: 10vh;                                   /* your request */
+  top: 30vh;                                   /* your request */
   z-index: 10;
   pointer-events: none;                         /* wrapper ignores clicks */
 
@@ -712,34 +895,66 @@ header {
 
 /* Counter chips, pinned left/right, rotated */
 #detail-content .vertical-content .detail-nav-arrow {
-  position: absolute;               /* ← stay at edges regardless of sibling */
+  position: absolute;
   top: 0;
-  pointer-events: auto;             /* clickable despite wrapper having none */
-  border: 1px solid #1d1d1d;
-  background: var(--main-bg-color);
-  border-radius: 10px;
-  padding: 6px 10px;
+  pointer-events: auto;
+  /* strip the chip look */
+  padding: 0;
+  display: inline-flex;     /* pre-rotation layout */
+  flex-direction: row;      /* row → appears as a vertical stack after 90° rotation */
+  align-items: center;
+  justify-content: center;
+  gap: 5px;                 /* space between icon and counter */
+  /* keep your text styling */
   font-size: 0.6em;
   font-style: italic;
   letter-spacing: 1px;
   line-height: 1;
-  box-shadow: 0 2px 8px rgba(0,0,0,.12);
+  cursor: pointer;
 }
 
 /* Keep them on their sides even if the other hides */
 #detail-content .vertical-content .detail-nav-arrow.prev {
-  left: 0;
-  transform: rotate(-90deg);
+  left: 35px;
+  width: 60px;
+  transform: translateY(-50%) rotate(-90deg);
   transform-origin: center;
-  cursor: w-resize;      /* leftwards cursor for “previous” */
   user-select: none;     /* avoid selecting the “x / y” text */
 }
 #detail-content .vertical-content .detail-nav-arrow.next {
   right: 0;
-  transform: rotate(90deg);
+  width: 60px;
+  transform: translateY(-50%) rotate(90deg);
   transform-origin: center;
-  cursor: e-resize;      /* rightwards cursor for “next” */
   user-select: none;
+}
+
+#detail-content .vertical-content .detail-nav-arrow.next::before, #detail-content .vertical-content .detail-nav-arrow.prev::after {
+  content: "";
+  display: block;
+  width: var(--nav-icon-size);
+  height: var(--nav-icon-size);
+  background: currentColor;             /* icon color */
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: contain;
+}
+
+/* NEXT: show › and cancel parent’s +90° (so it points →) */
+#detail-content .vertical-content .detail-nav-arrow.next::before {
+  mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>');
+  -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>');
+  transform: rotate(-90deg); /* cancels parent's +90deg */
+}
+
+/* PREV: show ‹ and cancel parent’s -90° (so it points ←) */
+#detail-content .vertical-content .detail-nav-arrow.prev::after {
+  mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>');
+  -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>');
+  transform: rotate(90deg);  /* cancels parent's -90deg */
 }
 
 /* When JS sets btn.hidden = true, don’t collapse layout */
@@ -763,6 +978,7 @@ header {
 /* Primary slot: keep the media centered */
 #detail-content #detail-primary {
   display: block;                /* normal flow, no implicit centering */
+  margin-bottom: 50px;
 }
   
 #detail-content #detail-primary h1 {
@@ -789,7 +1005,7 @@ header {
   width: auto;
   height: auto;
   object-fit: contain;                           /* safe for video; harmless for img */
-  background: #fff;
+  background: var(--main-bright-bg-color);;
 }
 
 /* Make video/audio controls span the frame width */
@@ -824,6 +1040,12 @@ header {
   padding: 0;
 }
 
+/* rotate every close.svg we use in slide-ins */
+#slide-ins .close-btn img[src$="arrow_counter_10x12px.svg"] {
+  transform: rotate(180deg);
+  transform-origin: center;
+}
+
 .content-header {
   text-align: right;
   padding: 20px 50px 20px 0;
@@ -832,7 +1054,7 @@ header {
 }
 
 .location {
-  border: 1px solid #1d1d1d;
+  border: 1px solid var(--main-font-outline-color);
   border-radius: 14px;
   padding: 8px 8px 8px 22px;
   font-size: 0.6em;
@@ -855,12 +1077,24 @@ header {
   font-style: italic;
 }
 
+.section-content .right .topics {
+  margin-top: 0;
+}
+
+.section-content .right .topics, .section-content .right .flex-table {
+  padding: 0 100px;
+}
+
+.section-content .flex-table {
+  margin-bottom: 50px;
+}
+
 .vertical-content .topics li {
   display: inline-block;
   padding-right: 15px;
   margin-right: 15px;
   margin-bottom: 10px;
-  border-right: 1px solid #1d1d1d;
+  border-right: 1px solid var(--main-font-outline-color);
 }
 .vertical-content .topics li:last-child {
   border: none;
@@ -869,13 +1103,14 @@ header {
 .flex-table {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem; /* spacing between rows */
+  gap: 0.8rem; /* spacing between rows */
   font-family: "Albert Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", "DejaVu Sans", sans-serif;
 }
 
 .flex-table .row {
   display: flex;
   justify-content: flex-start;
+  align-items: center;
   gap: 1rem; /* space between label and value */
 }
 
@@ -883,12 +1118,12 @@ header {
   width: 120px;
   text-transform: uppercase;
   font-size: 0.6rem;
-  letter-spacing: 1px;
+  letter-spacing: 0.15em;
   flex-shrink: 0;
 }
 
 .flex-table .value {
-  font-size: 0.8rem;
+  font-size: 0.9em;
 }
 
 .flex-table .value a {
@@ -896,11 +1131,32 @@ header {
   text-decoration: underline;
 }
 
+/* Detail: description block (for media objects) */
+.detail-description-block {
+  padding: 0 100px;
+  margin-bottom: 50px;
+}
+
+.right .detail-description-block > h3 {
+  /* mimic the label styling used in the flex-table */
+  color: var(--main-font-outline-color);
+  margin: 0 0 12px 0;
+  text-transform: uppercase;
+  font-size: 0.6rem;
+  letter-spacing: 0.15em;
+  padding: 0;
+}
+
+.right .detail-description-block > p {
+  margin: 0; /* keep it tight under the title */
+  color: var(--main-light-font-outline-color);
+  padding: 0;
+}
 
 .content-section {
   /*height: 100%;*/
-  color: #1d1d1d;
-  border-bottom: 1px solid #1d1d1d;
+  color: var(--main-font-outline-color);
+  border-bottom: 1px solid var(--main-font-outline-color);
   padding-top: 20px;
   box-sizing: border-box;
 }
@@ -915,6 +1171,66 @@ header {
 
 .content-section .section-content {
   height: 100%;
+}
+
+/* sidebar accordion must be allowed to collapse */
+#discover-connections .content-section .section-content {
+  height: auto;
+}
+
+/* collapsed = 0, open = scrollable */
+#discover-connections .content-section.collapsible .section-content {
+  max-height: 0;
+  overflow: hidden;
+}
+
+#discover-connections .content-section.collapsible.is-open .section-content {
+  overflow-y: auto;
+}
+
+/* Discover Connections → Project list */
+#discover-connections .dc-projects-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  margin-left: 5px;
+}
+
+#discover-connections .dc-project-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 20px;          /* spacing between items */
+  cursor: pointer;
+}
+
+#discover-connections .dc-project-radio {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid #222;
+  border-radius: 9999px;
+  flex: 0 0 14px;
+  position: relative;
+}
+
+#discover-connections .dc-project-item.is-selected .dc-project-radio::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  background: var(--main-light-outline-color);
+  border-radius: 9999px;
+}
+
+#discover-connections .dc-project-text strong {
+  display: block;
+  font-size: 0.82rem;            /* reduced font */
+  line-height: 1.2;
+}
+
+#discover-connections .dc-project-subtitle {
+  font-size: 0.72rem;            /* smaller subtitle */
+  line-height: 1.25;
+  opacity: 0.85;
 }
 
 .content-section.multi-column .section-content {
@@ -949,21 +1265,20 @@ header {
 }
 
 .content-section h3 {
+  font-size: 1em;
   margin-bottom: 10px;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: .4rem;
+  font-family: "Albert Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-weight: 600;
 }
 
 .content-section.collapsible h3::after {
   content: '▾';
   transition: transform .25s ease;
 }
-.content-section.collapsible:not(.is-open) h3::after {
-  transform: rotate(-90deg);
-}
-
 /* Animate content height */
 .content-section.collapsible .section-content {
   max-height: 0;
@@ -971,14 +1286,17 @@ header {
   transition: max-height .3s ease;
 }
 .content-section.collapsible.is-open .section-content {
-  /* max-height set inline via JS to exact scrollHeight */
+}
+
+#discover-connections .content-section.collapsible.is-open .section-content {
+  overflow-y: auto;
 }
 
 /* Little separation between sections (optional) */
 .content-section + .content-section { margin-top: 12px; }
 
 .content-section ul {
-  margin-bottom: 25px;
+  margin-bottom: 40px;
 }
 
 /* Make header a flex row so the chevron can sit at the far right */
@@ -988,37 +1306,25 @@ header {
   align-items: center;
 }
 
-/* Chevron lives on ::after and is pushed with margin-left:auto */
+/* sidebar section expand/collapse icon */
 .content-section.collapsible h3::after,
 .content-section.collapsible .section-header::after {
-  content: '▾';
-  margin-left: auto;                /* <-- pushes it to the far right */
-  transition: transform .25s ease;
+  content: '';
+  margin-left: auto;
+  width: 8px;                 /* even smaller */
+  height: 8px;
+  background-image: url('img/icons/arrow_expand.svg');
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 8px 8px;
+  transition: transform .2s ease;
+  /* no transform here → closed = SVG as-is (right) */
 }
 
-/* Rotate chevron when closed */
-.content-section.collapsible:not(.is-open) h3::after,
-.content-section.collapsible:not(.is-open) .section-header::after {
-  transform: rotate(-90deg);
-}
-
-/* === MENU MODE WIDTH BUDGET (override) === */
-#slide-ins .slide-in[data-mode="menu"] {
-  /* match your handle width */
-  --handle-w: 40px;
-
-  /* your smart target from before (tweak as needed) */
-  --slidein-target: 400px;
-  --slidein-min: 320px;
-  --slidein-edge-gap: 24px;
-  --slidein-viewport-cap: calc(100dvw - var(--slidein-edge-gap));
-  --slidein-exp-width: clamp(var(--slidein-min), var(--slidein-target), var(--slidein-viewport-cap));
-
-  /* animate max-width, not width */
-  width: auto;                 /* overrides any base width:40px for menu mode */
-  max-width: var(--handle-w);  /* collapsed = just the handle */
-  transition: max-width 0.4s ease;
-  overflow: hidden;
+/* open = opposite direction of the SVG (right → left) */
+.content-section.collapsible.is-open h3::after,
+.content-section.collapsible.is-open .section-header::after {
+  transform: rotate(180deg);
 }
 
 /* Expanded width = handle + computed content width */
@@ -1044,16 +1350,24 @@ header {
   bottom: 0;
   height: var(--header-h);                /* same height as header */
   background: var(--main-bg-color);                    /* same background as header */
-  display: none;                          /* toggled via .show */
+  display: grid;                          /* toggled via .show */
   align-items: center;
   justify-content: center;                /* center the pills horizontally */
   padding: 0 12px;
   z-index: 1300;                          /* above counters/FAB, below overlay menu */
-}
-#selection-bar.show { 
-  display: grid;
+  transform: translateY(100%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform .4s ease, opacity .4s ease;
+  
+  /* layout lives on the base state now (not only when .show) */
   grid-template-columns: 1fr auto 1fr;  /* [spacer] [tags] [actions] */
   align-items: center;
+}
+#selection-bar.show { 
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* Use gallery's .button style in the selection bar, but no big top margin */
@@ -1079,10 +1393,11 @@ header {
   gap: 6px;
   padding: 6px 10px;
   border-radius: 999px;
-  border: 1px solid #1d1d1d;
-  background: #fff;
+  border: 1px solid var(--main-font-outline-color);
+  background: var(--main-bright-bg-color);
   cursor: pointer;                        /* entire pill is clickable to remove */
   user-select: none;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.12);
 }
 #selection-bar .tags li .x {
   font-weight: 700;
@@ -1096,18 +1411,26 @@ header {
   gap: 8px;
 }
 
-/* Hide bar only in GROUP gallery, show it in custom/adhoc */
-.in-group-gallery #selection-bar { display: none !important; }
-
 /* When selection bar is visible, push up bottom overlays by its height */
-#workspace.has-selection-bar #offgrid-bottom { bottom: calc(8px + var(--header-h)); }
-#workspace.has-selection-bar #fab-bottom-left { bottom: calc(12px + var(--header-h)); }
+#workspace.has-selection-bar #offgrid-bottom { bottom: calc(8px + var(--header-h)); transition: bottom .4s ease;}
+#workspace.has-selection-bar #fab-bottom-left { bottom: calc(12px + var(--header-h)); transition: bottom .4s ease;}
 
 /* ====== TWO-COLUMN MENU BODY ====== */
 #slide-ins .slide-in[data-mode="menu"] {
-  /* existing CSS variables for main panel */
+  /* your smart target from before (tweak as needed) */
+  --slidein-exp-width: clamp(var(--slidein-min), var(--slidein-target), var(--slidein-viewport-cap));
+
+  /* animate max-width, not width */
+  max-width: var(--handle-w);  /* collapsed = just the handle */
+  transition: max-width 0.4s ease;
+
+  display: flex;
+  width: auto;
+  max-width: var(--handle-w);              /* collapsed */
+  transition: max-width .4s ease;
+  overflow: hidden;
   --handle-w: 40px;
-  --slidein-target: 500px;
+  --slidein-target: 550px;
   --slidein-min: 320px;
   --slidein-edge-gap: 24px;
   --viewport-cap: calc(100dvw - var(--slidein-edge-gap));
@@ -1122,15 +1445,6 @@ header {
   /* remaining space available for the secondary (never exceed viewport) */
   --secondary-cap: calc(var(--viewport-cap) - var(--handle-w) - var(--main-w));
   --secondary-w: clamp(var(--secondary-min), var(--secondary-target), var(--secondary-cap));
-}
-
-/* Layout: handle | body( secondary + main ) */
-#slide-ins .slide-in[data-mode="menu"] {
-  display: flex;
-  width: auto;
-  max-width: var(--handle-w);              /* collapsed */
-  transition: max-width .4s ease;
-  overflow: hidden;
 }
 
 #slide-ins .slide-in[data-mode="menu"].expanded {
@@ -1180,8 +1494,8 @@ header {
   max-width: var(--main-w);
   max-height: 100%;
   overflow: auto;
-  padding-left: 15px;
-  padding-right: 10px;
+  padding-left: 20px;
+  padding-right: 20px;
   scrollbar-gutter: stable both-edges; /* no right-edge nudge when scrollbar appears */
 }
 
@@ -1193,9 +1507,15 @@ header {
 }
 .secondary-pane p { margin: 0 0 12px; line-height: 1.6; font-size: .9rem; }
 .secondary-pane .back {
-  display: inline-flex; align-items: center; gap: .4rem;
-  padding: 6px 10px; border: 1px solid #1d1d1d; border-radius: 999px; background: #fff; cursor: pointer;
-  margin-bottom: 10px; font-size: .75rem;
+  display: inline-flex; 
+  align-items: center; gap: .4rem;
+  padding: 6px 10px; 
+  border: 1px solid var(--main-font-outline-color); 
+  border-radius: 999px; 
+  background: var(--main-bright-bg-color); 
+  cursor: pointer;
+  margin-bottom: 10px;
+  font-size: .75rem;
 }
 
 /* Themes list */
@@ -1224,11 +1544,11 @@ header {
   height: 15px;
 
   /* same visual tokens as .fab */
-  background: #fff;
-  border: 1px solid #1d1d1d;
+  background: var(--main-br);
+  border: 1px solid var(--main-font-outline-color);
   border-radius: 50%;
-  color: #1d1d1d;
-  box-shadow: 2px 2px 2px rgba(0,0,0,.12);
+  color: var(--main-font-outline-color);
+  box-shadow: 2px 2px 0px rgba(0,0,0,.12);
 
   /* center the "?" cleanly */
   display: inline-flex;
@@ -1292,13 +1612,16 @@ header {
   font-size: 0.5em;
   font-weight: 500;
   text-transform: uppercase;
-  border: 1px solid #000000;
-  padding: 6px 12px;
+  border: 1px solid var(--main-font-outline-color);
+  padding: 6px 10px;
   border-radius: 16px; /* Rounded corners */
   cursor: pointer;
   transition: background-color 0.2s;
   display: inline-block; /* Ensures button-like appearance */
-  background-color: white;
+  background-color: var(--main-bright-bg-color);
+  letter-spacing: 0.06em;
+  font-family: "Albert Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", "DejaVu Sans", sans-serif;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.12); /* ← added */
 }
 
 /* Slide-in tags: unselectable in AND mode */
@@ -1329,33 +1652,54 @@ header {
   transition: all 0.3s ease;
 }
 
-/* Segmented control below the tags */
+/* Tag match toggle: 2 icons + separator */
 .tag-match-toggle {
   display: inline-flex;
-  border: 1px solid #1d1d1d;
-  border-radius: 999px;
-  overflow: hidden;
-  margin-top: 10px;
-  margin-bottom: 10px;
-  user-select: none;
+  align-items: center;
+  gap: 10px;              /* 10px between icon and separator, and separator and icon */
+  margin: 10px 0;
+  color: var(--main-font-outline-color);
 }
-.tag-match-toggle .label {
-  font-size: 0.7rem;
-  font-weight: 600;
-  padding: 6px 10px;
-  background: var(--main-bg-color);
-  border-right: 1px solid #1d1d1d;
-}
-.tag-match-toggle .seg {
-  background: #fff;
-  padding: 6px 10px;
+
+.tag-mode-btn {
+  background: none;
   border: none;
-  font-size: 0.7rem;
+  padding: 0;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  color: var(--main-font-outline-color);
 }
-.tag-match-toggle .seg + .seg { border-left: 1px solid #1d1d1d; }
-.tag-match-toggle .seg.is-selected { background: #EED9C4; font-weight: 700; }
-.tag-match-toggle .seg:focus-visible { outline: 2px solid #4363d8; outline-offset: -2px; }
+
+.tag-mode-btn :is(img, svg) {
+  width: 22px;
+  height: 22px;
+  display: block;
+  opacity: .4;            /* non-selected */
+  color: var(--main-font-outline-color);
+}
+
+.tag-mode-btn.is-selected :is(img, svg) {
+  opacity: 1;             /* selected */
+  color: var(--main-font-outline-color);
+}
+
+.tag-match-toggle .tag-mode-separator {
+  width: 1px;
+  height: 18px;
+  background: var(--main-font-outline-color);
+  flex: 0 0 1px;
+}
+
+/* Text variant of the two-way toggle used in the header */
+.header-right .tag-match-toggle { margin-right: 12px; } /* space before burger */
+.tag-mode-btn .txt { opacity: .4; font-size: 0.85rem; }
+.tag-mode-btn.is-selected .txt { opacity: 1; font-weight: 600; }
+
+/* Theme toggle uses same structure as tag-match toggle, but with text */
+.theme-toggle .tag-mode-btn { color: var(--main-font-outline-color); }
+.theme-toggle .tag-mode-btn .txt { opacity: .4; font-size: 0.85rem; }
+.theme-toggle .tag-mode-btn.is-selected .txt { opacity: 1; }
 
 /* Spacing & titles for grouped tags */
 .tag-group-block { margin-top: 16px; }
@@ -1386,11 +1730,12 @@ header {
 }
 .tag-group-switch .group-btn {
   padding: 6px 10px;
-  border: 1px solid #1d1d1d;
+  border: 1px solid var(--main-font-outline-color);
   border-radius: 999px;
-  background: #fff;
+  background: var(--main-bright-bg-color);
   cursor: pointer;
   font-size: 0.7rem;
+  color: var(--main-font-outline-color);
 }
 .tag-group-switch .group-btn.is-active {
   background: #EED9C4;
@@ -1405,7 +1750,7 @@ header {
   position: fixed;
   inset: 0;
   background: var(--main-bg-color);
-  color: #1d1d1d;
+  color: var(--main-font-outline-color);
   z-index: 9999;
   display: none;
   flex-direction: column;
@@ -1515,11 +1860,10 @@ header {
   top: 50%;
   transform: translateY(-50%);
   z-index: 1;
-  background-color: white;
   padding: 6px;
   font-size: 0.5em;
   border-radius: 10px;
-  color: #1d1d1d;
+  color: var(--main-font-outline-color);
   background-color: var(--main-bg-color);
 }
 
@@ -1544,6 +1888,8 @@ header {
   
 /* Optional: fade when zero to reduce clutter */
 #workspace .count-invisible-objects[aria-hidden="true"] { opacity: 0; pointer-events: none; }
+#group-gallery > .count-invisible-objects[aria-hidden="true"] { opacity: 0; pointer-events: none; }
+
 
 /* Keep slashes neutral and let per-tag numbers inherit tag color */
 #workspace .count-invisible-objects .breakdown .sep { color: inherit; opacity: .9; margin: 0 .25em; }
@@ -1637,7 +1983,7 @@ header {
   font-size: 9px;
 }
 
-#detail-content .detail-nav-arrows button {
+#detail-content .detail-nav-arrows .detail-nav-arrow {
   font-family: "Noto Serif", serif !important;
   font-style: italic !important;
 }
@@ -1685,21 +2031,6 @@ header {
   }
 }
 
-/* === Header burger (rect-mode, consolidated) === */
-:root {
-  /* SIZE: bump this to make the burger larger */
-  --burger-width: 34px;               /* ← change this to the size you want */
-  --burger-height: calc(var(--burger-width) * 0.7142857); /* 20/28 keeps viewBox ratio */
-  /* idle offset for middle bar and subtle hover distances */
-  --burger-offset: 3px;   /* middle starts 3px to the right */
-  --hover-mid-left: 1px;  /* on hover: middle ends 1px to the right (i.e., moves left from +3px -> +1px) */
-  --hover-top-right: 1px; /* top nudges right by 1px */
-  --hover-bot-right: 0.5px; /* bottom nudges right by 0.5px */
-  /* NEW: thickness control (increase these for thicker lines) */
-  --burger-bar-thickness: 1.3px;   /* ← tweak this */
-  --burger-bar-radius:    0.65px;  /* corner radius to match thickness/2 */
-}
-
 .menu-trigger {
   appearance: none;
   border: 0;
@@ -1708,7 +2039,7 @@ header {
   display: inline-grid;
   place-items: center;
   cursor: pointer;
-  color: var(--header-fg, #1d1d1d);     /* currentColor for bars */
+  color: var(--header-fg, var(--main-font-outline-color));     /* currentColor for bars */
   /* avoid global hover “boldening” or filters */
   font-weight: 400;
   filter: none;
