@@ -696,7 +696,7 @@ header {
   align-items: center;
 }
 
-.wide-content .gallery-box .column .item {
+.wide-content .gallery-box .column .item, #related-objects .item {
   margin-top: auto;
   margin-bottom: auto;
   opacity: 0;
@@ -704,13 +704,19 @@ header {
   transition: opacity 3s, transform 3s;
 }
 
-.wide-content .gallery-box .column .item.visible {
+.wide-content .gallery-box .column .item.visible, #related-objects .item.visible {
   opacity: 1;
 }
 
+/* size for GALLERY text tiles only */
 .wide-content .gallery-box .column .item.text {
-  width: 150px; /* or any size */
+  width: 150px;
   height: 100px;
+}
+
+/* shared look for both gallery + strip (no width here) */
+.wide-content .gallery-box .column .item.text,
+#related-objects .item.text {
   display: flex;
   justify-content: center;
   align-items: center;
@@ -720,7 +726,7 @@ header {
   background-color: var(--main-bright-bg-color);
 }
 
-.wide-content .gallery-box .column .item.text .scaling-text {
+.wide-content .gallery-box .column .item.text .scaling-text, #related-objects .item .scaling-text {
   text-align: center;
   display: block;
   max-width: 100%;
@@ -730,7 +736,7 @@ header {
   line-height: 1.1;
 }
 
-.wide-content .gallery-box .column .item.waveform {
+.wide-content .gallery-box .column .item.waveform, #related-objects .item.waveform {
   width: 60%;
 }
 
@@ -827,6 +833,7 @@ header {
   opacity: 0;
   transition: opacity 0.4s ease;
   box-sizing: border-box;
+  padding-bottom: 55px;
 }
 .vertical-content {
   opacity: 1;
@@ -960,6 +967,50 @@ header {
 /* When JS sets btn.hidden = true, don’t collapse layout */
 #detail-content .vertical-content .detail-nav-arrow[hidden] {
   display: none !important;         /* the other one won’t move because it’s absolute */
+}
+
+/* === Related Objects horizontal strip (detail page) ======================= */
+#related-objects.related-strip {
+  display: flex;
+  flex-wrap: nowrap;         /* single row */
+  align-items: center;       /* vertical centering of children */
+  gap: 12px;
+  overflow-x: auto;          /* horizontal pan */
+  overflow-y: hidden;
+  padding-bottom: 8px;       /* avoid scrollbar overlay */
+  scrollbar-gutter: stable both-edges;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Reuse gallery "item" visuals but limit height inside the strip */
+#related-objects img.item,
+#related-objects video.item {
+  height: auto !important;           /* override any inline sizes */
+  width: auto !important;
+  max-height: 150px !important;      /* cap media */
+  display: block;
+}
+
+/* Text items: keep to strip height and center their content */
+#related-objects .item.text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: auto;          /* override the gallery’s fixed width */
+  flex: 0 0 auto;       /* don’t grow/shrink; size to content */
+}
+
+/* Audio items are ~50px tall; center them vertically in the 150px strip */
+#related-objects .item.audio {
+  display: flex;
+  align-items: center;
+  height: 150px; /* container height, wave inside stays ~50px */
+}
+
+/* Make items feel clickable */
+#related-objects .item {
+  cursor: pointer;
 }
 
 /* Media hero in the detail view */
