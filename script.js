@@ -1,4 +1,5 @@
 import WaveSurfer from 'https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.esm.js';
+window.WaveSurfer ??= WaveSurfer;   // make it available as a global, if not already
 import { Grid } from './grid.js';
 
 // BASIC CONSTANTS AND VARIABLES
@@ -18,6 +19,60 @@ const STRAPI = {
 
 // === STRAPI LOGGING ===
 const slog = (kind, ...args) => console.log(`[strapi:${kind}]`, ...args);
+
+// --- WaveSurfer defaults (single source of truth) ---
+const WS_DEFAULTS = {
+  waveColor: '#666',
+  progressColor: '#aaa',
+  cursorColor: '#ccc',
+  height: 50,        // grid + gallery waves are 50px tall
+  barWidth: 1,
+  barGap: 1,
+  normalize: true,
+  responsive: true,
+  interact: true,
+  cursorWidth: 1,
+};
+
+// Small helper so creation looks the same everywhere
+function createWave(container, src, overrides = {}) {
+  const ws = WaveSurfer.create({ ...WS_DEFAULTS, ...overrides, container });
+  if (src) ws.load(src);
+  return ws;
+}
+
+function isGrouped() {
+  return window.gridObject?.currentState === 'grouped';
+}
+function hoverPlayGuarded(el, ws) {
+  el.addEventListener('mouseenter', () => { if (!isGrouped()) { try { ws.play(); } catch {} } }, { passive: true });
+  el.addEventListener('mouseleave', () => { if (!isGrouped()) { try { ws.pause(); } catch {} } }, { passive: true });
+}
+
+// === MEDIA DEBUG ===
+window.DEBUG_MEDIA = true; // flip to false to mute
+function dlog(...a){ if(window.DEBUG_MEDIA) console.log(...a); }
+function dgrp(label){ if(window.DEBUG_MEDIA) console.groupCollapsed(label); }
+function dgrpEnd(){ if(window.DEBUG_MEDIA) console.groupEnd(); }
+
+// Optional helper to inspect one filename by substring in the cache:
+window.showFormats = (substr) => {
+  if (!substr) return console.warn('showFormats("part-of-filename")');
+  for (const [name, arr] of (__uploadCache || new Map()).entries()) {
+    if (name.toLowerCase().includes(substr.toLowerCase())) {
+      console.group(`[lookup] ${name}`);
+      arr.forEach(c => {
+        console.log('master', `${c.width||'?'}×${c.height||'?'}`, c.url, 'folder=', c.folderPath);
+        if (c.formats) {
+          console.table(Object.entries(c.formats).map(([k,v]) => ({
+            key: k, w: v?.width, h: v?.height, url: v?.url
+          })));
+        }
+      });
+      console.groupEnd();
+    }
+  }
+};
 
 // EMD BASIC CONSTANTS AND VARIABLES
 
@@ -106,6 +161,92 @@ function hashHue(str){ let h=0; for(let i=0;i<str.length;i++) h=(h*31+str.charCo
 const tagColors = Object.fromEntries(ALL_TAGS.map(t => [t, `hsl(${hashHue(t)} 80% 45%)`]));
 window.tagColors = tagColors;
 
+// === DYNAMIC CONNECTING TAGS (Strapi) ===================================
+// First step: we only have a single hardcoded group "All"
+// Later: replace this to build 1 group per Strapi group.
+async function fetchStrapiConnectingTags() {
+  // reuse existing Strapi fetcher
+  if (typeof strapiFetchAll !== 'function') {
+    console.warn('[tags] strapiFetchAll not available yet – skipping dynamic tags');
+    return [];
+  }
+
+  // Strapi v5: collection name from model "ConnectingTag" → /api/connecting-tags
+  const rows = await strapiFetchAll('connecting-tags', {
+    populate: '*',
+    publicationState: 'preview'
+  });
+
+  // normalize to simple strings
+  const tags = rows
+    .map(r => {
+      const a = (r && (r.attributes || r)) || {};
+      return a.Name || a.name || a.Label || a.label || a.Title || a.title || '';
+    })
+    .filter(Boolean);
+
+  return [...new Set(tags)];
+}
+
+// we need to rebuild all lookup structures because TAG_GROUPS was originally static
+function rebuildTagCachesFromCurrentGroups() {
+  // 1) tag → group
+  tagToGroup.clear();
+  TAG_GROUPS.forEach(g => {
+    (g.tags || []).forEach(t => tagToGroup.set(t, g.id));
+  });
+
+  // 2) ALL_TAGS (the const array defined above)
+  ALL_TAGS.length = 0;
+  TAG_GROUPS.forEach(g => {
+    (g.tags || []).forEach(t => ALL_TAGS.push(t));
+  });
+
+  // 3) colors: remove old ones that no longer exist, add new ones
+  const current = new Set(ALL_TAGS);
+  Object.keys(tagColors).forEach(k => {
+    if (!current.has(k)) delete tagColors[k];
+  });
+  ALL_TAGS.forEach(t => {
+    if (!tagColors[t]) {
+      tagColors[t] = `hsl(${hashHue(t)} 80% 45%)`;
+    }
+  });
+}
+
+// main entry for dynamic tags
+async function seedConnectingTagsFromStrapi() {
+  try {
+    const tags = await fetchStrapiConnectingTags();
+    if (!tags.length) {
+      console.warn('[tags] no ConnectingTag in Strapi – keeping hardcoded groups');
+      return;
+    }
+
+    // replace current groups with a single "All" group
+    TAG_GROUPS.length = 0;
+    TAG_GROUPS.push({
+      id: 'all',
+      label: 'All',
+      tags
+    });
+
+    // rebuild dependent caches
+    rebuildTagCachesFromCurrentGroups();
+
+    // if the UI was already built, repaint it
+    if (typeof renderTagsForCurrentGroup === 'function') renderTagsForCurrentGroup();
+    if (typeof markActiveGroupButton === 'function') markActiveGroupButton();
+    if (typeof updateTagAvailability === 'function') updateTagAvailability();
+    if (typeof updateObjectGlowsWithGradient === 'function') updateObjectGlowsWithGradient();
+    if (typeof scheduleOffgridUpdate === 'function') scheduleOffgridUpdate();
+    if (typeof renderSelectionBar === 'function') renderSelectionBar();
+    if (typeof syncDetailTagHighlights === 'function') syncDetailTagHighlights();
+  } catch (err) {
+    console.warn('[tags] failed to load ConnectingTag from Strapi', err);
+  }
+}
+
 // The group whose tags are currently displayed at the top
 //let currentTagViewGroupId = TAG_GROUPS[0]?.id || null;
 
@@ -123,6 +264,17 @@ function groupLabelById(id) {
 
 const activeTags = new Set();
 window.activeTags = activeTags;
+
+// Always refresh the selection bar when tags change
+(function patchActiveTagsForSelectionBar() {
+  const s = window.activeTags;
+  const _add = s.add.bind(s);
+  const _del = s.delete.bind(s);
+  const _clr = s.clear.bind(s);
+  s.add    = (...a) => { const r = _add(...a);    window.renderSelectionBar?.(); return r; };
+  s.delete = (...a) => { const r = _del(...a);    window.renderSelectionBar?.(); return r; };
+  s.clear  = (...a) => { const r = _clr(...a);    window.renderSelectionBar?.(); return r; };
+})();
 
 function getRandomTags() {
   const pool = ALL_TAGS;
@@ -548,7 +700,15 @@ async function resolveUploadUrlsForObjects(objs) {
     const ph = o._pathHints;
     if (!ph) continue;
     const want = {};
-    if (ph.image && !o.image) { want.image = splitPathHint(ph.image); needed.push(want.image.name); }
+    // IMAGE: prefer explicit ImagePath; else derive from existing o.image url
+    if (ph.image) {
+      want.image = splitPathHint(ph.image);
+      needed.push(want.image.name);
+    } else if (o.image) {
+      const base = String(o.image).split('/').pop().split('?')[0];
+      want.image = { name: base, dir: '' };
+      needed.push(base);
+    }
     if (ph.video && !o.video) { want.video = splitPathHint(ph.video); needed.push(want.video.name); }
     if (ph.audio && !o.audio) { want.audio = splitPathHint(ph.audio); needed.push(want.audio.name); }
     hints.set(o, want);
@@ -560,26 +720,68 @@ async function resolveUploadUrlsForObjects(objs) {
   // 3) choose best match per object+field (prefer folderPath that contains the hint dir)
   const pickBest = (name, dir) => {
     const candidates = __uploadCache.get(name) || [];
-    if (!candidates.length) return undefined;
-    if (!dir) return candidates[0].url;
-    // score by longest folderPath substring match
+    if (!candidates.length) { dlog('[match] no candidates for', name); return undefined; }
+  
+    if (window.DEBUG_MEDIA) {
+      dgrp(`[match] ${name} dir='${dir||'(none)'}' candidates=${candidates.length}`);
+      candidates.forEach((c,i) => console.log(`#${i}`, {folderPath: c.folderPath, url: c.url, formats: Object.keys(c.formats||{})}));
+    }
+  
+    if (!dir) { 
+      window.DEBUG_MEDIA && console.log('→ pick[no-dir]', candidates[0].url);
+      dgrpEnd();
+      return candidates[0]; 
+    }
+  
     let best = candidates[0], bestScore = 0;
     for (const c of candidates) {
       const fp = c.folderPath || '';
       const score = fp.includes(dir) ? dir.length : (fp.split('/').pop() === dir.split('/').pop() ? 1 : 0);
+      window.DEBUG_MEDIA && console.log('score', score, 'fp=', fp);
       if (score > bestScore) { best = c; bestScore = score; }
     }
-    return best.url;
-  };
+    window.DEBUG_MEDIA && console.log('→ pick', best.url, 'score=', bestScore);
+    dgrpEnd();
+    return best;
+  };  
 
   // 4) write resolved URLs back into objects
   for (const o of objs) {
     const want = hints.get(o);
     if (!want) continue;
-    if (!o.image && want.image) o.image = pickBest(want.image.name, want.image.dir);
-    if (!o.video && want.video) o.video = pickBest(want.video.name, want.video.dir);
-    if (!o.audio && want.audio) o.audio = pickBest(want.audio.name, want.audio.dir);
-  }
+  
+    if (!o.image && want.image) {
+      const cand = pickBest(want.image.name, want.image.dir);
+      if (cand) {
+        // keep meta for gallery/detail; default grid URL chosen for current width
+        o._imageMeta = { url: cand.url, width: cand.width, height: cand.height, formats: cand.formats };
+  
+        // recompute height from aspect for current tile width
+        if (o.width && cand.width && cand.height) {
+          o.height = Math.max(1, Math.round(o.width * (cand.height / cand.width)));
+        }
+  
+        // const dpr = window.devicePixelRatio || 1;
+        const dpr = 1;
+        const best = pickImageVariant(o._imageMeta, o.width || 200, dpr);
+        o.image = best.url || cand.url;
+        if (window.DEBUG_MEDIA) {
+          console.log('[assign]',
+            { objId: o.id, tileCssW: o.width, dpr, picked: best?.width, url: best?.url, master: o._imageMeta?.url,
+              have: Object.keys(o._imageMeta?.formats || {}) });
+        }
+      }
+    }
+  
+    if (!o.video && want.video) {
+      const url = pickBest(want.video.name, want.video.dir)?.url;
+      if (url) o.video = url;
+    }
+    if (!o.audio && want.audio) {
+      const url = pickBest(want.audio.name, want.audio.dir)?.url;
+      if (url) o.audio = url;
+    }
+  }  
 }
 
 // Turn Strapi paths ("/uploads/…") into absolute URLs; pass through http(s) as-is
@@ -592,8 +794,42 @@ function strapiAssetUrl(p) {
   return root + p;
 }
 
+function pickImageVariant(meta, targetCssWidth, dpr=1) {
+  if (!meta) return { url: undefined };
+  const need = Math.ceil((targetCssWidth || 200) * Math.max(1, dpr) * 1.25); // headroom
+  const pool = [];
+
+  // gather [width,url,height]
+  if (meta.formats) {
+    Object.values(meta.formats).forEach(f => { if (f?.width && f?.url) pool.push([f.width, f.url, f.height]); });
+  }
+  if (meta.width && meta.url) pool.push([meta.width, meta.url, meta.height]);
+
+  // smallest >= need, else largest available
+  pool.sort((a,b)=>a[0]-b[0]);
+  let choice = pool[0];
+  for (const p of pool) { if (p[0] >= need) { choice = p; break; } }
+
+  if (window.DEBUG_MEDIA) {
+    dgrp(`[variant] need≈${need}px (css=${targetCssWidth}, dpr=${dpr}) options=${pool.length}`);
+    pool.forEach(p => console.log('option', p[0], '→', p[1]));
+    console.log('→ chosen', choice[0], choice[1]);
+    dgrpEnd();
+  }
+
+  return { url: choice[1], width: choice[0], height: choice[2] };
+}
+
 // Convert Strapi entities into your current in-memory schema
 function normalizeStrapiToAppSchema(groups, objectsArr) {
+  const MAX_OBJECTS_PER_GROUP = 999;         // <<— your cap
+
+  // feature switches
+  const ENABLE_IMAGES = true;
+  const ENABLE_VIDEOS = true;
+  const ENABLE_AUDIO  = true;
+
+  const perGroupCounts = new Map();         // appGroupId -> count
   // Build group meta and a map StrapiGroupId -> appGroupId "s<id>"
   const groupMeta = {};
   const groupIdMap = new Map();
@@ -611,6 +847,17 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
 
   
   // helpers
+
+  // Unwrap Strapi relation to a flat list of plain objects (v4/v5-safe)
+  function unwrapRelList(rel) {
+    if (!rel) return [];
+    const take = (n) => (n && (n.attributes || n)) || {};
+    if (Array.isArray(rel?.data)) return rel.data.map(take);
+    if (rel?.data) return [take(rel.data)];
+    if (Array.isArray(rel)) return rel.map(take);
+    return [take(rel)];
+  }
+
   const pick = (obj, ...keys) => {
     if (!obj) return undefined;
     for (const k of keys) if (obj[k] != null && obj[k] !== '') return obj[k];
@@ -632,6 +879,22 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
     return [];
   };
   const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+  // Extract Name(s) from an Author relation (v4/v5; single or many)
+  const relNamesFromAuthor = (rel) => {
+    if (!rel) return [];
+    const pickName = (node) => {
+      const a = (node && (node.attributes || node)) || {};
+      return (a.Name || a.name || '').toString().trim();
+    };
+    // v4: { data: {...} } or { data: [...] }
+    if (Array.isArray(rel?.data)) return rel.data.map(pickName).filter(Boolean);
+    if (rel?.data) return [pickName(rel.data)].filter(Boolean);
+    // v5 or already populated
+    if (Array.isArray(rel)) return rel.map(pickName).filter(Boolean);
+    return [pickName(rel)].filter(Boolean);
+  };
+
 
   // If only one group was loaded, we can safely default missing group to it
   const singleGroupId = groupIdMap.size === 1 ? [...groupIdMap.keys()][0] : null;
@@ -695,6 +958,12 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
       text  = a.Name || a.name || `Object ${entry.id}`;
     }
 
+    // --- apply feature toggles ---
+    if (type === 'image' && !ENABLE_IMAGES) continue;
+    if (type === 'video' && !ENABLE_VIDEOS) continue;
+    if (type === 'audio' && !ENABLE_AUDIO)  continue;
+    // ------------------------------
+
     // Keep original path strings so the batched resolver can translate them to upload URLs
     const pathHints = {
       image: imgStr || null,
@@ -702,10 +971,22 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
       audio: audStr || null
     };
 
-    // ---- tags (unchanged)
+    // ---- tags (split: connecting vs regular)
+    const connectingTags = relNames(a.connecting_tags || a['connecting-tags']);
+    const regularTags    = relNames(a.tags);
+    // ---- author (relation → Author.Name)
+    const authorNames = relNamesFromAuthor(a.author || a.Author);
+    const author = authorNames.join(', ');
+    // ---- themes (relation → { name, description })
+    const themes = unwrapRelList(a.themes || a.Themes).map(v => ({
+      name: (v.Name || v.name || '').toString().trim(),
+      description: (v.Description || v.description || '').toString().trim(),
+    }));
+
+    // union stays for backwards-compat (grid, filters, etc.)
     const tags = Array.from(new Set([
-      ...relNames(a.connecting_tags || a['connecting-tags']),
-      ...relNames(a.tags)
+      ...connectingTags,
+      ...regularTags
     ]));
 
     // ---- dimensions (same as before)
@@ -715,18 +996,35 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
     if (type === 'audio') { width = rand(140, 200); height = 60; }
     if (type === 'text')  { width = rand(120, 180); height = rand(120, 160); }
 
+    // enforce per-group cap
+    const prev = perGroupCounts.get(appGroupId) || 0;
+    if (prev >= MAX_OBJECTS_PER_GROUP) {
+      // optionally: collect skipped for debugging
+      // skippedSamples.push(entry.id);
+      continue;
+    }
+    perGroupCounts.set(appGroupId, prev + 1);
+
     // ---- push normalized object
     out.push({
       id: `sobj_${entry.id}`,
       type,
       groupId: appGroupId,
       groupLocation: groupMeta[appGroupId]?.location || '',
-      date: a.createdAt || a.updatedAt || '',
+      groupTitle:   groupMeta[appGroupId]?.title || '',
+      date: a.Date || a.date || a.createdAt || a.updatedAt || '',
+      author,
+      // NEW: name/title from Strapi
+      name: a.Name || a.name || a.Title || a.title || '',
+      description: a.Description || a.description || a.Caption || a.caption || '',
+      content: a.Content || a.content || '',
       grid_x: 0, grid_y: 0,
       width, height,
       image, video, audio,
       text,
-      tags,
+      tags: regularTags,
+      connectingTags,           // ← new: what the sidebar should match
+      themes,
       _pathHints: pathHints
     });
   }
@@ -793,13 +1091,43 @@ async function batchFetchUploadFilesByNames(names) {
     items.forEach(it => {
       const a = getAttrs(it);
       const key = a?.name;
-      const url = a?.url ? strapiAssetUrl(a.url) : undefined;
+      const abs = (u) => u ? strapiAssetUrl(u) : undefined;
+      const url = abs(a?.url);
       const folderPath = (a?.folderPath || a?.folder?.path || a?.folder?.name || '').toLowerCase();
       if (!key || !url) return;
+    
+      // normalize formats with absolute urls
+      const formats = {};
+      Object.entries(a?.formats || {}).forEach(([k, v]) => {
+        formats[k] = { ...v, url: abs(v?.url) };
+      });
+    
       const arr = __uploadCache.get(key) || [];
-      arr.push({ url, folderPath });
+      arr.push({
+        url,
+        folderPath,
+        width: a?.width,
+        height: a?.height,
+        formats
+      });
       __uploadCache.set(key, arr);
-    });
+
+      // DEBUG: show the formats Strapi has for this file
+      if (window.DEBUG_MEDIA) {
+        dgrp(`[media] cache: ${key}`);
+        console.log('folderPath=', folderPath);
+        console.log('original:', { width: a?.width, height: a?.height, url });
+        if (formats && Object.keys(formats).length) {
+          console.table(Object.entries(formats).map(([k,v]) => ({
+            key: k, w: v?.width, h: v?.height, url: v?.url
+          })));
+        } else {
+          console.log('formats: <none>');
+        }
+        dgrpEnd();
+      }
+
+    });    
   }
 }
 
@@ -838,6 +1166,11 @@ window.gridObject = null;
     // wire header + set initial copy
     window.__wireHeaderToGrid?.();
     window.__dispatchViewChange?.();
+    // sidebar "Project" list → now that we have groupMetaById
+    if (typeof renderDiscoverProjectsFromGroups === 'function') {
+      renderDiscoverProjectsFromGroups();
+    }
+
   } catch (err) {
     console.error('Failed to load data / init grid:', err);
     alert('Strapi load failed. Check the console for details (network/permissions).');
@@ -927,7 +1260,7 @@ function refreshSlideInsVisibility() {
       el.classList.remove('expanded', 'secondary-open');
       el.querySelector('.vertical-content')?.classList.remove('visible');
       const b = el.querySelector('.close-btn');
-      if (b) b.textContent = '←';
+      if (b) b.innerHTML = '<img src="img/icons/arrow_counter_10x12px.svg" alt="Close">';
     });
   }
 
@@ -1032,14 +1365,10 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     document.body.dataset.currentGroupId = String(gid);
     window.__dispatchViewChange();
 
-    // optional cleanup so you don’t keep layout padding:
-    const bar = document.getElementById('selection-bar');      // NEW
-    const ws  = document.getElementById('workspace');          // NEW
-    bar?.classList.remove('show');                             // NEW
-    ws?.classList.remove('has-selection-bar');                 // NEW
-
     console.log('[gallery] opened', { gid });
   }
+
+  window.openGroupGallery = openGallery;
 
   // Open gallery for a custom set of objects (e.g., current tag filter)
   window.openTagsGallery = function(objs = [], titleLines = []) {
@@ -1180,8 +1509,8 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       const wrap = document.createElement('div');
       wrap.className = 'detail-nav-arrows';
       wrap.innerHTML = `
-        <button class="detail-nav-arrow prev" type="button" aria-label="Previous object"></button>
-        <button class="detail-nav-arrow next" type="button" aria-label="Next object"></button>
+        <div class="detail-nav-arrow prev" role="button" tabindex="0" aria-label="Previous object"></div>
+        <div class="detail-nav-arrow next" role="button" tabindex="0" aria-label="Next object"></div>
       `;
       // put arrows at the top *inside* vertical-content
       vc.prepend(wrap);
@@ -1202,21 +1531,6 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       try { __detailWave?.destroy(); } catch {}
       __detailWave = null;
     }
-
-    // Keep the look identical to the gallery waves
-    const DETAIL_WS_CONFIG = {
-      waveColor: '#666',
-      progressColor: '#aaa',
-      cursorColor: '#ccc',
-      height: 50,     // if you want a taller hero, e.g. 90, also change CSS below
-      barWidth: 2,
-      barGap: 1,
-      barHeight: 40,
-      normalize: true,
-      responsive: true,
-      interact: true,
-      cursorWidth: 1,
-    };
 
     // Decide orientation and add a class to the figure: 'landscape' | 'portrait'
     function setMediaOrientation(figureEl, kind, el) {
@@ -1241,6 +1555,52 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
         }
       }
     }
+
+    // Move topics + table between columns; #detail-primary always stays LEFT
+    function setDetailBlocksColumn(type) {
+      if (!detailEl) return;
+
+      const section = detailEl.querySelector('.content-section.multi-column .section-content');
+      if (!section) return;
+
+      const left  = section.querySelector(':scope > .left');
+      const right = section.querySelector(':scope > .right');
+      if (!left || !right) return;
+
+      const primary = section.querySelector('#detail-primary');   // stays in LEFT
+      const topics  = section.querySelector('ul.topics');
+      const table   = section.querySelector('.flex-table');
+
+      const nodes = [topics, table].filter(Boolean);
+      if (!nodes.length) return;
+
+      const insertAtTop = (parent, items) => {
+        const frag = document.createDocumentFragment();
+        items.forEach(n => frag.appendChild(n));
+        parent.insertBefore(frag, parent.firstChild || null);
+      };
+
+      const insertAfter = (ref, parent, items) => {
+        const frag = document.createDocumentFragment();
+        items.forEach(n => frag.appendChild(n));
+        if (ref && ref.parentNode === parent) {
+          parent.insertBefore(frag, ref.nextSibling);
+        } else {
+          parent.insertBefore(frag, parent.firstChild || null);
+        }
+      };
+
+      const isMedia = ['image', 'video', 'audio'].includes(String(type));
+
+      if (isMedia) {
+        // MEDIA: topics + table go to TOP of RIGHT
+        insertAtTop(right, nodes);
+      } else {
+        // NON-MEDIA: topics + table go back to LEFT, right after #detail-primary
+        insertAfter(primary, left, nodes);
+      }
+    }
+
 
     // Render ONLY the primary slot (title or hero media) in the detail view
     function renderDetailPrimary(obj) {
@@ -1304,8 +1664,7 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
           `;
         
           // create the waveform
-          __detailWave = WaveSurfer.create({ ...DETAIL_WS_CONFIG, container: `#${id}` });
-          __detailWave.load(src);
+          __detailWave = createWave(`#${id}`, src, { height: 70 });
         
           // same behavior as gallery: click toggles, hover plays, leave pauses
           const container = slot.querySelector(`#${id}`);
@@ -1322,7 +1681,189 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
           break;
         }
       }
+
+      // After rendering the primary slot, position the blocks as requested
+      setDetailBlocksColumn(obj.type);
+
+      // --- Update Topics & Lower Tags from regular tags
+      try {
+        const esc = s => String(s ?? '')
+          .replace(/&/g,'&amp;')
+          .replace(/</g,'&lt;')
+          .replace(/>/g,'&gt;');
+
+        const tags = Array.isArray(obj.tags) ? obj.tags : [];
+        const uniq = Array.from(new Set(tags));
+
+        ['#topics-list', '#detail-tags-lower'].forEach(sel => {
+          const el = detailEl.querySelector(sel);
+          if (el) el.innerHTML = uniq.map(t => `<li>${esc(t)}</li>`).join('');
+        });
+      } catch {}
+
+
+      // --- Update the flex-table (Research / Researcher / Date)
+      try {
+        const table = detailEl.querySelector('.flex-table');
+        if (!table) return;
+
+        const setRow = (label, value) => {
+          const row = Array.from(table.querySelectorAll('.row'))
+            .find(r => r.querySelector('.label')?.textContent?.trim().toLowerCase() === label);
+          if (!row) return;
+          const valEl = row.querySelector('.value');
+          if (!valEl) return;
+          valEl.textContent = value || '';
+        };
+
+        // Research ← group's Title (from normalization)
+        setRow('research', obj.groupTitle || '');
+
+        // Researcher ← Author relation's Name(s)
+        setRow('researcher', obj.author || '');
+
+        // Date ← object's Date (pretty DD/MM/YYYY when parseable)
+        const fmtDate = (s) => {
+          if (!s) return '';
+          const d = new Date(s);
+          if (isNaN(d)) return String(s);
+          const dd = String(d.getDate()).padStart(2, '0');
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const yy = d.getFullYear();
+          return `${dd}/${mm}/${yy}`;
+        };
+        setRow('date', fmtDate(obj.date));
+      } catch {}
+
+      // --- Right column dynamic content (Text → Content, Media → Description as H1)
+      try {
+        const section = detailEl.querySelector('.content-section.multi-column .section-content');
+        const right   = section?.querySelector(':scope > .right');
+        if (!right) return;
+
+        // Always remove any previous media Description block;
+        // we only show it for media objects.
+        right.querySelector('.detail-description-block')?.remove();
+
+        // Ensure a dedicated wrapper so content is fully replaced per object
+        let dyn = right.querySelector('#detail-right');
+        if (!dyn) {
+          dyn = document.createElement('div');
+          dyn.id = 'detail-right';
+          right.insertBefore(dyn, right.firstChild || null);
+        }
+
+        // Wipe previous dynamic content
+        dyn.innerHTML = '';
+
+        // Helpers
+        const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        const isHTMLString = (s) => (typeof s === 'string') && /<\/?[a-z][\s\S]*>/i.test(s);
+
+        function extractText(val) {
+          if (val == null) return '';
+          if (typeof val === 'string') return val;
+          if (Array.isArray(val)) return val.map(extractText).filter(Boolean).join('\n\n');
+          if (typeof val === 'object') {
+            if (typeof val.text === 'string') return val.text;
+            if (Array.isArray(val.children)) return val.children.map(extractText).join('');
+            if (Array.isArray(val.content))  return val.content.map(extractText).join('');
+            if (val.title) return extractText(val.title);
+            if (val.name)  return extractText(val.name);
+            return Object.values(val).map(extractText).filter(Boolean).join(' ');
+          }
+          return String(val);
+        }
+
+        function richToHTML(val) {
+          if (typeof val === 'string' && isHTMLString(val)) return val; // already HTML
+          const raw = extractText(val).trim();
+          if (!raw) return '';
+          return raw
+            .split(/\n{2,}/)
+            .map(s => s.trim())
+            .filter(Boolean)
+            .map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`)
+            .join('');
+        }
+
+        if (obj.type === 'text') {
+          // TEXT → object.Content as HTML/paragraphs (inside wrapper)
+          const html = richToHTML(obj.content);
+          if (html) {
+            const wrap = document.createElement('div');
+            wrap.className = 'detail-content';
+            wrap.innerHTML = html;
+            dyn.appendChild(wrap);
+          }
+        } else {
+          // MEDIA → Add a Description section BELOW the flex-table
+          const section = detailEl.querySelector('.content-section.multi-column .section-content');
+          const right   = section?.querySelector(':scope > .right');
+          if (!right) return;
+        
+          // Clean any previous media description block
+          right.querySelector('.detail-description-block')?.remove();
+        
+          // Serialize description safely
+          const extractText = (val) => {
+            if (val == null) return '';
+            if (typeof val === 'string') return val;
+            if (Array.isArray(val)) return val.map(extractText).filter(Boolean).join('\n\n');
+            if (typeof val === 'object') {
+              if (typeof val.text === 'string') return val.text;
+              if (Array.isArray(val.children)) return val.children.map(extractText).join('');
+              if (Array.isArray(val.content))  return val.content.map(extractText).join('');
+              if (val.title) return extractText(val.title);
+              if (val.name)  return extractText(val.name);
+              return Object.values(val).map(extractText).filter(Boolean).join(' ');
+            }
+            return String(val);
+          };
+          const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        
+          const descText = extractText(obj.description).trim();
+          if (!descText) {
+            // Nothing to render
+            return;
+          }
+        
+          // Build the new block: <section><h3>Description</h3><p>…</p></section>
+          const block = document.createElement('section');
+          block.className = 'detail-description-block';
+          block.innerHTML = `
+            <h3>Description</h3>
+            <p>${esc(descText).replace(/\n/g, '<br>')}</p>
+          `;
+        
+          // Insert AFTER the flex-table (if it lives in the right column)
+          const table = right.querySelector('.flex-table') || section.querySelector('.flex-table');
+          if (table && table.parentNode === right) {
+            right.insertBefore(block, table.nextSibling);
+          } else {
+            // Fallback: append at the end of the right column
+            right.appendChild(block);
+          }
+        }
+      } catch {}
+
     }
+
+    function renderRelatedThemes(obj) {
+      const host = document.getElementById('related-themes');
+      if (!host) return;
+    
+      const esc = s => String(s ?? '').replace(/&/g,'&amp;')
+                                      .replace(/</g,'&lt;')
+                                      .replace(/>/g,'&gt;');
+    
+      const list = Array.isArray(obj?.themes) ? obj.themes : [];
+      host.innerHTML = list.map(t => {
+        const name = esc(t.name);
+        const desc = esc(t.description);
+        return `${name ? `<h4>${name}</h4>` : ''}${desc ? `<p>${desc}</p>` : ''}`;
+      }).join('');
+    }      
 
     let __detailWS = null;
     let __detailWS_RO = null;
@@ -1481,6 +2022,7 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       const obj = allObjects.find(o => String(o.id) === String(objectId));
       if (obj) {
         renderDetailPrimary(obj);
+        renderRelatedThemes(obj);
         ensureDetailNav(obj);
       } else {
         console.warn('[detail] object not found for id:', objectId);
@@ -1507,6 +2049,7 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
       // Mark: we are in the full-page detail view
       document.body.classList.add('in-detail-page');
+      window.renderSelectionBar?.();
 
       // (Optional but useful) remember which object is open — used for the "Research project in …" text
       try {
@@ -1548,6 +2091,8 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
       // Unmark: we left the full-page detail
       document.body.classList.remove('in-detail-page');
+      restoreGridStateFromDetail();
+      window.renderSelectionBar?.();
       window._lastDetailObject = null;
 
       // Notify the header updater
@@ -1566,6 +2111,11 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       } else {
         // Return to the grid (clustered/ungrouped card stays as it was)
         if (gridShellEl) gridShellEl.style.display = '';
+        // Re-check view + tags after the grid shell is visible
+        requestAnimationFrame(() => {
+          window.__dispatchViewChange?.();
+          window.renderSelectionBar?.();
+        });
       }
 
       refreshSlideInsVisibility();
@@ -1915,21 +2465,6 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
   let wsRegistry = new Map();
   let audioObserver = null;
 
-  // Config cloned from demo-sidebars.html
-  const WS_CONFIG = {
-    waveColor: '#666',
-    progressColor: '#aaa',
-    cursorColor: '#ccc',
-    height: 50,          // overall container height
-    barWidth: 2,         // wider bars = lower resolution
-    barGap: 1,           // spacing between bars
-    barHeight: 40,       // shorter bars
-    normalize: true,
-    responsive: true,
-    interact: true,
-    cursorWidth: 1,
-  };
-
   // Lazy-create waves when items enter the visible gallery viewport
   function attachAudioIO() {
     // Ensure previous observer is gone
@@ -1939,7 +2474,9 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     }
 
     const scroller = gg; // #group-gallery is the horizontal scroller (your viewport)
-    const options = { root: scroller, threshold: 0.15, rootMargin: '0px' };
+    //const options = { root: scroller, threshold: 0.15, rootMargin: '0px' };
+    // TEMP: consider all items "in view"
+    const options = { root: scroller, threshold: 0, rootMargin: '9999px 0px 9999px 0px' };
 
     audioObserver = new IntersectionObserver((entries, obs) => {
       entries.forEach(en => {
@@ -1949,20 +2486,47 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
         const wave = item.querySelector('.wave');
         const src  = item.dataset.audioSrc;
         if (!wave || !src) return;
-
-        // Create WaveSurfer once per container
+        
+        // Create WaveSurfer once per container (no audio loaded yet)
         if (!wsRegistry.has(wave.id)) {
-          const ws = WaveSurfer.create({ ...WS_CONFIG, container: `#${wave.id}` });
+          const ws = createWave(`#${wave.id}`, null);
+        
+          // try to draw peaks first (non-blocking)
+          const peaksUrl = src.replace(/\.[^/.]+$/, '.peaks.json');
+          (async () => {
+            try {
+              const r = await fetch(peaksUrl, { cache: 'force-cache' });
+              if (!r.ok) return;
+              const j = await r.json();
+              const peaks = Array.isArray(j) ? j : (j.data || j.peaks);
+              const duration = j.duration || j.length;
+              if (peaks?.length) ws.load('', peaks, duration);
+            } catch {}
+          })();
+        
+          let loaded = false;
+        
+          // first hover → actually load the mp3
+          //item.addEventListener('mouseenter', () => {
+          //  if (!loaded) { loaded = true; ws.load(src); }
+          //  try { ws.play(); } catch {}
+          //}, { passive: true });
+
+          // TEMP: eager-load (disable hover-lazy)
           ws.load(src);
-
-          // Simple play/pause on click (mirror demo behavior)
-          item.addEventListener('click', () => ws.playPause());
+          // hover just plays/pauses
           item.addEventListener('mouseenter', () => { try { ws.play(); } catch {} }, { passive: true });
-          item.addEventListener('mouseleave', () => { try { ws.pause(); } catch {} }, { passive: true });
-
+        
+          item.addEventListener('mouseleave', () => {
+            try { ws.pause(); } catch {}
+          }, { passive: true });
+        
+          // click still toggles
+          item.addEventListener('click', () => ws.playPause());
+        
           wsRegistry.set(wave.id, ws);
         }
-
+        
         // Stop observing after first creation
         obs.unobserve(item);
       });
@@ -2001,20 +2565,6 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
   const grid = document.getElementById('grid');
   if (!grid) return;
 
-  const WS_CONFIG = {
-    waveColor: '#666',
-    progressColor: '#aaa',
-    cursorColor: '#ccc',
-    height: 50,
-    barWidth: 2,
-    barGap: 1,
-    barHeight: 40,
-    normalize: true,
-    responsive: true,
-    interact: true,
-    cursorWidth: 1,
-  };
-
   const wsMap = new Map(); // key = wave.id, val = ws instance
 
   function initTile(el) {
@@ -2023,14 +2573,36 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     if (!wave || !src) return;
 
     if (!wsMap.has(wave.id)) {
-      const ws = WaveSurfer.create({ ...WS_CONFIG, container: `#${wave.id}` });
-      ws.load(src);
+      // create WITHOUT custom media/backend → avoids this.media.addEventListener error
+      const ws = createWave(`#${wave.id}`, null);
+      wsMap.set(wave.id, ws);
 
-      // Hover behavior
+      // Try to draw waveform from peaks JSON (doesn't fetch the MP3)
+      const peaksUrl = src.replace(/\.[^/.]+$/, '.peaks.json');
+      (async () => {
+        try {
+          const r = await fetch(peaksUrl, { cache: 'force-cache' });
+          if (!r.ok) return;
+          const j = await r.json();
+          const peaks = Array.isArray(j) ? j : (j.data || j.peaks);
+          const duration = j.duration || j.length;
+          if (peaks?.length) ws.load('', peaks, duration);
+        } catch {}
+      })();
+
+      // Load audio ONLY on first hover
+      //let loaded = false;
+      //el.addEventListener('mouseenter', () => {
+      //  if (!loaded) { loaded = true; ws.load(src); }
+      //  try { ws.play(); } catch {}
+      //}, { passive: true });
+      //el.addEventListener('mouseleave', () => { try { ws.pause(); } catch {} }, { passive: true });
+
+      // TEMP: eager-load (disable hover-lazy)
+      ws.load(src);
+      // keep hover to play/pause only
       el.addEventListener('mouseenter', () => { try { ws.play(); } catch {} }, { passive: true });
       el.addEventListener('mouseleave', () => { try { ws.pause(); } catch {} }, { passive: true });
-
-      wsMap.set(wave.id, ws);
     }
   }
 
@@ -2043,32 +2615,40 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     });
   }, { root: null, threshold: 0.2 });
 
+  /*
   function observeAudioTiles(root = grid) {
     root.querySelectorAll('.object.audio').forEach(el => io.observe(el));
   }
+  */
 
-  // Observe existing tiles now…
+  function observeAudioTiles(root = grid) {
+    // TEMP: eager-init all audio tiles
+    root.querySelectorAll('.object.audio').forEach(initTile);
+  }
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => observeAudioTiles(), { once: true });
   } else {
     observeAudioTiles();
   }
 
-  // …and any tiles added later (cluster/ungrouped changes or Strapi loads)
   const mo = new MutationObserver((muts) => {
     muts.forEach(m => {
       m.addedNodes?.forEach(node => {
         if (node.nodeType !== 1) return;
+        //if (node.classList?.contains('object') && node.classList.contains('audio')) {
+        //  io.observe(node);
+        //}
+        //node.querySelectorAll?.('.object.audio').forEach(el => io.observe(el));
         if (node.classList?.contains('object') && node.classList.contains('audio')) {
-          io.observe(node);
+            initTile(node);
         }
-        node.querySelectorAll?.('.object.audio').forEach(el => io.observe(el));
+        node.querySelectorAll?.('.object.audio').forEach(initTile);
       });
     });
   });
   mo.observe(grid, { childList: true, subtree: true });
 
-  // Optional API: allow grid.js to pause all waves when opening a detail card
   window.__gridWaves ||= {
     pauseAll() { wsMap.forEach(ws => { try { ws.pause(); } catch {} }); }
   };
@@ -2092,21 +2672,6 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     }
   };
 
-  // Same visual config as the gallery (keep UX consistent)
-  const WS_CONFIG = {
-    waveColor: '#666',
-    progressColor: '#aaa',
-    cursorColor: '#ccc',
-    height: 50,
-    barWidth: 2,
-    barGap: 1,
-    barHeight: 40,
-    normalize: true,
-    responsive: true,
-    interact: true,
-    cursorWidth: 1,
-  };
-
   // Lazy-create when a tile is on screen
   const io = new IntersectionObserver((entries) => {
     entries.forEach(en => {
@@ -2117,7 +2682,7 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       if (!wave || !src) return;
 
       if (!wsRegistry.has(wave.id)) {
-        const ws = WaveSurfer.create({ ...WS_CONFIG, container: `#${wave.id}` });
+        const ws = createWave(`#${wave.id}`, src);
         ws.load(src);
 
         // Simple play/pause toggle on click
@@ -2182,39 +2747,57 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
   function createGalleryItem(o) {
     // IMAGE (allow up to 1.5x intrinsic CSS width, DPR-aware)
+    // REPLACE the whole image case with this:
     if (o.type === 'image') {
       const img = document.createElement('img');
       img.className = 'item image';
       img.alt = o.alt || '';
       img.loading = 'lazy';
-      img.src = o.image || o.src || o.url || '';
 
-      const desired = randItemWidth();      // your 100–200 px random width
+      // Desired CSS width for this gallery item (same logic as before)
+      const desiredCss = randItemWidth(); // 100..200 px
       const dpr = window.devicePixelRatio || 1;
-      const UPSCALE_MAX = 2;              // allow up to 150% of intrinsic CSS width
+      const needPx = Math.round(desiredCss * dpr * 1.5); // small headroom for zoom/hover
 
-      // helper to apply width and keep counters in sync
-      const setCssWidth = (px) => {
-        img.style.width = `${px}px`;
-        img.style.height = 'auto';
-        img.style.display = 'block';
-        requestAnimationFrame(() => window.__galleryIO__?._updateCounts?.());
-      };
+      // Look up Strapi file meta (added in step 2). Keyed by the original/master URL.
+      // Falls back gracefully if meta isn't present yet.
+      const meta = (window.__mediaMeta__ && window.__mediaMeta__.get(o.image)) || o._mediaMeta || null;
 
-      // If dummy data has intrinsic pixel width, clamp immediately
-      if (typeof o.width === 'number' && o.width > 0) {
-        const intrinsicCss = o.width / dpr;                         // pixels → CSS px on this DPR
-        const maxCss = Math.max(1, Math.floor(intrinsicCss * UPSCALE_MAX));
-        setCssWidth(Math.min(desired, maxCss));
-      } else {
-        // Otherwise set desired first, then clamp after the image loads
-        setCssWidth(desired);
-        img.addEventListener('load', () => {
-          const intrinsic = img.naturalWidth || desired;            // pixel width
-          const intrinsicCss = intrinsic / dpr;
-          const maxCss = Math.max(1, Math.floor(intrinsicCss * UPSCALE_MAX));
-          if (desired > maxCss) setCssWidth(maxCss);
-        }, { once: true });
+      let chosenUrl = o.image || o.src || o.url || '';
+      let chosenW, chosenH;
+
+      if (meta && meta.formats) {
+        // Use the helper from step 2
+        const best = pickImageVariant(meta.formats, needPx);
+        if (best && best.url) {
+          chosenUrl = best.url;
+          chosenW = best.width;
+          chosenH = best.height;
+        }
+
+        // Optional: give the browser choices
+        const candidates = Object.values(meta.formats)
+          .filter(v => v && v.url && v.width)
+          .sort((a, b) => a.width - b.width)
+          .map(v => `${v.url} ${v.width}w`)
+          .join(', ');
+        if (candidates) {
+          img.srcset = candidates;
+          img.sizes = `${desiredCss}px`;
+        }
+      }
+
+      img.src = chosenUrl;
+
+      // Size the box in CSS (keeps your layout)
+      img.style.width = `${desiredCss}px`;
+      img.style.height = 'auto';
+      img.style.display = 'block';
+
+      // Optional: width/height attributes help reduce CLS if we know them
+      if (chosenW && chosenH) {
+        img.width = chosenW;
+        img.height = chosenH;
       }
 
       img.dataset.oid = o.id || '';
@@ -2432,6 +3015,8 @@ window.renderAdhocGallery = function(objs = []) {
     const scroller   = gg; // #group-gallery IS the horizontal scroller (overflow-x)
     const leftBadge  = gg.querySelector('.count-invisible-objects.left .value');
     const rightBadge = gg.querySelector('.count-invisible-objects.right .value');
+    const leftWrap  = gg.querySelector('.count-invisible-objects.left');
+    const rightWrap = gg.querySelector('.count-invisible-objects.right');
     const items      = () => gg.querySelectorAll('.gallery-box .item');
 
     if (!leftBadge || !rightBadge) return;
@@ -2449,6 +3034,16 @@ window.renderAdhocGallery = function(objs = []) {
 
       leftBadge.textContent  = String(left);
       rightBadge.textContent = String(right);
+
+      // hide when zero, like the grid counters
+      if (leftWrap) {
+        if (left === 0) leftWrap.setAttribute('aria-hidden', 'true');
+        else leftWrap.removeAttribute('aria-hidden');
+      }
+      if (rightWrap) {
+        if (right === 0) rightWrap.setAttribute('aria-hidden', 'true');
+        else rightWrap.removeAttribute('aria-hidden');
+      }
     }
 
     // Update on horizontal scroll of the scroller, and on resize
@@ -2915,6 +3510,14 @@ function scheduleOffgridUpdate() {
 
 function updateOffgridCounters() {
   if (!workspaceEl || !gridEl) return;
+
+  // NEW: hide counters in grouped grid view
+  const state = window.gridObject?.currentState;
+  if (state === 'grouped') {
+    Object.values(counters).forEach(n => n?.setAttribute('aria-hidden', 'true'));
+    return; // skip measuring/rendering while grouped
+  }
+
   const vp = workspaceEl.getBoundingClientRect();
   const items = Array.from(gridEl.querySelectorAll('.object'));
 
@@ -3298,13 +3901,19 @@ if (slideInsEl && 'ResizeObserver' in window) {
 
 // START DOM LOADED
 
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
   setTagGroupPolicy('GLOBAL');       // 'GLOBAL' or 'SCOPED'
   setTagMode('AND');                 // 'AND' or 'OR'
 
-  initSlideInTags();
+  // 1) try to pull ConnectingTag from Strapi and override TAG_GROUPS
+  await seedConnectingTagsFromStrapi();
 
-  initSlideInAccordion('#discover-connections'); // reads data-section-mode="accordion"
+  initSlideInTags();
+  
+  initSlideInAccordion('#discover-connections', {
+    mode: 'accordion',
+    dynamicHeight: true
+  });
 
   attachSecondaryAutoClose('#discover-connections');
 
@@ -3368,21 +3977,48 @@ function renderTagModeToggle(container) {
   wrap.setAttribute('role', 'group');
   wrap.setAttribute('aria-label', 'Tag match mode');
 
-  const label = document.createElement('div');
-  label.className = 'label';
-  label.textContent = 'Match:';
-  wrap.appendChild(label);
-
+  // ANY
   const btnAny = document.createElement('button');
-  btnAny.type = 'button'; btnAny.className = 'seg'; btnAny.textContent = 'Any'; btnAny.dataset.mode = 'OR';
+  btnAny.type = 'button';
+  btnAny.className = 'tag-mode-btn any';
+  btnAny.dataset.mode = 'OR';
+  btnAny.innerHTML = `
+    <!-- BEGIN filter_additive.svg (inline) -->
+    <svg fill="currentColor" stroke="currentColor"
+         viewBox="0 0 24 24" preserveAspectRatio="xMidYMid meet"
+         aria-hidden="true" focusable="false">
+        <path d="M17.6,12.8c.2.2.4.2.6,0l2.5-2.5v11.3c0,.2.2.4.4.4s.4-.2.4-.4v-11.3l2.5,2.5c.2.2.4.2.6,0,0,0,.1-.2.1-.3s0-.2-.1-.3l-3-3h0l-.2-.2c0,0-.2-.1-.3-.1h0c-.1,0-.2,0-.3.1l-3.2,3.2c-.2.2-.2.4,0,.6Z"/>
+        <path d="M1.5.6h18.3c.4,0,.6.5.4.8l-6.9,9.9c-.2.3-.4.7-.4,1.1v6.2c0,.6-.4,1.2-1,1.4l-3,1.2c-.3.1-.7-.1-.7-.5v-8c0-.4-.1-.8-.3-1.1L1.1,1.4c-.2-.3,0-.8.4-.8Z" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <!-- END filter_additive.svg -->
+  `;
+
+  // separator
+  const sep = document.createElement('span');
+  sep.className = 'tag-mode-separator';
+
+  // ALL
   const btnAll = document.createElement('button');
-  btnAll.type = 'button'; btnAll.className = 'seg'; btnAll.textContent = 'All'; btnAll.dataset.mode = 'AND';
+  btnAll.type = 'button';
+  btnAll.className = 'tag-mode-btn all';
+  btnAll.dataset.mode = 'AND';
+  btnAll.innerHTML = `
+    <!-- BEGIN filter_subtractive.svg (inline) -->
+    <svg fill="currentColor" stroke="currentColor"
+         viewBox="0 0 24 24" preserveAspectRatio="xMidYMid meet"
+         aria-hidden="true" focusable="false">
+        <path d="M24.6,18c-.2-.2-.4-.2-.6,0l-2.5,2.5v-11.3c0-.2-.2-.4-.4-.4s-.4.2-.4.4v11.3l-2.5-2.5c-.2-.2-.4-.2-.6,0,0,0-.1.2-.1.3s0,.2.1.3l3,3h0l.2.2c0,0,.2.1.3.1h0c.1,0,.2,0,.3-.1l3.2-3.2c.2-.2.2-.4,0-.6Z"/>
+        <path d="M1.5.6h18.3c.4,0,.6.5.4.8l-6.9,9.9c-.2.3-.4.7-.4,1.1v6.2c0,.6-.4,1.2-1,1.4l-3,1.2c-.3.1-.7-.1-.7-.5v-8c0-.4-.1-.8-.3-1.1L1.1,1.4c-.2-.3,0-.8.4-.8Z" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <!-- END filter_subtractive.svg -->
+  `;
 
   wrap.appendChild(btnAny);
+  wrap.appendChild(sep);
   wrap.appendChild(btnAll);
 
   wrap.addEventListener('click', (e) => {
-    const b = e.target.closest('.seg');
+    const b = e.target.closest('.tag-mode-btn');
     if (!b) return;
     setTagMode(b.dataset.mode);
   });
@@ -3391,21 +4027,87 @@ function renderTagModeToggle(container) {
   renderTagModeToggle._rendered = true;
   renderTagModeToggle._els = { btnAny, btnAll };
 }
+
 function syncTagModeToggleUI() {
   const els = renderTagModeToggle._els;
   if (!els) return;
-  els.btnAny.classList.toggle('is-selected', TAG_MODE !== TAG_MODES.AND);
-  els.btnAll.classList.toggle('is-selected', TAG_MODE === TAG_MODES.AND);
-  els.btnAny.setAttribute('aria-pressed', TAG_MODE !== TAG_MODES.AND);
-  els.btnAll.setAttribute('aria-pressed', TAG_MODE === TAG_MODES.AND);
+  const isAnd = TAG_MODE === TAG_MODES.AND;
+  els.btnAny.classList.toggle('is-selected', !isAnd);
+  els.btnAll.classList.toggle('is-selected', isAnd);
+  els.btnAny.setAttribute('aria-pressed', !isAnd);
+  els.btnAll.setAttribute('aria-pressed', isAnd);
 }
+
+// === THEME (Dark | Light) TOGGLE ==========================
+// use a different name to avoid clashing with existing THEMES
+const COLOR_THEMES = { DARK: 'dark', LIGHT: 'light' };
+
+function setTheme(theme) {
+  const mode = (theme === COLOR_THEMES.DARK) ? COLOR_THEMES.DARK : COLOR_THEMES.LIGHT;
+  document.documentElement.dataset.theme = mode;
+  syncThemeToggleUI?.();
+}
+
+function renderThemeToggle(container) {
+  if (!container || renderThemeToggle._rendered) return;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'tag-match-toggle theme-toggle';
+  wrap.setAttribute('role', 'group');
+  wrap.setAttribute('aria-label', 'Color theme');
+
+  const btnDark = document.createElement('button');
+  btnDark.type = 'button';
+  btnDark.className = 'tag-mode-btn dark';
+  btnDark.dataset.theme = 'dark';
+  btnDark.innerHTML = `<span class="txt">Dark</span>`;
+
+  const sep = document.createElement('span');
+  sep.className = 'tag-mode-separator';
+
+  const btnLight = document.createElement('button');
+  btnLight.type = 'button';
+  btnLight.className = 'tag-mode-btn light';
+  btnLight.dataset.theme = 'light';
+  btnLight.innerHTML = `<span class="txt">Light</span>`;
+
+  wrap.append(btnDark, sep, btnLight);
+
+  wrap.addEventListener('click', (e) => {
+    const b = e.target.closest('.tag-mode-btn');
+    if (!b) return;
+    setTheme(b.dataset.theme);
+  });
+
+  // Insert to the LEFT of the burger
+  const before = container.querySelector('#menu-button');
+  if (before) container.insertBefore(wrap, before);
+  else container.appendChild(wrap);
+
+  renderThemeToggle._rendered = true;
+  renderThemeToggle._els = { btnDark, btnLight };
+}
+
+function syncThemeToggleUI() {
+  const els = renderThemeToggle._els;
+  if (!els) return;
+  const isDark = document.documentElement.dataset.theme === 'dark';
+  els.btnDark.classList.toggle('is-selected', isDark);
+  els.btnLight.classList.toggle('is-selected', !isDark);
+  els.btnDark.setAttribute('aria-pressed', isDark);
+  els.btnLight.setAttribute('aria-pressed', !isDark);
+}
+// ==========================================================
 
 // Build a fast lookup: tag -> objects that have it
 const tagToObjects = new Map();
 function buildTagIndex(objects) {
   tagToObjects.clear();
   for (const o of objects) {
-    for (const t of o.tags) {
+    const src = (o.connectingTags && o.connectingTags.length)
+      ? o.connectingTags
+      : (o.tags || []);
+    for (const t of src) {
       if (!tagToObjects.has(t)) tagToObjects.set(t, []);
       tagToObjects.get(t).push(o);
     }
@@ -3509,6 +4211,47 @@ function reseedTagsFromDetail(tag) {
 // expose for grid.js
 window.reseedTagsFromDetail = reseedTagsFromDetail;
 
+// NEW: detail panels can toggle multiple tags without nuking existing selection
+function toggleTagFromDetail(tag) {
+  if (!tag) return;
+
+  const s = window.activeTags;
+  const already = s.has(tag);
+
+  if (already) {
+    // remove it
+    s.delete(tag);
+    // if nothing left, also clear the scoped group
+    if (typeof activeTagGroupId !== 'undefined' && s.size === 0) {
+      activeTagGroupId = null;
+    }
+  } else {
+    // add it
+    s.add(tag);
+
+    // keep SCOPED logic in sync, same as in reseedTagsFromDetail
+    const gid = tagToGroup.get(tag);
+    if (typeof activeTagGroupId !== 'undefined' && gid) {
+      activeTagGroupId = gid;
+    }
+    if (typeof TAG_GROUP_POLICIES !== 'undefined' && typeof TAG_GROUP_POLICY !== 'undefined') {
+      if (TAG_GROUP_POLICY === TAG_GROUP_POLICIES.SCOPED && gid) {
+        currentTagViewGroupId = gid;
+      }
+    }
+  }
+
+  // repaint everything that depends on activeTags
+  if (typeof renderTagsForCurrentGroup === 'function') renderTagsForCurrentGroup();
+  if (typeof markActiveGroupButton === 'function') markActiveGroupButton();
+  if (typeof updateTagAvailability === 'function') updateTagAvailability();
+  if (typeof updateObjectGlowsWithGradient === 'function') updateObjectGlowsWithGradient();
+  if (typeof scheduleOffgridUpdate === 'function') scheduleOffgridUpdate();
+  if (typeof renderSelectionBar === 'function') renderSelectionBar();
+  syncDetailTagHighlights();
+}
+window.toggleTagFromDetail = toggleTagFromDetail;
+
 function updateObjectGlowsWithGradient() {
   const selected = [...activeTags];
   document.querySelectorAll(".object").forEach(div => {
@@ -3516,23 +4259,60 @@ function updateObjectGlowsWithGradient() {
     const glow = div.querySelector(".object-glow");
     if (!glow) return;
 
-    let matches = false;
+    // nothing selected → no glow
     if (selected.length === 0) {
-      matches = false;
-    } else if (TAG_MODE === TAG_MODES.OR) {
-      matches = tags.some(t => activeTags.has(t));
-    } else {
-      matches = selected.every(t => tags.includes(t));
+      glow.style.setProperty('--glow', 'transparent');
+      return;
     }
 
-    if (!matches) {
-      glow.style.background = "transparent";
-    } else {
-      const colors = (TAG_MODE === TAG_MODES.OR)
-        ? tags.filter(t => activeTags.has(t)).map(t => tagColors[t])
-        : selected.map(t => tagColors[t]);
-      glow.style.background = `linear-gradient(to bottom, ${colors.join(", ")})`;
+    if (TAG_MODE === TAG_MODES.OR) {
+      // existing OR behavior
+      const matchesAny = tags.some(t => activeTags.has(t));
+      if (!matchesAny) {
+        glow.style.setProperty('--glow', 'transparent');
+        return;
+      }
+
+      const colors = tags
+        .filter(t => activeTags.has(t))
+        .map(t => tagColors[t]);
+
+      const n = Math.max(1, colors.length);
+      const stops = colors.map((c, i) => {
+        const start = (i * 100 / n).toFixed(2);
+        const end   = ((i + 1) * 100 / n).toFixed(2);
+        return `${c} ${start}% ${end}%`;
+      });
+      const conic = `conic-gradient(from 0deg at 50% 50%, ${stops.join(", ")})`;
+      glow.style.setProperty('--glow', conic);
+      return;
     }
+
+    // === AND mode (your change) ===
+    const matchesAll  = selected.every(t => tags.includes(t));          // strict intersection
+    const matchesSome = tags.some(t => activeTags.has(t));              // partial / 1-of-N
+
+    if (!matchesSome) {
+      // no overlap at all → no glow
+      glow.style.setProperty('--glow', 'transparent');
+      return;
+    }
+
+    // decide which colors to show
+    const colors = matchesAll
+      // for full intersection: keep your old behavior → use ALL selected tag colors
+      ? selected.map(t => tagColors[t])
+      // for partial match: highlight only the tags that this object actually has
+      : tags.filter(t => activeTags.has(t)).map(t => tagColors[t]);
+
+    const n = Math.max(1, colors.length);
+    const stops = colors.map((c, i) => {
+      const start = (i * 100 / n).toFixed(2);
+      const end   = ((i + 1) * 100 / n).toFixed(2);
+      return `${c} ${start}% ${end}%`;
+    });
+    const conic = `conic-gradient(from 0deg at 50% 50%, ${stops.join(", ")})`;
+    glow.style.setProperty('--glow', conic);
   });
 }
 
@@ -3745,22 +4525,75 @@ function initSlideInAccordion(slideInSelector, opts = {}) {
   const root = document.querySelector(slideInSelector);
   if (!root) return;
 
-  // Resolve mode: html data-attr > opts > default
   const mode = (root.dataset.sectionMode || opts.mode || 'static').toLowerCase();
-  if (mode === 'static') return; // no collapsing for this slide-in
+  if (mode === 'static') return;
 
   const singleOpen = (mode === 'accordion');
-  const sections = Array.from(root.querySelectorAll('.content-section'));
+  // only the real sidebar sections, skip the big multi-column block at the top
+  const sections = Array
+    .from(root.querySelectorAll('.content-section'))
+    .filter(sec => !sec.classList.contains('multi-column'));
   if (!sections.length) return;
 
-  // Mark collapsible and set ARIA on headers
   const observers = new WeakMap();
+  const dynamicHeight = opts.dynamicHeight ?? true;
+
+  // choose the real scroll column, not the whole slide-in
+  const container = root.querySelector('.vertical-content') || root;
 
   function measureOpenHeight(sec) {
     const content = sec.querySelector('.section-content');
     if (!content) return;
-    // Set to actual content height so CSS transition has a pixel target
-    content.style.maxHeight = content.scrollHeight + 'px';
+
+    if (!dynamicHeight) {
+      content.style.maxHeight = content.scrollHeight + 'px';
+      return;
+    }
+
+    // total vertical space for sections
+    const cRect = container.getBoundingClientRect();
+    const cStyles = getComputedStyle(container);
+    const padY =
+      parseFloat(cStyles.paddingTop || '0') +
+      parseFloat(cStyles.paddingBottom || '0');
+    const total = cRect.height - padY;
+
+    // sum ALL collapsed footprints (header + section paddings + margins)
+    let headersTotal = 0;
+    sections.forEach(s => {
+      const header = s.querySelector('.section-header, h3');
+      const hRect = header ? header.getBoundingClientRect() : { height: 0 };
+      const sStyles = getComputedStyle(s);
+
+      const paddings =
+        parseFloat(sStyles.paddingTop || '0') +
+        parseFloat(sStyles.paddingBottom || '0');
+
+      const margins =
+        parseFloat(sStyles.marginTop || '0') +
+        parseFloat(sStyles.marginBottom || '0');
+
+      headersTotal += hRect.height + paddings + margins;
+    });
+
+    // after you've built headersTotal for all sections...
+    const openSecStyles = getComputedStyle(sec);
+    const openExtra =
+      parseFloat(openSecStyles.paddingTop || '0') +
+      parseFloat(openSecStyles.paddingBottom || '0') +
+      parseFloat(openSecStyles.borderTopWidth || '0') +
+      parseFloat(openSecStyles.borderBottomWidth || '0');
+
+    // leave a tiny gap
+    const GAP = 8;
+    const available = Math.max(
+      80,
+      total - headersTotal - openExtra - GAP
+    );
+
+    const wanted = content.scrollHeight;
+    const target = Math.min(wanted, available);
+    content.style.maxHeight = target + 'px';
   }
 
   function openSection(sec, focusHeader = false) {
@@ -3771,21 +4604,20 @@ function initSlideInAccordion(slideInSelector, opts = {}) {
     }
     sec.classList.add('is-open');
 
-    // NEW: notify the slide-in that a section opened
     root.dispatchEvent(new CustomEvent('slidein:sectionOpened', { detail: { section: sec } }));
 
     const header = sec.querySelector('.section-header, h3');
     const content = sec.querySelector('.section-content');
     header?.setAttribute('aria-expanded', 'true');
 
-    // Prepare animation target
+    // compute height from remaining space
     measureOpenHeight(sec);
 
-    // Keep height in sync as content changes
+    // keep in sync
     if (content && !observers.get(content) && 'ResizeObserver' in window) {
       const ro = new ResizeObserver(() => {
         if (sec.classList.contains('is-open')) {
-          content.style.maxHeight = content.scrollHeight + 'px';
+          measureOpenHeight(sec);
         }
       });
       ro.observe(content);
@@ -3801,7 +4633,6 @@ function initSlideInAccordion(slideInSelector, opts = {}) {
     const content = sec.querySelector('.section-content');
     header?.setAttribute('aria-expanded', 'false');
 
-    // Lock to current height first, then animate to 0
     if (content) {
       content.style.maxHeight = content.scrollHeight + 'px';
       requestAnimationFrame(() => { content.style.maxHeight = '0px'; });
@@ -3814,7 +4645,6 @@ function initSlideInAccordion(slideInSelector, opts = {}) {
     else openSection(sec);
   }
 
-  // Make headers interactive
   sections.forEach((sec, idx) => {
     sec.classList.add('collapsible');
     const header = sec.querySelector('.section-header, h3');
@@ -3826,21 +4656,17 @@ function initSlideInAccordion(slideInSelector, opts = {}) {
     header.addEventListener('click', () => toggleSection(sec));
     header.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSection(sec); }
-      if (e.key === 'ArrowDown') { e.preventDefault(); openNext(idx); }
-      if (e.key === 'ArrowUp')   { e.preventDefault(); openPrev(idx); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); const s = sections[idx+1]; if (s) openSection(s, true); }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); const s = sections[idx-1]; if (s) openSection(s, true); }
     });
   });
 
-  function openNext(i){ const s = sections[i+1]; if (s) openSection(s, true); }
-  function openPrev(i){ const s = sections[i-1]; if (s) openSection(s, true); }
-
-  // Initial state: open the first; others closed
+  // initial: open first, close rest
   openSection(sections[0]);
   sections.slice(1).forEach(closeSection);
 
-  // Public API (optional)
   root._accordion = { openSection, closeSection, toggleSection };
-}  
+}
 
 function renderThemesUI() {
   const host = document.getElementById('themes-section');
@@ -3886,6 +4712,84 @@ function clearThemesActiveState() {
   list.querySelectorAll('.theme-item.active').forEach(n => n.classList.remove('active'));
 }
 
+function renderDiscoverProjectsFromGroups() {
+  const projectSection = Array
+    .from(document.querySelectorAll('#discover-connections .content-section'))
+    .find(sec => {
+      const h = sec.querySelector('h3');
+      return h && h.textContent.trim().toLowerCase() === 'project';
+    });
+
+  if (!projectSection) return;
+
+  const content = projectSection.querySelector('.section-content');
+  if (!content) return;
+
+  const groups = window.groupMetaById || {};
+  const entries = Object.entries(groups);
+
+  content.innerHTML = '';
+
+  if (!entries.length) {
+    return;
+  }
+
+  entries.sort((a, b) => {
+    const ta = (a[1]?.title || a[1]?.Title || '').toLowerCase();
+    const tb = (b[1]?.title || b[1]?.Title || '').toLowerCase();
+    return ta.localeCompare(tb);
+  });
+
+  const ul = document.createElement('ul');
+  ul.className = 'dc-projects-list';
+
+  const esc = (s) => String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  entries.forEach(([gid, meta]) => {
+    const title = meta?.title || meta?.Title || 'Untitled';
+    const subtitle =
+      meta?.subtitle ||
+      meta?.Subtitle ||
+      meta?.description ||
+      meta?.Description ||
+      '';
+
+    const li = document.createElement('li');
+    li.className = 'dc-project-item';
+    li.dataset.gid = gid;
+    li.innerHTML = `
+      <span class="dc-project-radio" aria-hidden="true"></span>
+      <div class="dc-project-text">
+        <strong>${esc(title)}</strong>
+        ${subtitle ? `<div class="dc-project-subtitle">${esc(subtitle)}</div>` : ''}
+      </div>
+    `;
+    ul.appendChild(li);
+  });
+
+  content.appendChild(ul);
+
+  // click handling: select + open gallery
+  ul.addEventListener('click', (e) => {
+    const li = e.target.closest('.dc-project-item');
+    if (!li) return;
+    const gid = li.dataset.gid;
+
+    // set selected (radio-like)
+    ul.querySelectorAll('.dc-project-item.is-selected')
+      .forEach(n => n.classList.remove('is-selected'));
+    li.classList.add('is-selected');
+
+    // open gallery
+    if (typeof window.openGroupGallery === 'function') {
+      window.openGroupGallery(gid);
+    }
+  });
+}
+
 function renderTagsForCurrentGroup() {
   // Renders ALL tags from ALL groups. Group selection is enforced via disabled state.
   const ul = document.getElementById('tags-visible');
@@ -3893,12 +4797,17 @@ function renderTagsForCurrentGroup() {
   ul.innerHTML = '';
 
   TAG_GROUPS.forEach(group => {
-    group.tags.forEach(tag => {
+    // sort connecting tags alphabetically, case-insensitive
+    const sorted = (group.tags || []).slice().sort((a, b) =>
+      a.toLowerCase().localeCompare(b.toLowerCase())
+    );
+  
+    sorted.forEach(tag => {
       const li = document.createElement('li');
       li.dataset.tag = tag;
       li.dataset.group = group.id;
       li.textContent = tag;
-
+  
       if (activeTags.has(tag)) {
         const color = tagColors[tag];
         li.classList.add('active');
@@ -3906,9 +4815,10 @@ function renderTagsForCurrentGroup() {
         li.style.color = color;
         li.style.boxShadow = `${color}66 0 0 8px`;
       }
+  
       ul.appendChild(li);
     });
-  });
+  });  
   // After (re)render, enforce availability rules (AND logic  group gating)
   updateTagAvailability();
 }
@@ -3933,51 +4843,73 @@ function clearAllTagSelectionsUI() {
 function initSlideIns() {
   const container = document.getElementById('slide-ins');
   if (!container) return;
-
-  // Prevent duplicate listeners
   if (container.dataset.inited === '1') return;
   container.dataset.inited = '1';
 
-  //container.classList.add('visible');
+  // remember original button content (the arrow in the HTML)
+  const btnDefaults = new WeakMap();
+  container.querySelectorAll('.close-btn').forEach(btn => {
+    btnDefaults.set(btn, btn.innerHTML);
+  });
 
   container.addEventListener('click', (e) => {
     const wrap = e.target.closest('.slide-in');
     if (!wrap) return;
-
+  
+    const isExpanded = wrap.classList.contains('expanded');
+  
+    // 1) vertical text → always open this, close others
     if (e.target.matches('.vertical-text')) {
       document.querySelectorAll('#slide-ins .slide-in').forEach(el => {
         if (el === wrap) {
           el.classList.add('expanded');
           el.querySelector('.vertical-content')?.classList.add('visible');
-          el.querySelector('.close-btn').textContent = '×';
+          el.querySelector('.close-btn').innerHTML = '<img src="img/icons/close.svg" alt="Close">';
         } else {
-          el.classList.remove('expanded', 'secondary-open'); // collapse others + secondary
+          el.classList.remove('expanded', 'secondary-open');
           el.querySelector('.vertical-content')?.classList.remove('visible');
           const b = el.querySelector('.close-btn');
-          if (b) b.textContent = '→';
+          if (b) b.innerHTML = '<img src="img/icons/close.svg" alt="Close">';
         }
       });
+      return;
     }
-
-    if (e.target.matches('.close-btn')) {
-      // stop other click handlers from reacting to the same click
+  
+    // 2) close button → if open -> close; if closed -> open (like vertical text)
+    const closeBtn = e.target.closest('.close-btn');
+    if (closeBtn) {
       e.stopPropagation();
-
-      wrap.classList.remove('expanded', 'secondary-open');
-
-      clearThemesActiveState();
-      
-      wrap.querySelector('.vertical-content')?.classList.remove('visible');
-      e.target.textContent = '←';
-
-      // also hide secondary, just in case
-      const panel = wrap.querySelector('.secondary-pane');
-      if (panel) {
-        panel.setAttribute('aria-hidden', 'true');
-        panel.innerHTML = '';
+  
+      if (isExpanded) {
+        // CLOSE this one
+        wrap.classList.remove('expanded', 'secondary-open');
+        wrap.querySelector('.vertical-content')?.classList.remove('visible');
+        closeBtn.innerHTML = '<img src="img/icons/arrow_counter_10x12px.svg" alt="Close">';
+        const panel = wrap.querySelector('.secondary-pane');
+        if (panel) {
+          panel.setAttribute('aria-hidden', 'true');
+          panel.innerHTML = '';
+        }
+        if (typeof clearThemesActiveState === 'function') {
+          clearThemesActiveState();
+        }
+      } else {
+        // OPEN this one (same as vertical-text)
+        document.querySelectorAll('#slide-ins .slide-in').forEach(el => {
+          if (el === wrap) {
+            el.classList.add('expanded');
+            el.querySelector('.vertical-content')?.classList.add('visible');
+            el.querySelector('.close-btn').innerHTML = '<img src="img/icons/close.svg" alt="Close">';
+          } else {
+            el.classList.remove('expanded', 'secondary-open');
+            el.querySelector('.vertical-content')?.classList.remove('visible');
+            const b = el.querySelector('.close-btn');
+            if (b) b.innerHTML = '<img src="img/icons/close.svg" alt="Close">';
+          }
+        });
       }
     }
-  });
+  });  
 }
 
 // END TAG SETUP
@@ -4061,6 +4993,9 @@ function initOverlayMenu() {
 document.addEventListener('DOMContentLoaded', () => {
   initSlideIns();
   initOverlayMenu();
+  // Insert Dark | Light before the burger
+  renderThemeToggle(document.querySelector('.header-right'));
+  syncThemeToggleUI();
   refreshSlideInsVisibility();
 
   updateRightCounterOffset();
@@ -4200,6 +5135,35 @@ function refreshHeaderLeftFromState() {
 }
 window.refreshHeaderLeftFromState = refreshHeaderLeftFromState;
 
+function restoreGridStateFromDetail() {
+  const g = window.gridObject;
+  if (!g) return;
+  if (g.currentState === 'detail' && g.prevState) {
+    g.currentState = g.prevState;
+    g.prevState = null;
+  }
+}
+window.restoreGridStateFromDetail = restoreGridStateFromDetail;
+
+// Where the bottom selection bar is allowed (no galleries)
+function selectionBarIsAllowed() {
+  const b = document.body;
+  let state = window.gridObject?.currentState; // 'grouped' | 'clustered' | 'ungrouped' | ...
+
+  // If grid thinks it's still 'detail' but we're not on detail page, fall back to previous state
+  if (state === 'detail' && !b.classList.contains('in-detail-page')) {
+    state = window.gridObject?.prevState || state;
+  }
+
+  // Never in galleries
+  if (b.classList.contains('in-group-gallery'))  return false;
+  if (b.classList.contains('in-adhoc-gallery'))  return false;
+
+  // Allowed grid states (instant show during clustering)
+  return state === 'clustered' || state === 'ungrouped' || state === 'pre-cluster';
+}
+window.selectionBarIsAllowed = selectionBarIsAllowed;
+
 // Fire a single custom event whenever the view changes.
 // We hook header updates to this event.
 function dispatchViewChange() {
@@ -4212,6 +5176,12 @@ function dispatchViewChange() {
   }));
 }
 document.addEventListener('app:viewchange', refreshHeaderLeftFromState);
+document.addEventListener('app:viewchange', () => window.renderSelectionBar?.());
+document.addEventListener('app:viewchange', (e) => {
+  if (e.detail?.gridState === 'grouped') {
+    window.__gridWaves?.pauseAll?.();
+  }
+});
 
 // Patch grid mode-switch so the header updates automatically
 function wireHeaderToGrid() {
@@ -4310,52 +5280,40 @@ const HeaderTyper = (() => {
 
 // === Selected Tags Bottom Bar ===
 function renderSelectionBar() {
+  console.log("renderSelectionBar called")
   const bar  = document.getElementById('selection-bar');
   const list = document.getElementById('selected-tags-list');
   const ws   = document.getElementById('workspace');
   if (!bar || !list || !ws) return;
 
-  // --- derive tags array robustly (supports Set or Array) ---
-  const raw = window.activeTags;
-  const tags = Array.isArray(raw) ? raw
-            : (raw instanceof Set) ? [...raw]
-            : [];
-
-  // Always clear existing content first
-  list.innerHTML = '';
-
-  let actions = bar.querySelector('.sb-actions');
-  if (actions) actions.innerHTML = '';
-
-  // Hide the bar while ANY gallery is open
-  if (document.body.classList.contains('in-group-gallery')) {
+  // View gate: clustered / ungrouped / pre-cluster only; never in galleries
+  if (typeof window.selectionBarIsAllowed === 'function' && !selectionBarIsAllowed()) {
     bar.classList.remove('show');
     ws.classList.remove('has-selection-bar');
+    list.innerHTML = '';
     return;
   }
 
-  // No tags selected → hide the bar and ensure no stale UI remains
+  // Current selection
+  const raw  = window.activeTags;
+  const tags = Array.isArray(raw) ? raw : (raw instanceof Set ? [...raw] : []);
+
+  // No tags → hide immediately (prevents “sticky” bar)
   if (tags.length === 0) {
     bar.classList.remove('show');
     ws.classList.remove('has-selection-bar');
-    // Also remove the actions node altogether (optional, keeps DOM clean)
-    if (actions) actions.remove();
+    list.innerHTML = '';
+    const a = bar.querySelector('.sb-actions');
+    if (a) a.remove();
     return;
   }
 
-  // If we are currently viewing the ad-hoc gallery, live-refresh it
-  if (document.getElementById('group-gallery')?.classList.contains('active')) {
-    // history.state.adhoc or the body class identifies ad-hoc mode
-    if ((history.state && history.state.adhoc) || document.body.classList.contains('in-adhoc-gallery')) {
-      window.refreshAdhocGalleryFromTags?.(tags);
-    }
-  }
-
-  // --- Create a pill for each selected tag (center area) ---
+  // Build pills
+  list.innerHTML = '';
   for (const tag of tags) {
     const li = document.createElement('li');
     li.dataset.tag = tag;
-    li.innerHTML = `${tag} <span class="x" aria-hidden="true">×</span>`;
+    li.innerHTML = `${tag} <span class="x" aria-hidden="true">X</span>`;
     const color = window.tagColors?.[tag];
     if (color) {
       li.classList.add('active');
@@ -4366,32 +5324,28 @@ function renderSelectionBar() {
     list.appendChild(li);
   }
 
-  // --- Right-side actions (Create new gallery) ---
-  actions = bar.querySelector('.sb-actions');
+  // Right-side actions (Create new gallery)
+  let actions = bar.querySelector('.sb-actions');
   if (!actions) {
     actions = document.createElement('div');
     actions.className = 'sb-actions';
     bar.appendChild(actions);
   }
   actions.innerHTML = '';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'button btn-create-gallery';
+  btn.innerHTML = '<span class="text">Create new gallery</span><span class="icon">→</span>';
+  btn.addEventListener('click', () => {
+    const objs = objectsMatchingCurrentFilter();
+    window.openTagsGallery(objs, tags);
+  });
+  actions.appendChild(btn);
 
-  if (!document.body.classList.contains('in-adhoc-gallery')) {
-    const btn = document.createElement('button');           // keep a <button>, not an <a>
-    btn.type = 'button';
-    btn.className = 'button btn-create-gallery';            // reuse gallery’s .button styles
-    btn.innerHTML = '<span class="text">Create new gallery</span><span class="icon">→</span>';  
-    btn.addEventListener('click', () => {
-      const objs = objectsMatchingCurrentFilter();
-      window.openTagsGallery(objs, tags);
-    });
-    actions.appendChild(btn);
-  }
-
-  // Finally, show the bar
+  // Show
   bar.classList.add('show');
   ws.classList.add('has-selection-bar');
 }
-
 window.renderSelectionBar = renderSelectionBar;
 
 function initSelectionBar() {
@@ -4399,12 +5353,12 @@ function initSelectionBar() {
   if (!bar || bar.dataset.inited === '1') return;
   bar.dataset.inited = '1';
 
-  // Clicking a pill removes that tag from the selection
+  // Click pill to remove tag
   bar.addEventListener('click', (e) => {
     const li = e.target.closest('li[data-tag]');
     if (!li) return;
     const tag = li.dataset.tag;
-    if (window.activeTags && activeTags.has(tag)) {
+    if (window.activeTags?.has(tag)) {
       activeTags.delete(tag);
       // keep the rest of the UI consistent
       if (typeof renderTagsForCurrentGroup === 'function') renderTagsForCurrentGroup();
@@ -4415,9 +5369,11 @@ function initSelectionBar() {
     }
   });
 
-  // First paint (empty)
+  // First paint
   renderSelectionBar();
 }
+document.addEventListener('DOMContentLoaded', initSelectionBar);
+
 
 document.addEventListener('DOMContentLoaded', () => {
   // Initial sync (in case something is preselected)
@@ -4434,9 +5390,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   mo.observe(detailRoot, { childList: true, subtree: true });
 });
-
-
-document.addEventListener('DOMContentLoaded', initSelectionBar);
 
 
 // TODO: content type video
