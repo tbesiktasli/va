@@ -1318,8 +1318,6 @@ function refreshSlideInsVisibility() {
     slideIns.querySelectorAll('.slide-in').forEach(el => {
       el.classList.remove('expanded', 'secondary-open');
       el.querySelector('.vertical-content')?.classList.remove('visible');
-      const b = el.querySelector('.close-btn');
-      if (b) b.innerHTML = '<img src="img/icons/arrow_counter_10x12px.svg" alt="Close">';
     });
   }
 
@@ -1334,8 +1332,6 @@ function collapseDiscoverSidebar() {
   wrap.querySelectorAll('.slide-in').forEach(el => {
     el.classList.remove('expanded', 'secondary-open');
     el.querySelector('.vertical-content')?.classList.remove('visible');
-    const btn = el.querySelector('.close-btn');
-    if (btn) btn.textContent = '←';
   });
 
   // keep layout math in sync with the new (collapsed) width
@@ -4195,7 +4191,7 @@ function renderTagModeToggle(container) {
          viewBox="0 0 24 24" preserveAspectRatio="xMidYMid meet"
          aria-hidden="true" focusable="false">
         <path d="M17.6,12.8c.2.2.4.2.6,0l2.5-2.5v11.3c0,.2.2.4.4.4s.4-.2.4-.4v-11.3l2.5,2.5c.2.2.4.2.6,0,0,0,.1-.2.1-.3s0-.2-.1-.3l-3-3h0l-.2-.2c0,0-.2-.1-.3-.1h0c-.1,0-.2,0-.3.1l-3.2,3.2c-.2.2-.2.4,0,.6Z"/>
-        <path d="M1.5.6h18.3c.4,0,.6.5.4.8l-6.9,9.9c-.2.3-.4.7-.4,1.1v6.2c0,.6-.4,1.2-1,1.4l-3,1.2c-.3.1-.7-.1-.7-.5v-8c0-.4-.1-.8-.3-1.1L1.1,1.4c-.2-.3,0-.8.4-.8Z" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M1.5.6h18.3c.4,0,.6.5.4.8l-6.9,9.9c-.2.3-.4.7-.4,1.1v6.2c0,.6-.4,1.2-1,1.4l-3,1.2c-.3.1-.7-.1-.7-.5v-8c0-.4-.1-.8-.3-1.1L1.1,1.4c-.2-.3,0-.8.4-.8Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
     <!-- END filter_additive.svg -->
   `;
@@ -4215,7 +4211,7 @@ function renderTagModeToggle(container) {
          viewBox="0 0 24 24" preserveAspectRatio="xMidYMid meet"
          aria-hidden="true" focusable="false">
         <path d="M24.6,18c-.2-.2-.4-.2-.6,0l-2.5,2.5v-11.3c0-.2-.2-.4-.4-.4s-.4.2-.4.4v11.3l-2.5-2.5c-.2-.2-.4-.2-.6,0,0,0-.1.2-.1.3s0,.2.1.3l3,3h0l.2.2c0,0,.2.1.3.1h0c.1,0,.2,0,.3-.1l3.2-3.2c.2-.2.2-.4,0-.6Z"/>
-        <path d="M1.5.6h18.3c.4,0,.6.5.4.8l-6.9,9.9c-.2.3-.4.7-.4,1.1v6.2c0,.6-.4,1.2-1,1.4l-3,1.2c-.3.1-.7-.1-.7-.5v-8c0-.4-.1-.8-.3-1.1L1.1,1.4c-.2-.3,0-.8.4-.8Z" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M1.5.6h18.3c.4,0,.6.5.4.8l-6.9,9.9c-.2.3-.4.7-.4,1.1v6.2c0,.6-.4,1.2-1,1.4l-3,1.2c-.3.1-.7-.1-.7-.5v-8c0-.4-.1-.8-.3-1.1L1.1,1.4c-.2-.3,0-.8.4-.8Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
     <!-- END filter_subtractive.svg -->
   `;
@@ -5057,12 +5053,6 @@ function initSlideIns() {
   if (container.dataset.inited === '1') return;
   container.dataset.inited = '1';
 
-  // remember original button content (the arrow in the HTML)
-  const btnDefaults = new WeakMap();
-  container.querySelectorAll('.close-btn').forEach(btn => {
-    btnDefaults.set(btn, btn.innerHTML);
-  });
-
   container.addEventListener('click', (e) => {
     const wrap = e.target.closest('.slide-in');
     if (!wrap) return;
@@ -5075,12 +5065,9 @@ function initSlideIns() {
         if (el === wrap) {
           el.classList.add('expanded');
           el.querySelector('.vertical-content')?.classList.add('visible');
-          el.querySelector('.close-btn').innerHTML = '<img src="img/icons/close.svg" alt="Close">';
         } else {
           el.classList.remove('expanded', 'secondary-open');
           el.querySelector('.vertical-content')?.classList.remove('visible');
-          const b = el.querySelector('.close-btn');
-          if (b) b.innerHTML = '<img src="img/icons/close.svg" alt="Close">';
         }
       });
       return;
@@ -5095,7 +5082,6 @@ function initSlideIns() {
         // CLOSE this one
         wrap.classList.remove('expanded', 'secondary-open');
         wrap.querySelector('.vertical-content')?.classList.remove('visible');
-        closeBtn.innerHTML = '<img src="img/icons/arrow_counter_10x12px.svg" alt="Close">';
         const panel = wrap.querySelector('.secondary-pane');
         if (panel) {
           panel.setAttribute('aria-hidden', 'true');
@@ -5110,12 +5096,9 @@ function initSlideIns() {
           if (el === wrap) {
             el.classList.add('expanded');
             el.querySelector('.vertical-content')?.classList.add('visible');
-            el.querySelector('.close-btn').innerHTML = '<img src="img/icons/close.svg" alt="Close">';
           } else {
             el.classList.remove('expanded', 'secondary-open');
             el.querySelector('.vertical-content')?.classList.remove('visible');
-            const b = el.querySelector('.close-btn');
-            if (b) b.innerHTML = '<img src="img/icons/close.svg" alt="Close">';
           }
         });
       }
@@ -5133,8 +5116,10 @@ function initOverlayMenu() {
     document.getElementById('burger-btn');
 
   const overlay  = document.getElementById('overlay-menu');
-  const closeBtn = document.getElementById('overlay-close');
+  const headerClose = document.getElementById('header-close-button');
   if (!overlay) return;
+
+  let previousFocus = null;
 
   const mainItems = overlay.querySelectorAll('.menu-item');
   const subMenu   = document.getElementById('sub-menu');
@@ -5142,7 +5127,7 @@ function initOverlayMenu() {
   // 1) Submenu entries
   const subItemsMap = {
     viralatmospheres: ['Blah','Blub'],
-    about: ['About MoRePPaR','The Research Project','Summer School','The Book'],
+    about: ['About MoRePPaR','The Research Project','Summer School','The Book','References'],
     projects: ['Project One','Project Two','Project Three'],
     team: ['Member One','Member Two','Member Three']
   };
@@ -5150,7 +5135,8 @@ function initOverlayMenu() {
   // 2) Label → subpage id + header-left copy
   const SUBPAGE_ROUTES = {
     'About MoRePPaR':       { id: 'subpage-about-moreppar',  header: 'About MoRePPaR' },
-    'The Research Project': { id: 'subpage-about-project',   header: 'About this project' } // optional if you add this id later
+    'The Research Project': { id: 'subpage-about-this-project',   header: 'About this project' }, // optional if you add this id later
+    'References':           { id: 'subpage-references',          header: 'References' }
   };
 
   function setActiveMenu(target){
@@ -5183,15 +5169,81 @@ function initOverlayMenu() {
     });
   }
 
-  const openOverlay = (e) => { e?.preventDefault(); overlay.classList.add('active'); setActiveMenu('viralatmospheres'); closeBtn?.focus?.(); };
-  const closeOverlay = (e) => { e?.preventDefault(); overlay.classList.remove('active'); };
+  const openOverlay = (e) => {
+    e?.preventDefault();
+    previousFocus = document.activeElement;
+    overlay.classList.add('active');
+    document.body.classList.add('menu-open');           // <-- mode class for header
+    setActiveMenu('viralatmospheres');
+    headerClose?.focus?.();
+  };
+  
+  const closeOverlay = (e) => {
+    e?.preventDefault();
+    overlay.classList.remove('active');
+    document.body.classList.remove('menu-open');        // <-- remove mode class
+    previousFocus?.focus?.();
+  };  
 
   trigger?.addEventListener('click', openOverlay);
   trigger?.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') openOverlay(e); });
-  closeBtn?.addEventListener('click', closeOverlay);
+  headerClose?.addEventListener('click', closeOverlay);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) closeOverlay(e); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeOverlay(e); });
   mainItems.forEach(i => i.addEventListener('click', () => setActiveMenu(i.dataset.target)));
+}
+
+// === Subpage initializers (run when a subpage is opened) ===
+const SUBPAGE_INITS = {
+  'subpage-references': initReferencesSubpage,
+};
+
+function runSubpageInit(el, id) {
+  // Re-run safe; if you want "once", set el.__initRan = true and guard here.
+  const fn = SUBPAGE_INITS[id];
+  if (typeof fn === 'function') fn(el);
+}
+
+// Config for References page (easy to tweak later)
+const REFERENCES_PAGE = {
+  collection: 'literature-references',   // Strapi path for LiteratureReference
+  field: 'Name',                         // field to render
+  sort: 'Name:asc',
+  publicationState: 'preview'
+};
+
+// Loader for #subpage-references
+async function initReferencesSubpage(root) {
+  const right = root.querySelector('.two-col-row .right');
+  if (!right) return;
+
+  right.innerHTML = '<p>Loading…</p>';
+
+  try {
+    const rows = await strapiFetchAll(REFERENCES_PAGE.collection, {
+      'publicationState': REFERENCES_PAGE.publicationState,
+      'populate': '*',
+      'sort': REFERENCES_PAGE.sort
+      // optionally: 'fields[0]': REFERENCES_PAGE.field
+    });
+
+    right.innerHTML = '';
+    rows.forEach(it => {
+      const a = (it && (it.attributes || it)) || {};
+      const name = a[REFERENCES_PAGE.field] ?? a[REFERENCES_PAGE.field.toLowerCase()];
+      if (!name) return;
+      const p = document.createElement('p');
+      p.textContent = name;
+      right.appendChild(p);
+    });
+
+    if (!right.children.length) {
+      right.innerHTML = '<p>No references yet.</p>';
+    }
+  } catch (err) {
+    console.error('[references] load failed', err);
+    right.innerHTML = '<p>Failed to load references.</p>';
+  }
 }
 
 // Show a text sub-page (by id), hide others, and set header-left
@@ -5213,6 +5265,7 @@ function openTextSubpage(sectionId, headerText) {
   if (el) {
     el.hidden = false;
     el.classList.add('active');
+    runSubpageInit(el, sectionId);
   }
 
   // 3) Header & layout adjustments
@@ -5232,7 +5285,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderThemeToggle(document.querySelector('.header-right'));
   syncThemeToggleUI();
   refreshSlideInsVisibility();
-
+  initScrollUpButtons();
   updateRightCounterOffset();
 
   const slideIns = document.getElementById('slide-ins');
@@ -5258,6 +5311,49 @@ function applyHeaderOffset() {
   if (window.gridObject?.clampCameraToBounds) {
     window.gridObject.clampCameraToBounds(true);
   }
+}
+
+// Inline an external SVG file into a target element and force currentColor
+async function inlineSvgInto(el, url) {
+  try {
+    const txt = await fetch(url, { cache: 'force-cache' }).then(r => r.text());
+    // ensure the root <svg> inherits currentColor if not already set
+    const patched = txt
+      .replace(/<svg\b/i, (m) => `${m} fill="currentColor" stroke="currentColor"`);
+    el.innerHTML = patched;
+  } catch (err) {
+    console.warn('[scroll-up] failed to inline SVG:', url, err);
+  }
+}
+
+// Find the nearest vertical scroller (your .scroll-container-vertical/.text-subpage)
+function nearestScroller(from) {
+  let n = from;
+  while (n && n !== document.body) {
+    const cs = getComputedStyle(n);
+    if (/(auto|scroll)/.test(cs.overflowY)) return n;
+    n = n.parentElement;
+  }
+  return document.scrollingElement || document.documentElement;
+}
+
+function initScrollUpButtons() {
+  document.querySelectorAll('.text-subpage .scroll-up').forEach(btn => {
+    // 1) Inline the icon
+    const src = btn.getAttribute('data-icon-src') || 'img/icons/arrow_counter_10x12px.svg';
+    const holder = btn.querySelector('.icon');
+    if (holder) inlineSvgInto(holder, src);
+
+    // 2) Click & keyboard to scroll to top of the nearest scroller
+    const goUp = () => {
+      const scroller = nearestScroller(btn);
+      scroller?.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+    btn.addEventListener('click', goUp);
+    btn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goUp(); }
+    });
+  });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
