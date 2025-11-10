@@ -149,7 +149,7 @@
     box-sizing: border-box;               /* keep absolute size even with padding */
     border: 1px solid var(--object-text-border-color);
     padding: 20px;
-    background-color: var(--main-bright-bg-color);
+    background-color: var(--main-bg-color);
 
     /* use plain Noto Serif (not Display) */
     font-family: "Noto Serif", serif;
