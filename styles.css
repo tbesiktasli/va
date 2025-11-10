@@ -7,21 +7,30 @@
 
   /* main theme colors */
   --main-bg-color: #fffaf5;
-  --main-bg-color-dark: #000;
-  --main-font-outline-color: #1d1d1d;
-  --main-font-outline-color-dark: #fff;
-  --main-light-font-outline-color: #333;
-  --main-light-font-outline-color-dark: #fff;
+  --main-bg-color-dark: #171717;
+  --main-font-color: #1d1d1d;
+  --main-font-color-dark: #fff;
+  --main-outline-color: #1d1d1d;
+  --main-outline-color-dark: #fff;
+  --main-light-font-color: #333;
+  --main-light-font-color-dark: #fff;
+  --main-light-outline-color: #E0E0E0;
+  --main-light-outline-color-dark: #757575;
   --main-bright-bg-color: #fff;
   --main-bright-bg-color-dark: #000;
   --object-text-border-color: #4c4741;
-  --object-text-border-color-dark: #fff;
-  --main-light-outline-color: #4c4741;
-  --main-light-outline-color-dark: #fff;
+  --object-text-border-color-dark: #a0a0a0;
+  --main-button-outline-color: #1d1d1d;
+  --main-button-outline-color-dark: #a0a0a0;
+  --main-button-inactive-font-color: #999;
+  --main-button-inactive-font-color-dark: #757575;
+  --main-button-inactive-outline-color: #ccc;
+  --main-button-inactive-outline-color-dark: #5e5e5e;
 
   /* SIZE: bump this to make the burger larger */
   --burger-width: 34px;               /* ← change this to the size you want */
   --burger-height: calc(var(--burger-width) * 0.7142857); /* 20/28 keeps viewBox ratio */
+  
   /* idle offset for middle bar and subtle hover distances */
   --burger-offset: 3px;   /* middle starts 3px to the right */
   --hover-mid-left: 1px;  /* on hover: middle ends 1px to the right (i.e., moves left from +3px -> +1px) */
@@ -31,15 +40,29 @@
   --burger-bar-thickness: 1.3px;   /* ← tweak this */
   --burger-bar-radius:    0.65px;  /* corner radius to match thickness/2 */
   --nav-icon-size: 18px;
+  --slidein-icon-size: 12px;
+  --icon-slidein-closed: url('img/icons/arrow_counter_10x12px.svg');
+  --icon-slidein-open:   url('img/icons/close.svg');
+  --icon-detail-close:   url('img/icons/close.svg');
+
+  /* Sidebar toggle icon config */
+  --section-icon-size: 8px; /* chevron size */
+  --icon-section-toggle: url('img/icons/arrow_expand.svg');
+  /* override this if you want a fixed color instead of current text color */
+  --section-toggle-icon-color: initial; /* e.g., var(--main-light-font-color) */
 }
 
 :root[data-theme="dark"] {
   --main-bg-color: var(--main-bg-color-dark);
-  --main-font-outline-color: var(--main-font-outline-color-dark);
-  --main-light-font-outline-color: var(--main-light-font-outline-color-dark);
+  --main-font-color: var(--main-font-color-dark);
+  --main-outline-color: var(--main-outline-color-dark);
+  --main-light-font-color: var(--main-light-font-color-dark);
+  --main-light-outline-color: var(--main-light-outline-color-dark);
   --main-bright-bg-color: var(--main-bright-bg-color-dark);
   --object-text-border-color: var(--object-text-border-color-dark);
-  --main-light-outline-color: var(--main-light-outline-color-dark);
+  --main-button-outline-color: var(--main-button-outline-color-dark);
+  --main-button-inactive-font-color: var(--main-button-inactive-font-color-dark);
+  --main-button-inactive-outline-color: var(--main-button-inactive-outline-color-dark);
 }
 
 * {
@@ -52,7 +75,7 @@
   body {
     overflow-x: hidden;
     background-color: var(--main-bg-color);
-    color: var(--main-font-outline-color);
+    color: var(--main-font-color);
   }
 
   .header-center, h1, h2, h3, object, .wide-content .gallery-box .column .item.text, .vertical-content .topics {
@@ -124,7 +147,7 @@
     /* Grid view: reuse gallery text styling */
   #grid .object.text {
     box-sizing: border-box;               /* keep absolute size even with padding */
-    border: 1px solid var(--main-light-outline-color);
+    border: 1px solid var(--object-text-border-color);
     padding: 20px;
     background-color: var(--main-bright-bg-color);
 
@@ -134,7 +157,7 @@
     font-weight: 400;
     font-style: normal;
     font-variation-settings: "wdth" 100;
-    color: var(--main-font-outline-color);
+    color: var(--main-font-color);
   }
 
   #grid .object.text .detail-panel .detail-date-inline, #grid .object.text .detail-panel .detail-group {
@@ -252,17 +275,22 @@
     justify-content: center;
   }
   
-  .detail-close img {
+  /* New: draw close icon from currentColor */
+  .detail-close::before {
+    content: "";
     width: 15px;
     height: 15px;
     display: block;
+    background-color: currentColor;
+    -webkit-mask: var(--icon-detail-close) no-repeat center / contain;
+            mask: var(--icon-detail-close) no-repeat center / contain;
   }
 
   .detail-date, .detail-group {
     text-align: center;
     font-size: 0.6rem;
     font-style: normal;
-    color: var(--main-light-font-outline-color);
+    color: var(--main-light-font-color);
   }
 
   /* default: non-portrait → top date visible */
@@ -270,7 +298,7 @@
     text-align: center;
     font-size: 0.6rem;
     font-style: normal;
-    color: var(--main-light-font-outline-color);
+    color: var(--main-light-font-color);
     margin-bottom: 10px;
   }
 
@@ -288,7 +316,7 @@
     text-align: left;
     font-size: 0.6rem;
     font-style: normal;
-    color: var(--main-light-font-outline-color);
+    color: var(--main-light-font-color);
     margin-bottom: 8px;
   }
 
@@ -352,7 +380,7 @@
     text-decoration: none;
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    color: var(--main-font-outline-color);
+    color: var(--main-font-color);
     text-align: center;
     margin-top: 10px;
     font-size: 0.8em;
@@ -444,13 +472,13 @@
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  border: 1px solid var(--main-font-outline-color);
+  border: 1px solid var(--main-outline-color);
   background: var(--main-bright-bg-color);
   display: grid;
   place-items: center;
   box-shadow: 2px 2px 2px rgba(0,0,0,.12);
   cursor: pointer;
-  color: var(--main-font-outline-color);
+  color: var(--main-font-color);
 }
 
 .fab svg,
@@ -495,8 +523,8 @@ header {
   position: relative;
   height: 50px;
   padding: 0 20px;
-  border-bottom: 1px solid var(--main-font-outline-color);
-  color: var(--main-font-outline-color);
+  border-bottom: 1px solid var(--main-outline-color);
+  color: var(--main-font-color);
 }
 
 .header-left {
@@ -535,7 +563,6 @@ header {
   right: -2px;           /* tiny gap after the last letter */
   width: 1px;
   height: 1.1em;
-  background: var(--main-font-outline-color);   /* match your header text color */
   animation: headerCaretBlink 1s steps(1) infinite;
   opacity: 1;
 }
@@ -585,7 +612,7 @@ header {
   width: 35px;
   height: 35px;
   border-radius: 100%;
-  border: 1px solid var(--main-font-outline-color);
+  border: 1px solid var(--main-outline-color);
   line-height: 35px;
   text-align: center;
   font-size: 1.3em;
@@ -595,7 +622,7 @@ header {
   display: grid;
   place-items: center;
   line-height: 1; /* avoid vertical misalignment with inline SVG */
-  color: var(--main-font-outline-color);             /* darker (uses currentColor) */
+  color: var(--main-font-color);             /* darker (uses currentColor) */
 }
 
 #content-back-button svg {
@@ -657,12 +684,12 @@ header {
 
 .button {
   padding: 6px 12px;
-  border: 1px solid var(--main-font-outline-color);
+  border: 1px solid var(--main-button-outline-color);
   display: inline-flex;
   width: auto;
   max-width: max-content;
   text-decoration: none;
-  color: var(--main-font-outline-color);
+  color: var(--main-font-color);
   align-items: center;
   box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
 }
@@ -790,7 +817,7 @@ header {
 }
 
 .slide-in-handle {
-  border-left: 1px solid var(--main-font-outline-color);
+  border-left: 1px solid var(--main-outline-color);
   border-top: none;
   border-bottom: none;
   width: 40px;
@@ -810,15 +837,29 @@ header {
   top: 8px;
   background: none;
   border: none;
-  color: var(--main-font-outline-color);
+  color: var(--main-font-color);
   font-size: 1.2rem;
   cursor: pointer;
 }
 
-.slide-in-handle .close-btn img {
-  width: 12px;
-  height: 12px;
+/* Draw icon with mask so it inherits currentColor (works in dark mode) */
+.slide-in-handle .close-btn::before {
+  content: "";
+  width: var(--slidein-icon-size);
+  height: var(--slidein-icon-size);
   display: block;
+  background-color: currentColor;
+  -webkit-mask: var(--icon-slidein-closed) no-repeat center / contain;
+          mask: var(--icon-slidein-closed) no-repeat center / contain;
+  /* Keep legacy visual: arrow is rotated 180deg by default */
+  transform: rotate(180deg);
+}
+
+/* When the slide-in is expanded, show "close" icon */
+#slide-ins .slide-in.expanded .close-btn::before {
+  -webkit-mask-image: var(--icon-slidein-open);
+          mask-image: var(--icon-slidein-open);
+  transform: none;
 }
 
 .slide-in-handle .vertical-text {
@@ -826,7 +867,7 @@ header {
   white-space: nowrap;
   font-size: 0.9rem;
   cursor: pointer;
-  color: var(--main-font-outline-color);
+  color: var(--main-font-color);
 }
 
 .vertical-content {
@@ -1104,12 +1145,6 @@ header {
   padding: 0;
 }
 
-/* rotate every close.svg we use in slide-ins */
-#slide-ins .close-btn img[src$="arrow_counter_10x12px.svg"] {
-  transform: rotate(180deg);
-  transform-origin: center;
-}
-
 .content-header {
   text-align: right;
   padding: 20px 50px 20px 0;
@@ -1118,7 +1153,7 @@ header {
 }
 
 .location {
-  border: 1px solid var(--main-font-outline-color);
+  border: 1px solid var(--main-outline-color);
   border-radius: 14px;
   padding: 8px 8px 8px 22px;
   font-size: 0.6em;
@@ -1158,7 +1193,7 @@ header {
   padding-right: 15px;
   margin-right: 15px;
   margin-bottom: 10px;
-  border-right: 1px solid var(--main-font-outline-color);
+  border-right: 1px solid var(--main-outline-color);
 }
 .vertical-content .topics li:last-child {
   border: none;
@@ -1203,7 +1238,7 @@ header {
 
 .right .detail-description-block > h3 {
   /* mimic the label styling used in the flex-table */
-  color: var(--main-font-outline-color);
+  color: var(--main-font-color);
   margin: 0 0 12px 0;
   text-transform: uppercase;
   font-size: 0.6rem;
@@ -1213,20 +1248,16 @@ header {
 
 .right .detail-description-block > p {
   margin: 0; /* keep it tight under the title */
-  color: var(--main-light-font-outline-color);
+  color: var(--main-light-font-color);
   padding: 0;
 }
 
 .content-section {
   /*height: 100%;*/
-  color: var(--main-font-outline-color);
-  border-bottom: 1px solid var(--main-font-outline-color);
+  color: var(--main-font-color);
+  border-bottom: 1px solid var(--main-outline-color);
   padding-top: 20px;
   box-sizing: border-box;
-}
-
-.content-section .section-header {
-
 }
 
 .content-section .section-header h2 {
@@ -1271,7 +1302,7 @@ header {
 #discover-connections .dc-project-radio {
   width: 14px;
   height: 14px;
-  border: 1.5px solid #222;
+  border: 1.5px solid var(--main-outline-color);
   border-radius: 9999px;
   flex: 0 0 14px;
   position: relative;
@@ -1339,17 +1370,11 @@ header {
   font-weight: 600;
 }
 
-.content-section.collapsible h3::after {
-  content: '▾';
-  transition: transform .25s ease;
-}
 /* Animate content height */
 .content-section.collapsible .section-content {
   max-height: 0;
   overflow: hidden;
   transition: max-height .3s ease;
-}
-.content-section.collapsible.is-open .section-content {
 }
 
 #discover-connections .content-section.collapsible.is-open .section-content {
@@ -1370,19 +1395,24 @@ header {
   align-items: center;
 }
 
-/* sidebar section expand/collapse icon */
+/* sidebar section expand/collapse icon (mask-based, inherits currentColor) */
 .content-section.collapsible h3::after,
 .content-section.collapsible .section-header::after {
   content: '';
   margin-left: auto;
-  width: 8px;                 /* even smaller */
-  height: 8px;
-  background-image: url('img/icons/arrow_expand.svg');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 8px 8px;
+  width: var(--section-icon-size, 8px);
+  height: var(--section-icon-size, 8px);
+  display: inline-block;
+
+  /* fill color = current text color by default, configurable via --section-toggle-icon-color */
+  background-color: var(--section-toggle-icon-color, currentColor);
+
+  /* use the same asset as a mask so it can be tinted */
+  -webkit-mask: var(--icon-section-toggle, url('img/icons/arrow_expand.svg')) no-repeat center / contain;
+          mask: var(--icon-section-toggle, url('img/icons/arrow_expand.svg')) no-repeat center / contain;
+
   transition: transform .2s ease;
-  /* no transform here → closed = SVG as-is (right) */
+  /* closed = SVG as-is (points right) */
 }
 
 /* open = opposite direction of the SVG (right → left) */
@@ -1457,7 +1487,6 @@ header {
   gap: 6px;
   padding: 6px 10px;
   border-radius: 999px;
-  border: 1px solid var(--main-font-outline-color);
   background: var(--main-bright-bg-color);
   cursor: pointer;                        /* entire pill is clickable to remove */
   user-select: none;
@@ -1580,7 +1609,7 @@ header {
   display: inline-flex; 
   align-items: center; gap: .4rem;
   padding: 6px 10px; 
-  border: 1px solid var(--main-font-outline-color); 
+  border: 1px solid var(--main-outline-color); 
   border-radius: 999px; 
   background: var(--main-bright-bg-color); 
   cursor: pointer;
@@ -1615,9 +1644,9 @@ header {
 
   /* same visual tokens as .fab */
   background: var(--main-br);
-  border: 1px solid var(--main-font-outline-color);
+  border: 1px solid var(--main-outline-color);
   border-radius: 50%;
-  color: var(--main-font-outline-color);
+  color: var(--main-font-color);
   box-shadow: 2px 2px 0px rgba(0,0,0,.12);
 
   /* center the "?" cleanly */
@@ -1641,6 +1670,7 @@ header {
 .themes-list .theme-label {
   margin-left: 20px;
   text-decoration: none;    /* default */
+  color: var(--main-font-color);
 }
 
 /* Active state: underline label */
@@ -1650,18 +1680,12 @@ header {
 
 #themes-group-select { margin-top: 6px; }
 
-/* Unified colors for menu slide-ins */
-#slide-ins .slide-in[data-mode="menu"]{
-  --slide-bg: var(--main-bg-color);                    /* same as your slide-in background */
-  --separator-color: rgba(0,0,0,.12);     /* light divider */
-}
-
 /* Secondary pane: match background + light separator to its right */
 #slide-ins .slide-in[data-mode="menu"] .secondary-pane{
-  background: var(--slide-bg);
+  background: var(--main-bg-color);
   /* replace any previous border-left */
   border-left: 0;
-  border-right: 1px solid var(--separator-color);  /* separator between secondary and main */
+  border-right: 1px solid var(--main-light-outline-color);  /* separator between secondary and main */
 }
 
 #slide-ins .slide-in[data-mode="menu"] .content-section {
@@ -1682,7 +1706,7 @@ header {
   font-size: 0.5em;
   font-weight: 500;
   text-transform: uppercase;
-  border: 1px solid var(--main-font-outline-color);
+  border: 1px solid var(--main-button-outline-color);
   padding: 6px 10px;
   border-radius: 16px; /* Rounded corners */
   cursor: pointer;
@@ -1697,8 +1721,8 @@ header {
 /* Slide-in tags: unselectable in AND mode */
 .tags li.disabled {
   opacity: 0.45;
-  border-color: #ccc !important;
-  color: #999 !important;
+  border-color: var(--main-button-inactive-outline-color) !important;
+  color: var(--main-button-inactive-font-color) !important;
   cursor: not-allowed;
   box-shadow: none !important;
   pointer-events: none; /* no mouse/touch */
@@ -1728,7 +1752,7 @@ header {
   align-items: center;
   gap: 10px;              /* 10px between icon and separator, and separator and icon */
   margin: 10px 0;
-  color: var(--main-font-outline-color);
+  color: var(--main-outline-color);
 }
 
 .tag-mode-btn {
@@ -1738,7 +1762,7 @@ header {
   cursor: pointer;
   display: flex;
   align-items: center;
-  color: var(--main-font-outline-color);
+  color: var(--main-font-color);
 }
 
 .tag-mode-btn :is(img, svg) {
@@ -1746,18 +1770,18 @@ header {
   height: 22px;
   display: block;
   opacity: .4;            /* non-selected */
-  color: var(--main-font-outline-color);
+  color: var(--main-font-color);
 }
 
 .tag-mode-btn.is-selected :is(img, svg) {
   opacity: 1;             /* selected */
-  color: var(--main-font-outline-color);
+  color: var(--main-font-color);
 }
 
 .tag-match-toggle .tag-mode-separator {
   width: 1px;
   height: 18px;
-  background: var(--main-font-outline-color);
+  background: var(--main-outline-color);
   flex: 0 0 1px;
 }
 
@@ -1767,8 +1791,8 @@ header {
 .tag-mode-btn.is-selected .txt { opacity: 1; font-weight: 600; }
 
 /* Theme toggle uses same structure as tag-match toggle, but with text */
-.theme-toggle .tag-mode-btn { color: var(--main-font-outline-color); }
-.theme-toggle .tag-mode-btn .txt { opacity: .4; font-size: 0.85rem; }
+.theme-toggle .tag-mode-btn { color: var(--main-font-color); }
+.theme-toggle .tag-mode-btn .txt { opacity: .4; font-size: 0.8rem; font-weight: normal }
 .theme-toggle .tag-mode-btn.is-selected .txt { opacity: 1; }
 
 /* Spacing & titles for grouped tags */
@@ -1781,16 +1805,6 @@ header {
   color: #555;
 }
 
-/* Already have .tags and .tags li styles.
-   Add disabled treatment for AND mode impossibilities: */
-.tags li.disabled {
-  opacity: 0.45;
-  border-color: #ccc !important;
-  color: #999 !important;
-  cursor: not-allowed;
-  box-shadow: none !important;
-}
-
 /* Group switcher row under the visible tag list */
 .tag-group-switch {
   margin-top: 14px;
@@ -1800,12 +1814,12 @@ header {
 }
 .tag-group-switch .group-btn {
   padding: 6px 10px;
-  border: 1px solid var(--main-font-outline-color);
+  border: 1px solid var(--main-outline-color);
   border-radius: 999px;
   background: var(--main-bright-bg-color);
   cursor: pointer;
   font-size: 0.7rem;
-  color: var(--main-font-outline-color);
+  color: var(--main-font-color);
 }
 .tag-group-switch .group-btn.is-active {
   background: #EED9C4;
@@ -1818,9 +1832,12 @@ header {
 
 #overlay-menu {
   position: fixed;
-  inset: 0;
+  top: var(--header-h);
+  left: 0; 
+  right: 0; 
+  bottom: 0;
   background: var(--main-bg-color);
-  color: var(--main-font-outline-color);
+  color: var(--main-font-color);
   z-index: 9999;
   display: none;
   flex-direction: column;
@@ -1829,26 +1846,6 @@ header {
 
 #overlay-menu.active {
   display: flex;
-}
-
-.overlay-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.overlay-title {
-  font-size: 1.1em;
-  font-style: italic;
-  text-align: center;
-  flex-grow: 1;
-}
-
-#overlay-close {
-  background: none;
-  border: none;
-  font-size: 2em;
-  cursor: pointer;
 }
 
 .overlay-content {
@@ -1933,7 +1930,7 @@ header {
   padding: 6px;
   font-size: 0.5em;
   border-radius: 10px;
-  color: var(--main-font-outline-color);
+  color: var(--main-font-color);
   background-color: var(--main-bg-color);
 }
 
@@ -2109,7 +2106,7 @@ header {
   display: inline-grid;
   place-items: center;
   cursor: pointer;
-  color: var(--header-fg, var(--main-font-outline-color));     /* currentColor for bars */
+  color: var(--header-fg, var(--main-font-color));     /* currentColor for bars */
   /* avoid global hover “boldening” or filters */
   font-weight: 400;
   filter: none;
@@ -2149,61 +2146,88 @@ header {
   height: var(--burger-height);
 }
 
-/* === Research text page === */
-#research-page { display: none; }              /* follow your .active toggling convention */
-#research-page.active { display: block; }
+/* Close button in the main header (hidden by default) */
+.header-right .header-close {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 6px;
+  display: none;                 /* shown only in menu-open mode */
+  place-items: center;
+  cursor: pointer;
+  color: var(--header-fg, var(--main-font-color));
+}
+.header-right .header-close::before {
+  content: '';
+  display: block;
+  /* square icon roughly matching the burger’s visual weight */
+  width: var(--burger-height);
+  height: var(--burger-height);
+  background: currentColor;
+  -webkit-mask: var(--icon-detail-close) no-repeat center / contain;
+          mask: var(--icon-detail-close) no-repeat center / contain;
+}
 
-#research-page .text-page {
+/* Overlay state toggles the header controls */
+body.menu-open .header-right .menu-trigger { display: none; }
+body.menu-open .header-right .theme-toggle { display: none; }
+body.menu-open .header-right .header-close { display: inline-grid; }
+
+/* === Research text page === */
+.text-subpage { display: none; }              /* follow your .active toggling convention */
+.text-subpage.active { display: block; }
+
+.text-subpage .text-page {
   padding: 80px 200px;                        /* 150 top/bottom, 100 left/right */
   box-sizing: border-box;
   width: 100%;
 }
 
 /* Typography */
-#research-page h2 {
+.text-subpage h2 {
   font-family: "Albert Sans", sans-serif;
   font-weight: 500;
   font-size: 0.9em;
   margin: 0 0 20px;
-  color: var(--main-light-font-outline-color);
+  color: var(--main-light-font-color);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
-#research-page h1 {
+.text-subpage h1 {
   font-family: "Noto Serif", serif;            /* you already load this family in <head> */
   font-size: 2.5em;
   line-height: 1.1;
   margin: 0 0 30px;
 }
 
-#research-page p {
+.text-subpage p {
   font-family: "Albert Sans", sans-serif;
   font-size: 1.2em;
   margin: 0 0 20px;
   padding: 0;
 }
-#research-page p:last-of-type { margin-bottom: 0; }
+.text-subpage p:last-of-type { margin-bottom: 0; }
 
 /* Reset list + arrow bullets rotated 90° */
-#research-page ul.arrow-list {
+.text-subpage ul.arrow-list {
   list-style: none;
   padding: 0;
   margin: 50px 0 0;
 }
-#research-page ul.arrow-list li {
+.text-subpage ul.arrow-list li {
   display: flex;
   align-items: center;
   gap: 15px;
   margin-bottom: 25px;
   font-size: 1.2em;
 }
-#research-page ul.arrow-list li a {
+.text-subpage ul.arrow-list li a {
   text-decoration: none;
-  color: var(--main-font-outline-color);
+  color: var(--main-font-color);
 }
-#research-page ul.arrow-list li:last-child { margin-bottom: 0; }
-#research-page ul.arrow-list li::before {
+.text-subpage ul.arrow-list li:last-child { margin-bottom: 0; }
+.text-subpage ul.arrow-list li::before {
   content: "";
   width: 14px;
   height: 16px;
@@ -2212,7 +2236,7 @@ header {
 }
 
 /* Stack rows vertically */
-#research-page .two-col-table {
+.text-subpage .two-col-table {
   display: grid;
   grid-template-columns: 1fr; /* one column = rows under each other */
   row-gap: 24px;
@@ -2220,14 +2244,14 @@ header {
 }
 
 /* Each row: two columns side by side */
-#research-page .two-col-row {
+.text-subpage .two-col-row {
   display: grid;
   grid-template-columns: 25% 60%;
   column-gap: 15%;   /* remaining 15% becomes the gutter */
   align-items: start;
 }
 
-#research-page .two-col-row .left h3 {
+.text-subpage .two-col-row .left h3 {
   font-family: "Albert Sans", sans-serif;
   font-weight: 500;
   font-size: 0.9em;
@@ -2235,70 +2259,47 @@ header {
   text-transform: uppercase;
 }
 
-#research-page .two-col-row .right p {
+.text-subpage .two-col-row .right p {
   font-family: "Albert Sans", sans-serif;
   font-weight: 400;
   font-size: 0.9em;
   margin: 0 0 12px;
 }
-#research-page .two-col-row .right p:last-child { margin-bottom: 0; }
+.text-subpage .two-col-row .right p:last-child { margin-bottom: 0; }
 
-/* Generic text sub-page layout */
-.text-subpage {
-  padding: 150px 100px;
-  overflow: auto;               /* scrollable content below the header */
-}
-
-/* Typographic system for the text page */
-.text-subpage h2.subhead {
-  font-family: "Albert Sans", system-ui, sans-serif;
-  font-weight: 700;
-  font-size: 1.2em;
-  margin: 0 0 20px;
-}
-.text-subpage h1.title {
-  font-family: "Noto Serif", serif;
-  font-weight: 400;
-  font-size: 4em;
-  margin: 0 0 30px;
-}
-.text-subpage p {
-  font-family: "Albert Sans", system-ui, sans-serif;
-  font-size: 1.2em;
-  margin: 0 0 20px;
-}
-.text-subpage p:last-child { margin-bottom: 0; }
-
-/* Icon list (reset) */
-.text-subpage .bullet-list {
-  list-style: none;
-  margin: 50px 0 0;
-  padding: 0;
-}
-.text-subpage .bullet-list li {
+/* === Scroll-up CTA (generic for any .text-subpage) === */
+.text-subpage .scroll-up-cta {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 15px;
-}
-.text-subpage .bullet-list li:last-child { margin-bottom: 0; }
-.text-subpage .bullet-list .ico {
-  width: 10px; height: 12px; flex: none;
-  background: url("img/icons/arrow_counter_10x12px.svg") no-repeat center / contain;
-  transform: rotate(90deg);
+  justify-content: center;
+  margin: 64px 0 0 0;
 }
 
-/* Two-column rows: 25% / 60% with remaining as gap */
-.text-subpage .two-col-rows { display: grid; gap: 24px; }
-.text-subpage .two-col-row { display: grid; grid-template-columns: 25% 60%; column-gap: 15%; }
-.text-subpage .two-col-row .left h3 {
-  font-family: "Albert Sans", system-ui, sans-serif;
-  font-weight: 700;
-  font-size: 1.1em;
-  margin: 0;
+.text-subpage .scroll-up {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--main-font-color);
+  font: inherit;                 /* use page font */
 }
-.text-subpage .two-col-row .right p {
-  font-family: "Albert Sans", system-ui, sans-serif;
+
+.text-subpage .scroll-up:focus-visible {
+  outline: 2px dashed currentColor;
+  outline-offset: 4px;
+}
+
+.text-subpage .scroll-up .icon svg {
+  width: 18px;                   /* tweak to taste */
+  height: 22px;
+  display: block;
+  transform: rotate(-90deg);     /* arrow points UP */
+}
+
+.text-subpage .scroll-up .label {
   font-size: 0.9em;
-  margin: 0;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
