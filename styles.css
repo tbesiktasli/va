@@ -17,7 +17,7 @@
   --main-light-outline-color: #E0E0E0;
   --main-light-outline-color-dark: #757575;
   --main-bright-bg-color: #fff;
-  --main-bright-bg-color-dark: #000;
+  --main-bright-bg-color-dark: #171717;
   --object-text-border-color: #4c4741;
   --object-text-border-color-dark: #a0a0a0;
   --main-button-outline-color: #1d1d1d;
@@ -149,7 +149,7 @@
     box-sizing: border-box;               /* keep absolute size even with padding */
     border: 1px solid var(--object-text-border-color);
     padding: 20px;
-    background-color: var(--main-bg-color);
+    background-color: var(--main-bright-bg-color);
 
     /* use plain Noto Serif (not Display) */
     font-family: "Noto Serif", serif;
