@@ -335,9 +335,7 @@ export class Grid {
         panel.classList.add('detail-text-object');
       }
       panel.innerHTML = `
-        <button class="detail-close" aria-label="Close">
-          <img src="img/icons/close.svg" alt="Close">
-        </button>
+        <button class="detail-close" aria-label="Close"></button>
 
         <!-- top date for NON-portrait -->
         <div class="detail-date-top">${formattedDate}</div>
