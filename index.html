@@ -28,6 +28,7 @@
           <rect class="bar bar--bot" x="4"  y="16" width="20" height="1" rx="0.5"/>
         </svg>
       </button>
+      <button class="header-close" id="header-close-button" aria-label="Close menu"></button>
     </div>
   </header>
 
@@ -313,17 +314,8 @@
     </div>
 
     <!-- Simple text page (hidden by default, shown via JS) -->
-    <div id="research-page" class="scroll-container-vertical">
+    <div id="subpage-about-this-project" class="scroll-container-vertical text-subpage">
       <!-- Back button (same look as detail) -->
-      <div id="content-back-button" onclick="showHorizontal();">
-        <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 32" fill="none" aria-hidden="true">
-          <g stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke">
-            <line x1="8" y1="16.5" x2="42" y2="16.5"/>
-            <line x1="8" y1="16.5" x2="16"  y2="7"/>
-            <line x1="8" y1="16.5" x2="16.5" y2="26"/>
-          </g>
-        </svg>
-      </div>
 
       <div class="vertical-content">
         <div class="text-page">
@@ -362,50 +354,110 @@
               </div>
             </div>
           </div>
+          <div class="scroll-up-cta">
+            <button type="button"
+                    class="scroll-up"
+                    data-icon-src="img/icons/arrow_counter_10x12px.svg">
+              <span class="icon" aria-hidden="true"></span>
+              <span class="label">scroll up</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- About MoRePPaR (text sub-page) -->
-    <div id="subpage-about-moreppar" class="text-subpage scroll-container-vertical">
-      <div class="content-header">
-        <!-- we set the header-left text via JS; this location chip can stay empty or be reused -->
-        <span class="location"></span>
-      </div>
+    <!-- Simple text page (hidden by default, shown via JS) -->
+    <div id="subpage-about-moreppar" class="scroll-container-vertical text-subpage">
+      <!-- Back button (same look as detail) -->
 
-      <!-- Optional: reuse the back button behavior from detail page -->
-      <div class="content-back" onclick="showHorizontal?.()">
-        <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 32" fill="none" aria-hidden="true">
-          <g stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="8" y1="16.5" x2="42" y2="16.5"/>
-            <line x1="8" y1="16.5" x2="16"  y2="7"/>
-            <line x1="8" y1="16.5" x2="16.5" y2="26"/>
-          </g>
-        </svg>
-      </div>
+      <div class="vertical-content">
+        <div class="text-page">
+          <h2>About Moreppar</h2>
+          <h1>Mobility Regimes of Pandemic Preparednes and Response: The Case of Covid-19</h1>
 
-      <!-- Blueprint content you can fill later; keep structure consistent with your other text page -->
-      <div class="text-page-inner">
-        <h2 class="subhead">Subheadline</h2>
-        <h1 class="title">Page Title</h1>
+          <p>
+            The online archive/exhibition “Viral Atmospheres” is a product of the Moreppar research, short for “Mobility Regimes of Pandemic Preparedness: the Case of Covid-19", complementing the forthcoming book that is written in parallel.
+          </p>
 
-        <p>First paragraph …</p>
-        <p>Second paragraph …</p>
+          <div class="two-col-table">
+            <div class="two-col-row">
+              <div class="left"><h3>Lingering traces of the pandemic</h3></div>
+              <div class="right">
+                <p>When the Moreppar research began in 2022, the acute phase of the pandemic was officially over. Now, in 2025, social distancing signs, still found in unexpected places, have become faint reminders of a time when they were omnipresent in public spaces. Abandoned testing sites are a fading echo of a time when proof of health status was required for work, travel or to protect others; media coverage focuses on other (global) crises that follow one another at breathtaking speed. However, the pandemic has not disappeared entirely from people’s lives. People still fall ill or die; others suffer the long-term effects of infection or vaccination. Staying, too, are the dissatisfaction and anger directed at public health measures; feelings of injustice these experiences provoked often reinforced mistrust of political institutions and scientific knowledge, undermining acceptance of official interventions. Equally enduring are the painful memories of isolation, broken relationships, serious illness, and loss.</p>
+              </div>
+            </div>
 
-        <ul class="bullet-list">
-          <li><span class="ico"></span><a href="#section-1">List item 1</a></li>
-          <li><span class="ico"></span><a href="#section-2">List item 2</a></li>
-          <li><span class="ico"></span><a href="#section-3">List item 3</a></li>
-        </ul>
+            <div class="two-col-row">
+              <div class="left"><h3>The MoRePPaR project</h3></div>
+              <div class="right">
+                <p>The Moreppar project asks: What remains of the pandemic—materially, emotionally, and socially? And how are these remnants shaped by the ruptures the pandemic created in everyday life, particularly the early stages of the outbreak? While some traces are visible—discursive, bureaucratic, spatial, material—we equally focus on the less tangible, but deeply felt, ways the pandemic continues to shape lives: through embodied memories, altered affective relations, and new modes of societal organization. At the heart of the project therefore is an exploration of the affective and emotional consequences of Covid-19: how the crisis affected intimacy, social bonds, biographies, and people’s capacities to survive—biologically, socially, economically.</p>
+              </div>
+            </div>
 
-        <div class="two-col-rows">
-          <div class="two-col-row">
-            <div class="left"><h3>Left title</h3></div>
-            <div class="right"><p>Right column text …</p></div>
+            <div class="two-col-row">
+              <div class="left"><h3>Mobility and Control</h3></div>
+              <div class="right">
+                <p>One of the defining features of how the pandemic was experienced was the extensive regulation of people’s movement through a variety of models, policies and technologies. During COVID-19, mobility regimes comprised various forms of restriction that often overlapped and were shaped by local, national and global political and legal regulations, as well as the scientific understanding of the impact of mobility on the progression of epidemics. The restriction of movement—as well as the manner in which certain professional groups were permitted or even forced to remain mobile—came to embody state power and its highly unequal operation within and across populations. As governments imposed sweeping restrictions, daily life was upended. Movement across borders and within neighborhoods was curtailed. Work moved to domestic spaces or ceased entirely. In other cases, so-called “essential” workers had to continue working, often without the necessary financial or social recognition. This project argues that the affective and socio-material impact of COVID-19—as well as the entirely novel approaches to restricting and regulating movement—continue to shape people’s lives in ways that surpass how they consciously think about or remember them.</p>
+              </div>
+            </div>
+
+            <div class="two-col-row">
+              <div class="left"><h3>Research Across Contexts</h3></div>
+              <div class="right">
+                <p>What affective, and sometimes traumatic, legacies did these disruptions leave behind? In what ways have pandemic-related health policies reshaped material infrastructures, forms of solidarity, and modes of governance and political engagement? To what extent can these transformations have consequences for broader models of pandemic preparedness? We address these questions through ethnographic research conducted as part of the transnational project, “Mobility Regimes of Pandemic Preparedness and Response: The Case of COVID-19,” funded by the Volkswagen Foundation since 2022. By focusing on four groups that were particularly affected by mobility regulations—cross-border traders in the Democratic Republic of the Congo (DRC), essential workers such as truck drivers, market vendors and construction workers in Germany, township residents in South Africa, and young professionals and church members in South Korea—we explore the affective, social and political reverberations of the pandemic in their lives. The project is enriched by additional research in China, Argentina and the USA of involved Master and PhD students.</p>
+              </div>
+            </div>
+
+            <div class="two-col-row">
+              <div class="left"><h3>Affective Afterlives</h3></div>
+              <div class="right">
+                <p>By relating these diverse settings to one another, the project identifies the commonalities and differences in how people coped, or did not cope, with the impact of mobility regimes on the most intimate aspects of their lives, as well as how they are living with the aftermath of the pandemic. A central focus of our analysis is the role of affect, examining how emotions such as fear, exhaustion, grief, hope, and resilience have shaped new modes of solidarity and contestation, and continue to influence people’s attitudes and practices long after the official end of the pandemic. We argue that these affective afterlives, which we conceptualize as “pandemic lingering”, are crucial to understanding the pandemic’s enduring impact on individuals and whole societies, thereby having the potential to influence the trajectory of social coexistence in the years to come.</p>
+              </div>
+            </div>
+
+            <div class="two-col-row">
+              <div class="left"></div>
+              <div class="right">
+                <a class="button" href="https://www.google.com" target="_blank">
+                  <span class="text">Learn more</span><span class="icon">→</span>
+                </a>
+              </div>
+            </div>
           </div>
-          <div class="two-col-row">
-            <div class="left"><h3>Left title</h3></div>
-            <div class="right"><p>Right column text …</p></div>
+          <div class="scroll-up-cta">
+            <button type="button"
+                    class="scroll-up"
+                    data-icon-src="img/icons/arrow_counter_10x12px.svg">
+              <span class="icon" aria-hidden="true"></span>
+              <span class="label">scroll up</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Simple text page (hidden by default, shown via JS) -->
+    <div id="subpage-references" class="scroll-container-vertical text-subpage">
+      <!-- Back button (same look as detail) -->
+
+      <div class="vertical-content">
+        <div class="text-page">
+
+          <div class="two-col-table">
+            <div class="two-col-row">
+              <div class="left"><h3>Literature</h3></div>
+              <div class="right">
+                <p></p>
+              </div>
+            </div>
+          </div>
+          <div class="scroll-up-cta">
+            <button type="button"
+                    class="scroll-up"
+                    data-icon-src="img/icons/arrow_counter_10x12px.svg">
+              <span class="icon" aria-hidden="true"></span>
+              <span class="label">scroll up</span>
+            </button>
           </div>
         </div>
       </div>
@@ -415,9 +467,7 @@
       <!-- data-section-mode one of "accordion", "collapsible", "static" -->
       <div class="slide-in" id="discover-connections" data-mode="menu" data-section-mode="accordion">
         <div class="slide-in-handle">
-          <button class="close-btn" type="button">
-            <img src="img/icons/arrow_counter_10x12px.svg" alt="Toggle Sidebar">
-          </button>
+          <button class="close-btn" type="button" aria-label="Toggle Sidebar"></button>
           <span class="vertical-text">Discover Connections</span>
         </div>
         <!-- NEW: body wrapper with two columns: secondary + main -->
@@ -454,10 +504,6 @@
   </div>
 
   <div id="overlay-menu">
-    <div class="overlay-header">
-      <div class="overlay-title">Viral Atmospheres</div>
-      <button id="overlay-close" type="button">×</button>
-    </div>
     <div class="overlay-content">
       <div class="main-menu">
         <div class="menu-item" data-target="viralatmospheres">Viral Atmospheres</div>
