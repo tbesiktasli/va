@@ -938,6 +938,7 @@ export class Grid {
         objectDiv.style.width = `${object.width}px`;
         objectDiv.style.height = `${object.height}px`;
         if (object.type === 'image') {
+          objectDiv.classList.add('image');
           const url = String(object.image || '');
           const img = new Image();
           img.onload = () => {
@@ -964,6 +965,7 @@ export class Grid {
         }
 
         if (object.type === 'video') {
+          objectDiv.classList.add('video');
           const v = document.createElement("video");
           v.src = object.video;
           v.muted = true;            // required for autoplay policies
@@ -987,6 +989,7 @@ export class Grid {
 
         // === AUDIO TILE ===
         if (object.type === 'audio') {
+          objectDiv.classList.add('audio');
           const waveWrap = document.createElement('div');
           waveWrap.className = 'wave-wrap';
           objectDiv.appendChild(waveWrap);
@@ -1044,10 +1047,11 @@ export class Grid {
           });
         }
         
-        const tagList = (object.connectingTags && object.connectingTags.length)
-          ? object.connectingTags
-          : (object.tags || []);
+        const tagList = Array.isArray(object.connectingTags)
+        ? object.connectingTags
+        : [];
         objectDiv.dataset.tags = tagList.join(",");
+
   
         // Add a gradient shadow layer
         const glowDiv = document.createElement("div");
