@@ -167,31 +167,106 @@ function hashHue(str){ let h=0; for(let i=0;i<str.length;i++) h=(h*31+str.charCo
 const tagColors = Object.fromEntries(ALL_TAGS.map(t => [t, `hsl(${hashHue(t)} 80% 45%)`]));
 window.tagColors = tagColors;
 
+// Helper: extract tag names from a Strapi relation (v4/v5, populated or not)
+function extractTagNamesFromRelation(rel) {
+  if (!rel) return [];
+
+  const pickLabel = (node) => {
+    const a = (node && (node.attributes || node)) || {};
+    return (
+      a.Name ||
+      a.name ||
+      a.Label ||
+      a.label ||
+      a.Title ||
+      a.title ||
+      ''
+    ).toString().trim();
+  };
+
+  // v4/v5: { data: [...] }
+  if (Array.isArray(rel?.data)) {
+    return rel.data.map(pickLabel).filter(Boolean);
+  }
+  if (rel?.data) {
+    return [pickLabel(rel.data)].filter(Boolean);
+  }
+
+  // already-populated arrays or single objects
+  if (Array.isArray(rel)) {
+    return rel.map(pickLabel).filter(Boolean);
+  }
+
+  const single = pickLabel(rel);
+  return single ? [single] : [];
+}
+
 // === DYNAMIC CONNECTING TAGS (Strapi) ===================================
 // First step: we only have a single hardcoded group "All"
 // Later: replace this to build 1 group per Strapi group.
+// First step used to flatten all ConnectingTag entries into a single "All" group.
+// Now we fetch ConnectingTagGroup and build one TAG_GROUPS entry per Strapi group.
 async function fetchStrapiConnectingTags() {
   // reuse existing Strapi fetcher
   if (typeof strapiFetchAll !== 'function') {
-    console.warn('[tags] strapiFetchAll not available yet – skipping dynamic tags');
+    console.warn('[tags] strapiFetchAll not available yet – skipping dynamic tag groups');
     return [];
   }
 
-  // Strapi v5: collection name from model "ConnectingTag" → /api/connecting-tags
-  const rows = await strapiFetchAll('connecting-tags', {
+  // Strapi v5: collection name from model "ConnectingTagGroup" → /api/connecting-tag-groups
+  // If your API path differs, change 'connecting-tag-groups' here.
+  const rows = await strapiFetchAll('connecting-tag-groups', {
     populate: '*',
     publicationState: 'preview'
   });
 
-  // normalize to simple strings
-  const tags = rows
-    .map(r => {
-      const a = (r && (r.attributes || r)) || {};
-      return a.Name || a.name || a.Label || a.label || a.Title || a.title || '';
-    })
-    .filter(Boolean);
+  const groups = rows
+    .map(row => {
+      const attrs = (row && (row.attributes || row)) || {};
 
-  return [...new Set(tags)];
+      // Use Strapi id as stable group id; fall back to slug/name if needed
+      const rawId =
+        row?.id ??
+        attrs.slug ??
+        attrs.Slug ??
+        attrs.name ??
+        attrs.Name ??
+        '';
+      const id = String(rawId || '').trim();
+
+      // Human label shown in the UI
+      const label = (
+        attrs.Name ||
+        attrs.name ||
+        attrs.Label ||
+        attrs.label ||
+        attrs.Title ||
+        attrs.title ||
+        id
+      ).toString().trim();
+
+      // Relation field from group → ConnectingTag entries
+      // Adjust the field name here if your schema uses something different.
+      const rel =
+        attrs.connecting_tags ||
+        attrs['connecting-tags'] ||
+        attrs.connectingTags ||
+        attrs.ConnectingTags;
+
+      const tags = Array.from(
+        new Set(extractTagNamesFromRelation(rel))
+      );
+
+      return {
+        id: id || label,  // ensure we always have a non-empty id
+        label,
+        tags
+      };
+    })
+    // drop empty groups to keep the UI clean
+    .filter(g => g.id && g.label && g.tags && g.tags.length > 0);
+
+  return groups;
 }
 
 // we need to rebuild all lookup structures because TAG_GROUPS was originally static
@@ -223,24 +298,28 @@ function rebuildTagCachesFromCurrentGroups() {
 // main entry for dynamic tags
 async function seedConnectingTagsFromStrapi() {
   try {
-    const tags = await fetchStrapiConnectingTags();
-    if (!tags.length) {
-      console.warn('[tags] no ConnectingTag in Strapi – keeping hardcoded groups');
+    const groups = await fetchStrapiConnectingTags();
+    if (!groups.length) {
+      console.warn('[tags] no ConnectingTagGroup data in Strapi – keeping hardcoded TAG_GROUPS');
       return;
     }
 
-    // replace current groups with a single "All" group
+    // Replace current groups with the dynamic ones from Strapi
     TAG_GROUPS.length = 0;
-    TAG_GROUPS.push({
-      id: 'all',
-      label: 'All',
-      tags
-    });
+    groups.forEach(g => TAG_GROUPS.push(g));
 
-    // rebuild dependent caches
+    // Reset any existing group lock: "no group selected" means effectively "All"
+    if (typeof currentTagViewGroupId !== 'undefined') {
+      currentTagViewGroupId = null;
+    }
+    if (typeof activeTagGroupId !== 'undefined') {
+      activeTagGroupId = null;
+    }
+
+    // Rebuild dependent caches (tag → group, ALL_TAGS, colors)
     rebuildTagCachesFromCurrentGroups();
 
-    // if the UI was already built, repaint it
+    // If the UI was already built, repaint it
     if (typeof renderTagsForCurrentGroup === 'function') renderTagsForCurrentGroup();
     if (typeof markActiveGroupButton === 'function') markActiveGroupButton();
     if (typeof updateTagAvailability === 'function') updateTagAvailability();
@@ -249,7 +328,7 @@ async function seedConnectingTagsFromStrapi() {
     if (typeof renderSelectionBar === 'function') renderSelectionBar();
     if (typeof syncDetailTagHighlights === 'function') syncDetailTagHighlights();
   } catch (err) {
-    console.warn('[tags] failed to load ConnectingTag from Strapi', err);
+    console.warn('[tags] failed to load ConnectingTagGroup from Strapi', err);
   }
 }
 
@@ -334,6 +413,36 @@ window.activeTags = activeTags;
   s.delete = (...a) => { const r = _del(...a);    window.renderSelectionBar?.(); return r; };
   s.clear  = (...a) => { const r = _clr(...a);    window.renderSelectionBar?.(); return r; };
 })();
+
+// Central helper: remove one tag from the global selection and keep all tag-based UI in sync.
+// If closeGalleryWhenEmpty is true and this was the last tag, an open ad-hoc gallery is closed.
+function deselectTagGlobally(tag, options = {}) {
+  if (!window.activeTags || !activeTags.has(tag)) return;
+
+  const { closeGalleryWhenEmpty = false } = options;
+
+  // 1) Update global selection state
+  activeTags.delete(tag);
+
+  // 2) Refresh all tag-based UI
+  if (typeof renderTagsForCurrentGroup === 'function') renderTagsForCurrentGroup();
+  if (typeof updateTagAvailability === 'function')     updateTagAvailability();
+  if (typeof updateObjectGlowsWithGradient === 'function') updateObjectGlowsWithGradient();
+  if (typeof scheduleOffgridUpdate === 'function')     scheduleOffgridUpdate();
+  if (typeof renderSelectionBar === 'function')        renderSelectionBar();
+  if (typeof syncDetailTagHighlights === 'function')   syncDetailTagHighlights();
+
+  // 3) If we’re in an ad-hoc gallery, refresh its title + items from the *current* activeTags
+  if (typeof window.refreshAdhocGalleryFromTags === 'function') {
+    window.refreshAdhocGalleryFromTags();
+  }
+
+  // 4) If no tags remain and caller requested it, close any open gallery
+  if (!activeTags.size && closeGalleryWhenEmpty && typeof window.closeGallery === 'function') {
+    window.closeGallery();
+  }
+}
+window.deselectTagGlobally = deselectTagGlobally;
 
 function getRandomTags() {
   const pool = ALL_TAGS;
@@ -1351,6 +1460,48 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
   const groupGalleryEl = document.getElementById('group-gallery');
   const backBtnEl = document.getElementById('content-back-button');
 
+  // Render the ad-hoc gallery title: one removable chip per tag (each with an "X").
+  function renderAdhocGalleryTitle(tagsMaybe) {
+    const tEl = document.querySelector('#group-gallery .title-box h2');
+    const sEl = document.querySelector('#group-gallery .title-box h3');
+    if (!tEl) return;
+
+    // Normalize: accept array or Set
+    const raw = (typeof tagsMaybe !== 'undefined') ? tagsMaybe : (window.activeTags || []);
+    const tags = Array.isArray(raw) ? raw : (raw instanceof Set ? [...raw] : []);
+
+    // Reset content
+    tEl.innerHTML = '';
+
+    tags.forEach((tag, index) => {
+      const span = document.createElement('span');
+      span.className = 'adhoc-title-tag';
+      span.dataset.tag = tag;
+
+      const label = document.createElement('span');
+      label.className = 'adhoc-title-tag-label';
+      label.textContent = tag;
+
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'adhoc-title-tag-close';
+      close.setAttribute('aria-label', `Remove tag ${tag}`);
+      close.textContent = '×';
+
+      span.appendChild(label);
+      span.appendChild(close);
+      tEl.appendChild(span);
+
+      // Line-break between tags
+      if (index < tags.length - 1) {
+        tEl.appendChild(document.createElement('br'));
+      }
+    });
+
+    // No subtitle in ad-hoc gallery
+    if (sEl) sEl.textContent = '';
+  }
+
   // DRAG-TO-CLICK GUARD (grouped mode)
   // Tracks pointer movement; if movement > 6px when releasing, we mark the last interaction as a drag.
   // The click handler will ignore the very next click in grouped mode.
@@ -1476,13 +1627,10 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     if (gridShellEl) gridShellEl.style.display = 'none';
     groupGalleryEl.classList.add('active');
 
-    // Title: each tag on its own line; no group subtitle
-    const tEl = document.querySelector('#group-gallery .title-box h2');
-    const sEl = document.querySelector('#group-gallery .title-box h3');
-    if (tEl) tEl.innerHTML = titleLines.map(s => String(s)
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    ).join('<br>');
-    if (sEl) sEl.textContent = '';
+    // Title: one removable chip per tag; no group subtitle
+    if (typeof renderAdhocGalleryTitle === 'function') {
+      renderAdhocGalleryTitle(titleLines);
+    }
 
     // Fresh content
     const box = groupGalleryEl.querySelector('.gallery-box');
@@ -1530,13 +1678,10 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     const raw = (typeof tagsMaybe !== 'undefined') ? tagsMaybe : (window.activeTags || []);
     const tags = Array.isArray(raw) ? raw : (raw instanceof Set ? [...raw] : []);
 
-    // 1) Update the title (each tag on its own line; no subtitle)
-    const tEl = document.querySelector('#group-gallery .title-box h2');
-    const sEl = document.querySelector('#group-gallery .title-box h3');
-    if (tEl) tEl.innerHTML = tags.map(s => String(s)
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    ).join('<br>');
-    if (sEl) sEl.textContent = '';
+    // 1) Update the title chips from the current tags (no subtitle)
+    if (typeof renderAdhocGalleryTitle === 'function') {
+      renderAdhocGalleryTitle(tags);
+    }
 
     // 2) Recompute which objects match the current filter and re-render
     const objs = objectsMatchingCurrentFilter();          // you already have this helper
@@ -1551,6 +1696,23 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     window.__galleryVideos__?.onOpen?.();
     window.__galleryImages__?.onOpen?.();
   };
+
+  // Allow removing tags directly from the ad-hoc gallery title (X on each tag).
+  const adhocTitleEl = document.querySelector('#group-gallery .title-box h2');
+  if (adhocTitleEl) {
+    adhocTitleEl.addEventListener('click', (e) => {
+      const chip = e.target.closest('.adhoc-title-tag');
+      if (!chip) return;
+
+      const tag = chip.dataset.tag;
+      if (!tag) return;
+
+      // Remove this tag from global selection and, if it was the last one, close the gallery
+      if (typeof window.deselectTagGlobally === 'function') {
+        window.deselectTagGlobally(tag, { closeGalleryWhenEmpty: true });
+      }
+    });
+  }
   
   function closeGallery(options = {}) {
     const viaPopstate = !!options.viaPopstate;
@@ -1592,6 +1754,7 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     console.log('[gallery] closed');
   }
   
+  window.closeGallery = closeGallery;
 
   // === Object Detail screen (full page) ===
   (function detailScreen() {
@@ -2484,12 +2647,9 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
   if (!gg) return;
 
   function setupGalleryIO() {
-    if (gg._ioBound) return;          // bind once per open
-    gg._ioBound = true;
-
-    // Title box fades in when it comes into view (viewport is fine)
+    // 1) Title fade-in: create the observer only once per open
     const title = gg.querySelector('.title-box');
-    if (title) {
+    if (title && !gg._titleObs) {
       const titleObs = new IntersectionObserver((entries, obs) => {
         entries.forEach(en => {
           if (en.isIntersecting) {
@@ -2502,34 +2662,34 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       gg._titleObs = titleObs;
     }
 
-    // Items fade in individually as you horizontally scroll the gallery box
-    //const box = gg.querySelector('.gallery-box');
-    //const itemObs = new IntersectionObserver((entries, obs) => {
+    // 2) Items fade in individually as you horizontally scroll the gallery box
     const box = gg.querySelector('.gallery-box');
     if (!box) return; // require the horizontal scroller as the IO root
     const scroller = gg; // #group-gallery is the scroll container (has overflow-x: scroll)
-    const itemObs = new IntersectionObserver((entries, obs) => {
-      entries.forEach(en => {
-        if (!en.isIntersecting) return;
-        // if the observed node is an <img> that got wrapped later,
-        // add .visible to the nearest .item wrapper:
-        const item = en.target.classList.contains('item')
-          ? en.target
-          : en.target.closest('.item');
-        if (item) item.classList.add('visible');
-        obs.unobserve(en.target);   // one-shot
+
+    // Reuse existing IntersectionObserver if present, otherwise create it once
+    let itemObs = gg._itemObs;
+    if (!itemObs) {
+      itemObs = new IntersectionObserver((entries, obs) => {
+        entries.forEach(en => {
+          if (!en.isIntersecting) return;
+          // if the observed node is an <img> that got wrapped later,
+          // add .visible to the nearest .item wrapper:
+          const item = en.target.classList.contains('item')
+            ? en.target
+            : en.target.closest('.item');
+          if (item) item.classList.add('visible');
+          obs.unobserve(en.target);   // one-shot
+        });
+      }, {
+        root: scroller,
+        threshold: 0.15,
+        rootMargin: '0px'
       });
-    }, {
-      root: scroller,
-      threshold: 0.15,
-      rootMargin: '0px'
-    });
+      gg._itemObs = itemObs;
+    }
 
-    // Observe all current items
-    //(box ? box.querySelectorAll('.item') : gg.querySelectorAll('.item'))
-    //  .forEach(el => itemObs.observe(el));
-
-    // Optional: small stagger for items initially visible at open
+    // 3) For the current gallery contents, (re)observe all items
     let idx = 0;
     box.querySelectorAll('.column > .item, .column img.item').forEach(el => {
       // Set delay on the actual flex item (wrapper if present)
@@ -2538,8 +2698,6 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       // Observe the original node; the callback will add .visible to the wrapper
       itemObs.observe(el);
     });
-
-    gg._itemObs = itemObs;
   }
 
   // Expose tiny helpers so your existing open/close can call them
@@ -3337,6 +3495,34 @@ window.renderAdhocGallery = function(objs = []) {
       }
     }, true);
 
+    // Ungroup control inside GROUP gallery: close gallery + switch grid to ungrouped view
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('#gallery-ungroup');
+      if (!btn) return;
+
+      e.preventDefault();
+
+      const body = document.body;
+      const isGroupGallery =
+        body.classList.contains('in-group-gallery') &&
+        !body.classList.contains('in-adhoc-gallery');
+
+      // Only act in the real group gallery, never in the ad-hoc "tags" gallery
+      if (!isGroupGallery) {
+        return;
+      }
+
+      // 1) Close the gallery (we don't use history.back here on purpose)
+      window.closeGallery?.();
+
+      // 2) Reuse the existing grid ungroup behavior by clicking the FAB
+      const fabUngroup = document.getElementById('fab-ungroup');
+      if (fabUngroup) {
+        // Let closeGallery restore the grid before ungrouping
+        setTimeout(() => fabUngroup.click(), 0);
+      }
+    }, true);
+
     // 2) Listen for back/forward to restore the grid when leaving the gallery state
     window.addEventListener('popstate', () => {
       const active = groupGalleryEl?.classList.contains('active');
@@ -3524,6 +3710,10 @@ window.renderAdhocGallery = function(objs = []) {
 
 // === Grid images: Ken Burns (only while visible; works in clustered/ungrouped) ===
 (() => {
+  // Config: turn this off if you only want Ken Burns in the gallery
+  const ENABLE_GRID_KEN_BURNS = false;
+  if (!ENABLE_GRID_KEN_BURNS) return;
+
   const grid = document.getElementById('grid');
   if (!grid) return;
 
@@ -4255,7 +4445,7 @@ function renderThemeToggle(container) {
   if (!container || renderThemeToggle._rendered) return;
 
   const wrap = document.createElement('div');
-  wrap.className = 'tag-match-toggle theme-toggle';
+  wrap.className = 'theme-toggle';
   wrap.setAttribute('role', 'group');
   wrap.setAttribute('aria-label', 'Color theme');
 
@@ -4302,29 +4492,38 @@ function syncThemeToggleUI() {
 }
 // ==========================================================
 
-// Build a fast lookup: tag -> objects that have it
-const tagToObjects = new Map();
-function buildTagIndex(objects) {
-  tagToObjects.clear();
-  for (const o of objects) {
-    const src = (o.connectingTags && o.connectingTags.length)
-      ? o.connectingTags
-      : (o.tags || []);
-    for (const t of src) {
-      if (!tagToObjects.has(t)) tagToObjects.set(t, []);
-      tagToObjects.get(t).push(o);
+  // Build a fast lookup: tag -> objects that have it
+  const tagToObjects = new Map();
+
+  // Single source of truth: which tags are used for filtering?
+  // From now on: ONLY connectingTags are used for all tag-based filtering.
+  function getObjectFilterTags(o) {
+    return Array.isArray(o?.connectingTags) ? o.connectingTags : [];
+  }
+
+  function buildTagIndex(objects) {
+    tagToObjects.clear();
+    for (const o of objects) {
+      const src = getObjectFilterTags(o);
+      for (const t of src) {
+        if (!tagToObjects.has(t)) tagToObjects.set(t, []);
+        tagToObjects.get(t).push(o);
+      }
     }
   }
-}
 
-// call once after `objects` are generated:
-buildTagIndex(objects);
+  // call once after `objects` are generated:
+  buildTagIndex(objects);
 
-// Helper
-function objectHasAllTags(objTags, requiredSet) {
-  for (const t of requiredSet) if (!objTags.includes(t)) return false;
-  return true;
-}
+  // Helper: does this object have all required tags (using connectingTags only)?
+  function objectHasAllTags(o, requiredSet) {
+    const objTags = getObjectFilterTags(o);
+    for (const t of requiredSet) {
+      if (!objTags.includes(t)) return false;
+    }
+    return true;
+  }
+
 
 function updateTagAvailability() {
   const ul = document.getElementById('tags-visible');
@@ -4368,9 +4567,10 @@ function updateTagAvailability() {
 
     // If SCOPED is locked to a different group, visible list is always the locked group anyway.
     const pool = tagToObjects.get(tag) || [];
-    const ok = pool.some(o => objectHasAllTags(o.tags || [], new Set([...required, tag])));
+    const ok = pool.some(o => objectHasAllTags(o, new Set([...required, tag])));
     li.classList.toggle('disabled', !ok);
     li.setAttribute('aria-disabled', (!ok).toString());
+
   });
 }
 
@@ -4525,6 +4725,59 @@ function initSlideInTags() {
 
   section.innerHTML = '';
 
+  // 2) Group switcher (buttons shown under the tags) – now as an inline list
+  const switcher = document.createElement('ul');
+  switcher.className = 'tag-group-switch';
+
+  TAG_GROUPS.forEach(g => {
+    const li = document.createElement('li');
+
+    const link = document.createElement('a');
+    link.className = 'group-btn';
+    link.dataset.groupId = g.id;
+    link.textContent = g.label;
+
+    li.appendChild(link);
+    switcher.appendChild(li);
+  });
+
+  section.appendChild(switcher);
+
+  // Switcher clicks (toggle): click a group to restrict to that group; click again to clear.
+  // Any change of group must reset prior tag selections.
+  switcher.addEventListener('click', (e) => {
+    const btn = e.target.closest('.group-btn');
+    if (!btn) return;
+    const gid = btn.dataset.groupId;
+    if (!gid) return;
+
+    const wasSelected = currentTagViewGroupId === gid;
+
+    if (wasSelected) {
+      // Clear group: all tags clickable; default match = All
+      currentTagViewGroupId = null;
+      setTagMode('AND');
+    } else {
+      // Select this group: non-member tags disabled; default match = Any
+      currentTagViewGroupId = gid;
+      setTagMode('OR');
+    }
+
+    // Any group change resets tag selections completely
+    activeTags.clear();
+    if (TAG_GROUP_POLICY === TAG_GROUP_POLICIES.SCOPED) {
+      activeTagGroupId = null;
+    }
+
+    // Refresh UI
+    renderTagsForCurrentGroup();   // renders with no active tags now
+    markActiveGroupButton();       // highlight selected group (or none)
+    updateObjectGlowsWithGradient();
+    scheduleOffgridUpdate?.();
+    renderSelectionBar?.();
+    syncDetailTagHighlights();
+  });
+
   // 1) Visible tags (single group at a time)
   const ul = document.createElement('ul');
   ul.className = 'tags';
@@ -4587,49 +4840,6 @@ function initSlideInTags() {
       window.refreshAdhocGalleryFromTags();
     }
 
-    syncDetailTagHighlights();
-  });
-
-  // 2) Group switcher (buttons shown under the tags)
-  const switcher = document.createElement('div');
-  switcher.className = 'tag-group-switch';
-  TAG_GROUPS.forEach(g => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'group-btn';
-    b.dataset.groupId = g.id;
-    b.textContent = g.label;
-    switcher.appendChild(b);
-  });
-  section.appendChild(switcher);
-
-  // Switcher clicks (toggle): click a group to restrict to that group; click again to clear
-  switcher.addEventListener('click', (e) => {
-    const btn = e.target.closest('.group-btn');
-    if (!btn) return;
-    const gid = btn.dataset.groupId;
-    if (!gid) return;
-    
-    const wasSelected = currentTagViewGroupId === gid;
-    if (wasSelected) {
-      // Clear selection: all tags clickable; default match = All
-      currentTagViewGroupId = null;
-      setTagMode('AND');
-      // keep current activeTags as-is
-    } else {
-      // Select this group: non-member tags disabled; default match = Any
-      currentTagViewGroupId = gid;
-      setTagMode('OR');
-      // Remove any active tags that do not belong to this group (avoid “active but disabled”)
-      [...activeTags].forEach(t => { if (tagToGroup.get(t) !== gid) activeTags.delete(t); });
-    }
-    
-    // Refresh UI
-    renderTagsForCurrentGroup();   // now renders all tags; availability applies gating
-    markActiveGroupButton();       // highlight selected group (or none)
-    updateObjectGlowsWithGradient();
-    scheduleOffgridUpdate?.();
-    renderSelectionBar?.();
     syncDetailTagHighlights();
   });
 
@@ -4998,35 +5208,38 @@ function renderDiscoverProjectsFromGroups() {
 }
 
 function renderTagsForCurrentGroup() {
-  // Renders ALL tags from ALL groups. Group selection is enforced via disabled state.
+  // Renders ALL tags from ALL groups as one globally sorted list.
+  // Group selection is enforced via disabled state in updateTagAvailability().
   const ul = document.getElementById('tags-visible');
   if (!ul) return;
   ul.innerHTML = '';
 
-  TAG_GROUPS.forEach(group => {
-    // sort connecting tags alphabetically, case-insensitive
-    const sorted = (group.tags || []).slice().sort((a, b) =>
-      a.toLowerCase().localeCompare(b.toLowerCase())
-    );
-  
-    sorted.forEach(tag => {
-      const li = document.createElement('li');
-      li.dataset.tag = tag;
-      li.dataset.group = group.id;
-      li.textContent = tag;
-  
-      if (activeTags.has(tag)) {
-        const color = tagColors[tag];
-        li.classList.add('active');
+  // 1) Build a unique, globally sorted list of tags across all groups
+  //    ALL_TAGS is maintained by rebuildTagCachesFromCurrentGroups()
+  const sortedTags = Array.from(new Set(ALL_TAGS))
+    .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+
+  // 2) Render each tag once, but keep its group via tagToGroup for gating
+  sortedTags.forEach(tag => {
+    const li = document.createElement('li');
+    li.dataset.tag = tag;
+    li.dataset.group = tagToGroup.get(tag) || '';
+    li.textContent = tag;
+
+    if (activeTags.has(tag)) {
+      const color = tagColors[tag];
+      li.classList.add('active');
+      if (color) {
         li.style.borderColor = color;
         li.style.color = color;
         li.style.boxShadow = `${color}66 0 0 8px`;
       }
-  
-      ul.appendChild(li);
-    });
-  });  
-  // After (re)render, enforce availability rules (AND logic  group gating)
+    }
+
+    ul.appendChild(li);
+  });
+
+  // After (re)render, enforce availability rules (AND logic + group gating)
   updateTagAvailability();
 }
 
@@ -5288,6 +5501,26 @@ document.addEventListener('DOMContentLoaded', () => {
   initScrollUpButtons();
   updateRightCounterOffset();
 
+  //  Header title → "Home" (grouped grid) navigation
+  const headerCenter = document.getElementById('header-center');
+  if (headerCenter) {
+    const activateHome = (evt) => {
+      evt?.preventDefault();
+      if (typeof goHome === 'function') {
+        goHome();
+      } else if (typeof window.goHome === 'function') {
+        window.goHome();
+      }
+    };
+
+    headerCenter.addEventListener('click', activateHome);
+    headerCenter.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        activateHome(e);
+      }
+    });
+  }
+
   const slideIns = document.getElementById('slide-ins');
   if (slideIns) {
     ['transitionrun','transitionstart','transitionend'].forEach(evt => {
@@ -5338,7 +5571,7 @@ function nearestScroller(from) {
 }
 
 function initScrollUpButtons() {
-  document.querySelectorAll('.text-subpage .scroll-up').forEach(btn => {
+  document.querySelectorAll('.scroll-up').forEach(btn => {
     // 1) Inline the icon
     const src = btn.getAttribute('data-icon-src') || 'img/icons/arrow_counter_10x12px.svg';
     const holder = btn.querySelector('.icon');
@@ -5387,7 +5620,7 @@ function objectsMatchingCurrentFilter() {
   if (tags.length === 0) return candidates;
 
   return candidates.filter(o => {
-    const own = new Set(o.tags || []);
+    const own = new Set(getObjectFilterTags(o));  // connectingTags only
     return (mode === 'AND')
       ? tags.every(t => own.has(t))
       : tags.some(t => own.has(t));
@@ -5445,11 +5678,12 @@ function refreshHeaderLeftFromState() {
   }
 
   if (body.classList.contains('in-detail-page')) {
-    // set on open detail (see below)
-    const obj = window._lastDetailObject || null;
-    const loc = obj?.groupLocation || '';
-    // objects carry groupLocation already when created. :contentReference[oaicite:1]{index=1}
-    return setHeaderLeft('research', { location: loc });
+    // Detail header: use the Group Title (fallback to location if missing)
+    const obj   = window._lastDetailObject || null;
+    const title = obj?.groupTitle || obj?.groupLocation || '';
+  
+    // Use the existing "custom" mode so we don't change HEADER_COPY.research
+    return setHeaderLeft('custom', { text: title });
   }
 
   // Adhoc (custom) gallery → “Make new connections”
@@ -5553,6 +5787,56 @@ function wireHeaderToGrid() {
 // Call this *once* after grid is created (see next step)
 window.__wireHeaderToGrid = wireHeaderToGrid;
 window.__dispatchViewChange = dispatchViewChange;
+
+// Centralised "Home" navigation: reset to grouped grid view
+function goHome() {
+  const gridShell   = document.getElementById('grid-shell');
+  const overlayMenu = document.getElementById('overlay-menu');
+
+  // 1) Close overlay menu if it is open
+  if (overlayMenu && overlayMenu.classList.contains('active')) {
+    overlayMenu.classList.remove('active');
+    document.body.classList.remove('menu-open');
+  }
+
+  // 2) Hide all text subpages
+  document.querySelectorAll('.text-subpage').forEach((s) => {
+    s.hidden = true;
+    s.classList.remove('active');
+  });
+
+  // 3) Close detail view if active (uses existing helper)
+  if (typeof window.closeObjectDetail === 'function') {
+    try { window.closeObjectDetail(); } catch (err) { console.warn(err); }
+  }
+
+  // 4) Close the long research page if active
+  if (typeof window.closeResearchPage === 'function') {
+    try { window.closeResearchPage(); } catch (err) { console.warn(err); }
+  }
+
+  // 5) Close any open gallery (group or ad-hoc)
+  if (typeof window.closeGallery === 'function') {
+    try { window.closeGallery(); } catch (err) { console.warn(err); }
+  }
+
+  // 6) Make sure the grid shell is visible
+  if (gridShell) {
+    gridShell.style.display = '';
+  }
+
+  // 7) Force the grid into grouped state
+  const g = window.gridObject;
+  if (g && typeof g.groupObjects === 'function') {
+    g.groupObjects();
+  }
+
+  // 8) Let header + selection bar recompute their state
+  if (typeof window.__dispatchViewChange === 'function') {
+    window.__dispatchViewChange();
+  }
+}
+window.goHome = goHome;
 
 // ==== Header-left typewriter (cancelable) ====
 const HeaderTyper = (() => {
@@ -5692,14 +5976,8 @@ function initSelectionBar() {
     const li = e.target.closest('li[data-tag]');
     if (!li) return;
     const tag = li.dataset.tag;
-    if (window.activeTags?.has(tag)) {
-      activeTags.delete(tag);
-      // keep the rest of the UI consistent
-      if (typeof renderTagsForCurrentGroup === 'function') renderTagsForCurrentGroup();
-      if (typeof updateTagAvailability === 'function') updateTagAvailability();
-      if (typeof updateObjectGlowsWithGradient === 'function') updateObjectGlowsWithGradient();
-      if (typeof scheduleOffgridUpdate === 'function') scheduleOffgridUpdate();
-      renderSelectionBar();
+    if (window.activeTags?.has(tag) && typeof window.deselectTagGlobally === 'function') {
+      window.deselectTagGlobally(tag);
     }
   });
 
