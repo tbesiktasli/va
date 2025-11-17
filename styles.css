@@ -4,6 +4,8 @@
   --offgrid-left: 8px;    /* fixed left margin for left counter */
   --offgrid-right: 8px;   /* base right margin; JS adds slide-in visible width to this */
   --side-gap: 8px;
+  --fab-size: 40px;
+  --fab-edge-gap: 12px; /* distance from viewport edges */
 
   /* main theme colors */
   --main-bg-color: #fffaf5;
@@ -110,6 +112,7 @@
   .object {
     position: absolute;
     box-sizing: border-box;
+    background-color: #fff;
     background-size: cover;
     background-position: center;
     /*background-repeat: 'no-repeat';*/
@@ -119,7 +122,7 @@
   }
 
   .object.audio {
-    background-color: inherit;
+    background-color: transparent;
   }
 
   /* During zoom, keep width/height animated but freeze transform animations */
@@ -464,13 +467,13 @@
   z-index: 1200; /* above grid + detail panel; overlay menu still wins */
 }
 
-#fab-top-left { top: 12px; }
-#fab-bottom-left { bottom: 12px; }
+#fab-top-left { top: var(--fab-edge-gap); }
+#fab-bottom-left { bottom: var(--fab-edge-gap); }
 
 /* Circular buttons */
 .fab {
-  width: 40px;
-  height: 40px;
+  width: var(--fab-size);
+  height: var(--fab-size);
   border-radius: 50%;
   border: 1px solid var(--main-outline-color);
   background: var(--main-bright-bg-color);
@@ -479,6 +482,7 @@
   box-shadow: 2px 2px 2px rgba(0,0,0,.12);
   cursor: pointer;
   color: var(--main-font-color);
+  box-sizing: border-box; /* ensure same outer size for button + div */
 }
 
 .fab svg,
@@ -493,8 +497,8 @@
 }
 
 .fab.fab-lg {
-  width: 46px;
-  height: 46px;
+  width: var(--fab-size);
+  height: var(--fab-size);
 }
 
 .fab.fab-lg svg,
@@ -538,6 +542,7 @@ header {
   font-style: italic;
   transform: translateX(-50%);
   text-align: center;
+  cursor: pointer;
 }
 
 .header-right {
@@ -608,37 +613,51 @@ header {
   position: absolute;
   top: 12px;
   left: 12px;
-  background-color: var(--main-bright-bg-color);
-  width: 35px;
-  height: 35px;
-  border-radius: 100%;
-  border: 1px solid var(--main-outline-color);
-  line-height: 35px;
-  text-align: center;
-  font-size: 1.3em;
-  cursor: pointer;
   z-index: 9999;
-  box-shadow: 2px 2px 2px rgba(209, 209, 209, 1);;
-  display: grid;
-  place-items: center;
-  line-height: 1; /* avoid vertical misalignment with inline SVG */
-  color: var(--main-font-color);             /* darker (uses currentColor) */
 }
 
 #content-back-button svg {
-  width: 26px;             /* tweak to taste: 24–30 works well in a 35px chip */
-  height: auto;
-  display: block;
+  width: 26px;
+  height: 26px;
 }
 
+/* Optional: if you want the vector-effect tweak, keep only this part */
 #content-back-button svg * {
   vector-effect: non-scaling-stroke;
   stroke-width: 1;
 }
 
+/* Ungroup button inside the group gallery header */
+#gallery-ungroup {
+  position: absolute;
+  top: calc(var(--fab-edge-gap) + var(--fab-size) + 9px);      /* under the back button (35px high + gap) */
+  left: var(--fab-edge-gap);
+  z-index: 9999;
+  display: none;  /* hidden by default, see rule below */
+}
+
+/* Only show this control in the GROUP gallery, not the ad-hoc tag gallery */
+body.in-group-gallery:not(.in-adhoc-gallery) #gallery-ungroup {
+  display: grid;  /* same as .fab */
+}
+
 .wide-content, .vertical-content {
   display: flex;
-  height: calc(100vh - 50px);
+  height: calc(100dvh - var(--header-h));
+}
+
+#detail-content {
+  height: calc(100dvh - var(--header-h));/* viewport minus dynamic header */
+}
+
+#detail-content.active {
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+#detail-content .vertical-content {
+  display: flex;
+  height: 100%;
 }
 
 .wide-content .title-box {
@@ -649,7 +668,8 @@ header {
   justify-content: center;
   text-align: center;
   box-sizing: border-box;
-  padding-left: 15vw;
+  padding-left: 25vw;
+  padding-right: 10vw;
   opacity: 0;
   transform: translateY(20px);
   transition: opacity 1s ease, transform 1s ease;
@@ -672,6 +692,30 @@ header {
   font-size: 1.9em;
   line-height: 1.3;
   margin-top: 30px;
+}
+
+/* Ad-hoc tag gallery: title chips with a removable "X" */
+#group-gallery .title-box h2 .adhoc-title-tag {
+  position: relative;
+  display: inline-block;
+  padding-right: 0.6em;       /* space for the X */
+  cursor: pointer;
+}
+
+#group-gallery .title-box h2 .adhoc-title-tag-label {
+  display: inline-block;
+}
+
+#group-gallery .title-box h2 .adhoc-title-tag-close {
+  position: absolute;
+  top: 0;                     /* "top right end" of the tag text */
+  right: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
 }
 
 .wide-content .title-box h2, .wide-content .title-box h3 {
@@ -868,6 +912,11 @@ header {
   font-size: 0.9rem;
   cursor: pointer;
   color: var(--main-font-color);
+}
+
+#slide-ins #tags-visible {
+  margin-top: 25px;
+  margin-bottom: 0;
 }
 
 .vertical-content {
@@ -1506,7 +1555,7 @@ header {
 
 /* When selection bar is visible, push up bottom overlays by its height */
 #workspace.has-selection-bar #offgrid-bottom { bottom: calc(8px + var(--header-h)); transition: bottom .4s ease;}
-#workspace.has-selection-bar #fab-bottom-left { bottom: calc(12px + var(--header-h)); transition: bottom .4s ease;}
+#workspace.has-selection-bar #fab-bottom-left { bottom: calc(var(--fab-edge-gap) + var(--header-h)); transition: bottom .4s ease;}
 
 /* ====== TWO-COLUMN MENU BODY ====== */
 #slide-ins .slide-in[data-mode="menu"] {
@@ -1576,7 +1625,7 @@ header {
 /* When open, secondary takes its computed width */
 #slide-ins .slide-in[data-mode="menu"].secondary-open .secondary-pane {
   width: var(--secondary-w);
-  padding: 12px 14px 16px 14px;
+  padding: 25px 30px 16px 30px;
   /* allow long content to scroll */
   height: 100%;
   max-height: 100%;
@@ -1601,8 +1650,8 @@ header {
 /* Simple typography for secondary pane */
 .secondary-pane h3 {
   font-size: 1rem;
-  margin: 6px 0 10px;
-  font-style: italic;
+  font-weight: 500;
+  margin-bottom: 20px;
 }
 .secondary-pane p { margin: 0 0 12px; line-height: 1.6; font-size: .9rem; }
 .secondary-pane .back {
@@ -1622,7 +1671,7 @@ header {
   list-style: none;
   padding: 10px 0 0;
   display: grid;
-  gap: 8px;
+  gap: 15px;
 }
 
 /* Row button with tiny circular icon + label */
@@ -1643,7 +1692,7 @@ header {
   height: 15px;
 
   /* same visual tokens as .fab */
-  background: var(--main-br);
+  background: #fff;
   border: 1px solid var(--main-outline-color);
   border-radius: 50%;
   color: var(--main-font-color);
@@ -1674,7 +1723,7 @@ header {
 }
 
 /* Active state: underline label */
-.theme-item.active .theme-label {
+.theme-item.active .theme-label, .theme-item .theme-label:hover {
   text-decoration: underline;
 }
 
@@ -1683,10 +1732,10 @@ header {
 /* Secondary pane: match background + light separator to its right */
 #slide-ins .slide-in[data-mode="menu"] .secondary-pane{
   background: var(--main-bg-color);
-  /* replace any previous border-left */
-  border-left: 0;
+  border-left: 1px solid var(--main-light-outline-color);  /* separator between secondary and main */
   border-right: 1px solid var(--main-light-outline-color);  /* separator between secondary and main */
 }
+
 
 #slide-ins .slide-in[data-mode="menu"] .content-section {
   border-bottom: none;
@@ -1748,10 +1797,16 @@ header {
 
 /* Tag match toggle: 2 icons + separator */
 .tag-match-toggle {
+  position: sticky;
+  bottom: 0;                 /* or top: 0; */
+  padding: 8px 0;
+  background: var(--main-bg-color);  /* so tags don’t show through */
+  z-index: 1;
+  width: 100%;
   display: inline-flex;
   align-items: center;
   gap: 10px;              /* 10px between icon and separator, and separator and icon */
-  margin: 10px 0;
+  margin: 10px 0 0 0;
   color: var(--main-outline-color);
 }
 
@@ -1778,7 +1833,7 @@ header {
   color: var(--main-font-color);
 }
 
-.tag-match-toggle .tag-mode-separator {
+.tag-match-toggle .tag-mode-separator, .theme-toggle .tag-mode-separator {
   width: 1px;
   height: 18px;
   background: var(--main-outline-color);
@@ -1791,6 +1846,7 @@ header {
 .tag-mode-btn.is-selected .txt { opacity: 1; font-weight: 600; }
 
 /* Theme toggle uses same structure as tag-match toggle, but with text */
+.theme-toggle { display: inline-flex; align-items: center; gap: 10px; color: var(--main-outline-color); margin-right: 5px; }
 .theme-toggle .tag-mode-btn { color: var(--main-font-color); }
 .theme-toggle .tag-mode-btn .txt { opacity: .4; font-size: 0.8rem; font-weight: normal }
 .theme-toggle .tag-mode-btn.is-selected .txt { opacity: 1; }
@@ -1807,23 +1863,53 @@ header {
 
 /* Group switcher row under the visible tag list */
 .tag-group-switch {
-  margin-top: 14px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.tag-group-switch .group-btn {
-  padding: 6px 10px;
-  border: 1px solid var(--main-outline-color);
-  border-radius: 999px;
-  background: var(--main-bright-bg-color);
-  cursor: pointer;
-  font-size: 0.7rem;
+  margin-top: 8px;
+  margin-bottom: 8px;          /* override generic .content-section ul margin */
+  font-size: 0.85rem;
   color: var(--main-font-color);
+  list-style: none;            /* remove bullets */
+  padding: 0;
+  margin-left: 0;
+  display: inline-flex;        /* lay items out horizontally */
+  flex-wrap: wrap;             /* allow wrapping if they don’t fit in one line */
 }
+
+ul.tag-group-switch {
+  margin-bottom: 0;
+}
+
+.tag-group-switch li {
+  display: inline-flex;
+  align-items: center;
+  padding-right: 8px;
+  margin-right: 8px;
+  margin-bottom: 8px;
+  border-right: 1px solid var(--main-outline-color); /* separator */
+}
+
+.tag-group-switch li:last-child {
+  border-right: none;          /* no separator after the last item */
+  margin-right: 0;
+  padding-right: 0;
+}
+
+.tag-group-switch .group-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-decoration: none;
+}
+
+.tag-group-switch .group-btn:hover {
+  text-decoration: underline;
+}
+
 .tag-group-switch .group-btn.is-active {
-  background: #EED9C4;
   font-weight: 600;
+  text-decoration: underline;
 }
 
 /* END TAGS */
@@ -2005,12 +2091,12 @@ header {
 
 .count-invisible-objects.left  .rot {
   transform-origin: top left !important;
-  transform: translateX(var(--side-gap)) rotate(-90deg) !important;
+  transform: translateX(var(--side-gap)) rotate(-90deg) translateX(-50%) !important;
 }
 
 .count-invisible-objects.right .rot {
   transform-origin: top right !important;
-  transform: translateX(calc(-1 * (var(--side-gap, 8px) + var(--slideins-visible, 0px)))) rotate(90deg) !important;
+  transform: translateX(calc(-1 * (var(--side-gap, 8px) + var(--slideins-visible, 0px)))) rotate(90deg) translateX(50%) !important;
 }
 
 /* Side counters: add a small gap between the number and the default "Elements" word */
@@ -2178,7 +2264,7 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 .text-subpage.active { display: block; }
 
 .text-subpage .text-page {
-  padding: 80px 200px;                        /* 150 top/bottom, 100 left/right */
+  padding: 80px 200px 0 200px;                        /* 150 top/bottom, 100 left/right */
   box-sizing: border-box;
   width: 100%;
 }
@@ -2268,13 +2354,13 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 .text-subpage .two-col-row .right p:last-child { margin-bottom: 0; }
 
 /* === Scroll-up CTA (generic for any .text-subpage) === */
-.text-subpage .scroll-up-cta {
+.scroll-up-cta {
   display: flex;
   justify-content: center;
   margin: 64px 0 0 0;
 }
 
-.text-subpage .scroll-up {
+.scroll-up {
   display: inline-flex;
   flex-direction: column;
   align-items: center;
@@ -2286,19 +2372,19 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   font: inherit;                 /* use page font */
 }
 
-.text-subpage .scroll-up:focus-visible {
+.scroll-up:focus-visible {
   outline: 2px dashed currentColor;
   outline-offset: 4px;
 }
 
-.text-subpage .scroll-up .icon svg {
+.scroll-up .icon svg {
   width: 18px;                   /* tweak to taste */
   height: 22px;
   display: block;
   transform: rotate(-90deg);     /* arrow points UP */
 }
 
-.text-subpage .scroll-up .label {
+.scroll-up .label {
   font-size: 0.9em;
   letter-spacing: 0.06em;
   text-transform: uppercase;
