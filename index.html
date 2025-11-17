@@ -16,7 +16,9 @@
 <body>
   <header>
     <div class="header-left" id="header-left"></div>
-    <div class="header-center">Viral Atmospheres</div>
+    <div class="header-center" id="header-center" role="button" tabindex="0">
+      Viral Atmospheres
+    </div>
     <div class="header-right">
       <!-- swap to a text button if you don't have the svg yet -->
       <!--<img src="img/burger-menu.svg" alt="Menu" id="burger-btn" />-->
@@ -126,7 +128,7 @@
 
     <div id="group-gallery" class="scroll-container-horizontal" data-allow-scroll>
       <!-- Back button to return to grid -->
-      <div id="content-back-button" title="Back">
+      <div id="content-back-button" class="fab fab-lg gallery-fab" title="Back">
         <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 32" fill="none" aria-hidden="true">
           <g stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke">
             <line x1="8" y1="16.5" x2="42" y2="16.5"/>
@@ -135,6 +137,22 @@
           </g>
         </svg>
       </div>
+
+      <button id="gallery-ungroup" class="fab fab-lg gallery-fab" type="button" title="Ungroup (Masonry)" aria-label="Ungroup">
+        <!-- inline of img/icons/Unlink.svg (without XML header) -->
+        <!-- BEGIN Unlink.svg -->
+        <svg fill="currentColor" stroke="currentColor" viewBox="0 0 34 34" preserveAspectRatio="xMidYMid meet">
+          <path d="M28.53,11.65l-4.64,4.64c-.29.29-.77.29-1.06,0h0c-.29-.29-.29-.77,0-1.06l4.64-4.64c2.08-2.08,2.14-5.55.13-7.56s-5.48-1.96-7.56.13l-4.64,4.64c-.29.29-.77.29-1.06,0h0c-.29-.29-.29-.77,0-1.06l4.64-4.64c2.66-2.66,7.09-2.72,9.68-.13s2.53,7.02-.13,9.68Z"/>
+          <path d="M16.28,22.84c.29.29.29.77,0,1.06l-4.69,4.69c-2.63,2.63-7.05,2.67-9.64.08s-2.55-7,.08-9.64l4.69-4.69c.29-.29.77-.29,1.06,0h0c.29.29.29.77,0,1.06l-4.69,4.69c-2.06,2.06-2.09,5.5-.08,7.52s5.46,1.98,7.52-.08l4.69-4.69c.29-.29.77-.29,1.06,0h0Z"/>
+          <path d="M3.66,2.6c-.29-.29-.77-.29-1.06,0s-.29.77,0,1.06l3.01,3.01c.29.29.77.29,1.06,0s.29-.77,0-1.06l-3.01-3.01Z"/>
+          <path d="M5.01,8.58H.75c-.41,0-.75.34-.75.75s.34.75.75.75h4.26c.41,0,.75-.34.75-.75s-.34-.75-.75-.75Z"/>
+          <path d="M9.33,0c-.41,0-.75.34-.75.75v4.26c0,.41.34.75.75.75s.75-.34.75-.75V.75c0-.41-.34-.75-.75-.75Z"/>
+          <path d="M25.09,23.91c-.29-.29-.77-.29-1.06,0s-.29.77,0,1.06l3.01,3.01c.29.29.77.29,1.06,0s.29-.77,0-1.06l-3.01-3.01Z"/>
+          <path d="M29.95,20.5h-4.26c-.41,0-.75.34-.75.75s.34.75.75.75h4.26c.41,0,.75-.34.75-.75s-.34-.75-.75-.75Z"/>
+          <path d="M21.37,24.82c-.41,0-.75.34-.75.75v4.26c0,.41.34.75.75.75s.75-.34.75-.75v-4.26c0-.41-.34-.75-.75-.75Z"/>
+        </svg>
+        <!-- END Unlink.svg -->
+      </button>
     
       <!-- Gallery-specific counters (independent from grid counters) -->
       <div class="count-invisible-objects left"><span class="rot"><span class="value">0</span> Elements ↑</span></div>
@@ -220,7 +238,7 @@
       <div class="content-header">
           <span class="location">Diepsloot, South Africa</span>
       </div>
-      <div id="content-back-button" onclick="showHorizontal();">
+      <div id="content-back-button" class="fab fab-lg gallery-fab" onclick="showHorizontal();">
         <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 32" fill="none" aria-hidden="true">
           <g stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke">
             <line x1="8" y1="16.5" x2="42" y2="16.5"/>
@@ -309,6 +327,14 @@
                     <div id="related-objects" class="related-strip" aria-label="Related objects (same group)"></div>
                   </div>
               </div>
+          </div>
+          <div class="scroll-up-cta">
+            <button type="button"
+                    class="scroll-up"
+                    data-icon-src="img/icons/arrow_counter_10x12px.svg">
+              <span class="icon" aria-hidden="true"></span>
+              <span class="label">scroll up</span>
+            </button>
           </div>
       </div>
     </div>
