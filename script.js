@@ -2629,12 +2629,29 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
         objId: objEl?.id
       });
 
-      // Only in grouped mode: any object click opens gallery
+      // Only in grouped mode: object click either opens gallery or (for 1-object groups) goes straight to detail
       if (isGrouped && objEl) {
         e.preventDefault();
         e.stopPropagation();
-        const obj = (window.gridObject?.objects || objects || []).find(o => String(o.id) === String(objEl.id));
+
+        const allObjects = (window.gridObject?.objects || objects || []);
+        const obj = allObjects.find(o => String(o.id) === String(objEl.id));
         const gid = obj?.groupId;
+
+        if (obj && gid != null) {
+          // Count how many objects share this groupId
+          const groupMembers = allObjects.filter(o => String(o.groupId) === String(gid));
+          if (groupMembers.length === 1 && typeof window.openObjectDetail === 'function') {
+            window.openObjectDetail({
+              objectId: obj.id,
+              from: 'grouped',
+              gid
+            });
+            return; // do not open the gallery in this case
+          }
+        }
+
+        // Default: multi-object groups still open the gallery
         openGallery(gid);
       }
     }, true); // capture so we log/handle even if child elements have handlers
