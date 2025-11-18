@@ -2089,7 +2089,25 @@ export class Grid {
                 this.exitDetail();
               }
             } else if (this.currentState === 'clustered' && !(this._detail && this._detail.active)) {
-              this.enterClusterDetail?.(clickedId);
+              // If this group only has one object, go straight to full detail page
+              const obj = this.objects.find(o => String(o.id) === String(clickedId));
+              const gid = obj && obj.groupId;
+          
+              if (obj && gid != null && typeof window.openObjectDetail === 'function') {
+                const groupMembers = this.objects.filter(o => String(o.groupId) === String(gid));
+                if (groupMembers.length === 1) {
+                  window.openObjectDetail({
+                    objectId: obj.id,
+                    from: 'clustered',
+                    gid
+                  });
+                  // Do not open clustered-detail in this special case
+                  return;
+                }
+              }
+          
+              // Default: multi-object groups still use clustered-detail as before
+              this.enterClusterDetail?.(clickedId);          
             } else if (this.currentState === 'ungrouped' && !(this._detail && this._detail.active)) {
               this.enterDetail(clickedId, { size: 500, margin: 80 });
             }
