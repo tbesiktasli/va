@@ -34,6 +34,53 @@
     </div>
   </header>
 
+  <!-- ================= Prepage / Splash Screen ================= -->
+  <div id="prepage" class="prepage is-open" aria-label="Intro screen">
+    <!-- Top: funded by + 2 logos, centered together -->
+    <div class="prepage-top" aria-label="Funded by">
+      <span class="prepage-funded-by">funded by</span>
+      <div class="prepage-funded-logos">
+        <!-- TODO: replace src with your real logo files -->
+        <img src="img/logos/VWST-Logo_RGB_2024_Sw 2.png" alt="Funded by logo 1">
+      </div>
+    </div>
+
+    <!-- Center hero -->
+    <div class="prepage-center">
+      <!-- TODO: replace with your real headline/subline -->
+      <h1 class="prepage-headline">Viral<br>Atmospheres</h1>
+      <div class="prepage-subline">Mapping the Affective Geographies of Covid-19:<br>A Nonorthogonal Experiment</div>
+
+      <div class="prepage-actions">
+        <a id="prepage-explore" class="button" href="#">
+          <span class="text">Explore</span><span class="icon">→</span>
+        </a>
+      
+        <a id="prepage-learn-more" class="button" href="#">
+          <span class="text">Learn more</span><span class="icon">→</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- Bottom: left text fixed to left edge, logos centered -->
+    <div class="prepage-bottom" aria-label="Collaboration logos">
+      <div class="prepage-collab-text">A collaboration</div>
+
+      <div class="prepage-collab-logos">
+        <!-- TODO: replace src with your real logo files -->
+        <img src="img/logos/Yonsei.png" alt="Collaboration logo 1">
+        <img src="img/logos/university-of-the-witwatersrand-johannesburg-logo-freelogovectors.net_.png" alt="Collaboration logo 2">
+        <img src="img/logos/Pole.png" alt="Collaboration logo 3">
+        <img src="img/logos/fu-logo-250708-RGB-s.png" alt="Collaboration logo 4">
+        <img src="img/logos/logo-mobile.png" alt="Collaboration logo 5">
+      </div>
+
+      <!-- spacer to keep center truly centered -->
+      <div class="prepage-bottom-spacer" aria-hidden="true"></div>
+    </div>
+  </div>
+  <!-- =========================================================== -->
+
   <div id="workspace">
     <div id="grid-shell">
       <div id="grid"></div>
@@ -485,6 +532,32 @@
               <span class="label">scroll up</span>
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Simple text page: Our Team / Authors overview -->
+    <div id="subpage-team" class="scroll-container-vertical text-subpage" hidden>
+      <div class="vertical-content">
+        <div class="text-page">
+
+          <h2>Our Team</h2>
+          <p>We are an international team of authors from a variety of institutions, backgrounds and career stages, from the fields of social and cultural anthropology, political science, literature, interdisciplinary art and web development. Over the course of two years, in close connection to the collaborative research process of the Moreppar project, we have worked together on this online archive/exhibiton in various capacities and constellations. We have discussed, researched, sketched, ideated, interviewed, traveled, read, recorded, photographehd, written, imagined, designed, curated, programmed, edited, feedbacked and managed, individually and together, in online meetings and in person.</p>
+
+          <h2 class="people-heading">People</h2>
+
+          <!-- NEW: dynamic accordion host; JS will fill with Author sections -->
+          <div id="authors-accordion"></div>
+
+          <div class="scroll-up-cta">
+            <button type="button"
+                    class="scroll-up"
+                    data-icon-src="img/icons/arrow_counter_10x12px.svg">
+              <span class="icon" aria-hidden="true"></span>
+              <span class="label">scroll up</span>
+            </button>
+          </div>
+
         </div>
       </div>
     </div>
