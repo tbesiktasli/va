@@ -41,6 +41,44 @@ function createWave(container, src, overrides = {}) {
   return ws;
 }
 
+// ================= Prepage / Splash Screen =================
+function initPrepage() {
+  const prepage = document.getElementById('prepage');
+  if (!prepage) return;
+
+  document.body.classList.add('has-prepage');
+
+  const exploreBtn = document.getElementById('prepage-explore');
+  if (exploreBtn) {
+    exploreBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+    
+      // start fade
+      prepage.classList.add('is-fading');
+    
+      const finish = () => {
+        prepage.classList.add('is-hidden');
+        document.body.classList.remove('has-prepage');
+      };
+    
+      // remove after transition ends (with fallback)
+      const to = setTimeout(finish, 450);
+      prepage.addEventListener('transitionend', () => {
+        clearTimeout(to);
+        finish();
+      }, { once: true });
+    });     
+  }
+
+  // Learn more has no target yet (intentionally left empty)
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initPrepage);
+} else {
+  initPrepage();
+}
+// ============================================================
+
 function isGrouped() {
   return window.gridObject?.currentState === 'grouped';
 }
@@ -962,6 +1000,205 @@ function strapiAssetUrl(p) {
   return root + p;
 }
 
+// === AUTHORS (Team subpage) =====================================
+
+// If your collection is named differently in Strapi, change this one value.
+const AUTHOR_ENDPOINT = 'authors';
+
+// tiny HTML escaper to avoid injection in dynamic templates
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Convert Strapi rich-text-ish values into <p>...</p> blocks
+function toParagraphHtml(val) {
+  if (!val) return '';
+
+  // if Strapi rich text blocks array
+  if (Array.isArray(val)) {
+    const text = val.map(b =>
+      (b?.children || []).map(c => c?.text || '').join('')
+    ).join('\n\n');
+    val = text;
+  }
+
+  const paras = String(val)
+    .split(/\n\s*\n+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  return paras.map(p => `<p>${escapeHtml(p)}</p>`).join('');
+}
+
+async function seedAuthorsFromStrapi() {
+  try {
+    const json = await strapiFetchAll(AUTHOR_ENDPOINT, {
+      populate: '*',
+      sort: 'Name:asc',
+      'pagination[pageSize]': 1000
+    });
+
+    const items = Array.isArray(json?.data) ? json.data : (Array.isArray(json) ? json : []);
+    window.__authorsFromStrapi = items.map(it => {
+      const a = getAttrs(it);
+
+      // optional image field (future-proof)
+      const rawImgUrl =
+        tryUploadUrl(a.Image || a.image || a.Photo || a.photo || a.Picture || a.picture);
+      const imageUrl = rawImgUrl ? strapiAssetUrl(rawImgUrl) : '';
+
+      return {
+        id: String(it.id),
+        name: a.Name || a.name || '',
+        position: a.Position || a.position || '',
+        department: a.Department || a.department || '',
+        institution: a.Institution || a.institution || '',
+        biography: a.Biography || a.biography || '',
+        publication: a.Publication || a.publication || '',
+        imageUrl
+      };
+    }).filter(x => x.name);
+
+    console.log('[team] authors loaded:', window.__authorsFromStrapi.length);
+  } catch (e) {
+    console.warn('[team] authors load failed:', e);
+    window.__authorsFromStrapi = [];
+  }
+}
+
+function renderAuthorsSubpage() {
+  const host = document.getElementById('authors-accordion');
+  if (!host) return;
+
+  const authors = window.__authorsFromStrapi || [];
+  if (!authors.length) {
+    host.innerHTML = `<p>No authors found.</p>`;
+    return;
+  }
+
+  host.innerHTML = authors.map(a => `
+    <div class="content-section collapsible author-section" data-author-id="${a.id}">
+      <div class="section-header">
+        <h3 class="author-name">${escapeHtml(a.name)}</h3>
+      </div>
+  
+      <div class="section-content">
+        <div class="two-col-table">
+  
+          <!-- Row 1 -->
+          <div class="two-col-row">
+            <div class="left"><h3>Biography</h3></div>
+            <div class="right">
+              <div class="author-meta">
+                <div class="position-dept">
+                  <span class="author-position">${escapeHtml(a.position)}</span>
+                  <span class="sep"> | </span>
+                  <span class="author-department">${escapeHtml(a.department)}</span>
+                </div>
+  
+                <!-- NOTE: same as static: no .location class -->
+                <div class="institution">
+                  <img class="location-icon" src="img/icons/location_16x11.svg" alt="" aria-hidden="true">
+                  <span class="author-institution">${escapeHtml(a.institution)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+  
+          <!-- Row 2 -->
+          <div class="two-col-row">
+            <div class="left">
+              <div class="author-photo-wrap">
+                ${a.imageUrl
+                  ? `<img class="author-photo" src="${a.imageUrl}" alt="${escapeHtml(a.name)}">`
+                  : `<div class="author-photo placeholder"></div>`
+                }
+              </div>
+            </div>
+            <div class="right">
+              ${toParagraphHtml(a.biography)}
+            </div>
+          </div>
+  
+          <!-- Row 3 -->
+          <div class="two-col-row">
+            <div class="left"><h3>Publications</h3></div>
+            <div class="right">
+              ${toParagraphHtml(a.publication)}
+            </div>
+          </div>
+  
+        </div>
+      </div>
+    </div>
+  `).join('');  
+}
+
+// Open the Team subpage and expand a specific author section by name
+function openAuthorSubpageForName(name) {
+  if (!name) return;
+  const targetName = String(name).trim().toLowerCase();
+
+  // 1) Close full-page detail if open
+  window.closeObjectDetail?.();
+
+  // 2) Open the Team/Authors text subpage
+  const openTeam = window.openTextSubpage || (typeof openTextSubpage === 'function' ? openTextSubpage : null);
+  openTeam?.('subpage-team');
+
+  // 3) Wait until the accordion is initialized, then open the right section
+  const tryExpand = (attempt = 0) => {
+    const root = document.getElementById('subpage-team');
+    if (!root) {
+      if (attempt < 6) requestAnimationFrame(() => tryExpand(attempt + 1));
+      return;
+    }
+
+    const acc = root._accordion;
+    if (!acc) {
+      if (attempt < 6) requestAnimationFrame(() => tryExpand(attempt + 1));
+      return;
+    }
+
+    const authors = window.__authorsFromStrapi || [];
+    const found = authors.find(a => String(a.name).trim().toLowerCase() === targetName);
+    const foundId = found?.id;
+
+    let section = null;
+
+    // Prefer stable id match when possible
+    if (foundId) {
+      section = root.querySelector(`.author-section[data-author-id="${CSS.escape(foundId)}"]`);
+    }
+
+    // Fallback: match by visible name in DOM
+    if (!section) {
+      section = Array.from(root.querySelectorAll('.author-section'))
+        .find(sec => sec.querySelector('.author-name')?.textContent?.trim().toLowerCase() === targetName);
+    }
+
+    if (section) {
+      acc.openSection(section);
+    }
+  };
+
+  requestAnimationFrame(() => tryExpand());
+}
+
+// expose for other modules (detail, future links)
+window.openAuthorSubpageForName = openAuthorSubpageForName;
+
+function openGroupGalleryFromDetail(gid) {
+  if (gid == null || gid === '') return;
+  window.closeObjectDetail?.();
+  window.openGroupGallery?.(gid);
+}
+
 function pickImageVariant(meta, targetCssWidth, dpr=1) {
   if (!meta) return { url: undefined };
   const need = Math.ceil((targetCssWidth || 200) * Math.max(1, dpr) * 1.25); // headroom
@@ -1388,12 +1625,24 @@ function dumpStrapiObjects(objects) {
 }
 
 // small helper to extract a URL if fields use Strapi Upload media (object/array with .data[].attributes.url)
+// small helper to extract a URL if fields use Strapi Upload media (v4/v5-safe)
 function tryUploadUrl(mediaField) {
   if (!mediaField) return undefined;
+
+  // If it's already a string URL/path
+  if (typeof mediaField === 'string') return mediaField;
+
+  // Strapi v5 sometimes returns media with url at top-level
+  if (mediaField.url) return mediaField.url;
+
+  // Strapi v4/v5 relational media shape
   const d = mediaField.data;
   if (!d) return undefined;
-  if (Array.isArray(d)) return d[0]?.attributes?.url;
-  return d.attributes?.url;
+
+  if (Array.isArray(d)) {
+    return d[0]?.attributes?.url || d[0]?.url;
+  }
+  return d.attributes?.url || d.url;
 }
 
 // Strapi v5 returns fields on the top level; v4 used entry.attributes
@@ -1946,20 +2195,98 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       // After rendering the primary slot, position the blocks as requested
       setDetailBlocksColumn(obj.type);
 
-      // --- Update Topics & Lower Tags from regular tags
+      // --- Update Topics & Lower Tags (topics = regular tags, lower = connecting tags)
       try {
         const esc = s => String(s ?? '')
           .replace(/&/g,'&amp;')
           .replace(/</g,'&lt;')
           .replace(/>/g,'&gt;');
 
-        const tags = Array.isArray(obj.tags) ? obj.tags : [];
-        const uniq = Array.from(new Set(tags));
+        // Small helper so we don’t duplicate the mapping logic
+        const renderTagList = (selector, source) => {
+          const host = detailEl.querySelector(selector);
+          if (!host) return;
+          const list = Array.isArray(source) ? source : [];
+          const uniq = Array.from(new Set(list));
+          host.innerHTML = uniq.map(t => `<li>${esc(t)}</li>`).join('');
+        };
 
-        ['#topics-list', '#detail-tags-lower'].forEach(sel => {
-          const el = detailEl.querySelector(sel);
-          if (el) el.innerHTML = uniq.map(t => `<li>${esc(t)}</li>`).join('');
-        });
+        // Topics (top row) still use regular tags
+        renderTagList('#topics-list', obj.tags);
+
+        // Content-section tags now use CONNECTING TAGS
+        renderTagList('#detail-tags-lower', obj.connectingTags);
+
+        // Make lower connecting tags clickable to jump back into clustered view + open adhoc panel
+        const lowerHost = detailEl.querySelector('#detail-tags-lower');
+        if (lowerHost && !lowerHost.dataset.clickWired) {
+          lowerHost.dataset.clickWired = '1';
+
+          lowerHost.addEventListener('click', (e) => {
+            const li = e.target.closest('li');
+            if (!li) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            const tag = li.textContent.trim();
+            if (!tag) return;
+
+            // 1) Update active tags using existing "detail tag" semantics
+            if (typeof window.reseedTagsFromDetail === 'function') {
+              window.reseedTagsFromDetail(tag);
+            } else if (typeof reseedTagsFromDetail === 'function') {
+              reseedTagsFromDetail(tag);
+            } else if (typeof window.toggleTagFromDetail === 'function') {
+              window.toggleTagFromDetail(tag);
+            }
+
+            // 2) If a gallery is open, close it AND prevent detail-close from restoring it
+            const galleryActive =
+              document.body.classList.contains('in-group-gallery') ||
+              document.body.classList.contains('in-adhoc-gallery') ||
+              document.body.classList.contains('in-gallery') ||
+              document.getElementById('group-gallery')?.classList.contains('active');
+
+            if (galleryActive && typeof window.closeGallery === 'function') {
+              try { window.closeGallery(); } catch {}
+            }
+
+            // closeObjectDetail() will re-open gallery if __detailCtx.from === 'gallery'
+            // so force it to behave like a grid return for this flow.
+            if (window.__detailCtx && window.__detailCtx.from === 'gallery') {
+              window.__detailCtx.from = 'grid';
+            }
+
+            // 3) Close the full-page detail now
+            // (so restoreGridStateFromDetail doesn't override our next step)
+            window.closeObjectDetail?.();
+
+            // 4) Force clustered view on the grid (use the real method)
+            const grid = window.gridObject;
+            if (grid) {
+              if (typeof grid.exitDetail === 'function') {
+                try { grid.exitDetail(); } catch {}
+              }
+
+              if (grid.currentState !== 'clustered' && typeof grid.clusterGroupedObjects === 'function') {
+                grid.clusterGroupedObjects();
+              }
+
+              if (typeof markActive === 'function') markActive('cluster');
+              if (typeof refreshSlideInsVisibility === 'function') refreshSlideInsVisibility();
+
+              // Re-open inline clustered detail for the SAME object
+              const focusId = obj?.id || window.__detailCtx?.objectId;
+              if (focusId && typeof grid.enterClusterDetail === 'function') {
+                setTimeout(() => {
+                  try { grid.enterClusterDetail(String(focusId)); } catch {}
+                }, 560);
+              }
+            }
+          });
+        }
+
       } catch {}
 
 
@@ -1968,20 +2295,72 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
         const table = detailEl.querySelector('.flex-table');
         if (!table) return;
 
-        const setRow = (label, value) => {
+        // supports either plain text OR html for a row; returns the value element
+        const setRow = (label, value, opts = {}) => {
           const row = Array.from(table.querySelectorAll('.row'))
             .find(r => r.querySelector('.label')?.textContent?.trim().toLowerCase() === label);
-          if (!row) return;
+          if (!row) return null;
+
           const valEl = row.querySelector('.value');
-          if (!valEl) return;
-          valEl.textContent = value || '';
+          if (!valEl) return null;
+
+          if (opts.html != null) {
+            valEl.innerHTML = opts.html;
+          } else {
+            valEl.textContent = value || '';
+          }
+
+          return valEl;
         };
 
-        // Research ← group's Title (from normalization)
-        setRow('research', obj.groupTitle || '');
+        // Research ← group's Title (link to group gallery)
+        if (obj.groupTitle && obj.groupId != null && obj.groupId !== '') {
+          const html = `<a href="#" class="research-link" data-gid="${esc(obj.groupId)}">${esc(obj.groupTitle)}</a>`;
+          const researchEl = setRow('research', obj.groupTitle, { html });
 
-        // Researcher ← Author relation's Name(s)
-        setRow('researcher', obj.author || '');
+          if (researchEl) {
+            // overwrite any previous handler to avoid stacking
+            researchEl.onclick = (ev) => {
+              const a = ev.target.closest('.research-link');
+              if (!a) return;
+              ev.preventDefault();
+              ev.stopPropagation();
+
+              const gid = a.dataset.gid;
+              openGroupGalleryFromDetail(gid);
+            };
+          }
+        } else {
+          setRow('research', obj.groupTitle || '');
+        }
+
+        // Researcher ← Author relation's Name(s) as clickable link(s)
+        const authorStr = obj.author || '';
+        const names = authorStr.split(',').map(s => s.trim()).filter(Boolean);
+
+        if (names.length) {
+          const html = names
+            .map(n => `<a href="#" class="researcher-link" data-author-name="${esc(n)}">${esc(n)}</a>`)
+            .join(', ');
+
+          const researcherEl = setRow('researcher', authorStr, { html });
+
+          if (researcherEl) {
+            // overwrite any previous handler to avoid stacking
+            researcherEl.onclick = (ev) => {
+              const a = ev.target.closest('.researcher-link');
+              if (!a) return;
+              ev.preventDefault();
+              ev.stopPropagation();
+
+              const authorName = a.dataset.authorName || a.textContent.trim();
+              window.openAuthorSubpageForName?.(authorName);
+            };
+          }
+        } else {
+          setRow('researcher', authorStr);
+        }
+
 
         // Date ← object's Date (pretty DD/MM/YYYY when parseable)
         const fmtDate = (s) => {
@@ -2328,6 +2707,11 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
         renderRelatedThemes(obj);
         renderRelatedObjects(obj);
         ensureDetailNav(obj);
+
+        // Enhance rich text inside this detail view (URLs → links, YouTube → embeds)
+        if (typeof window.enhanceContentSections === 'function') {
+          window.enhanceContentSections(detailEl);
+        }
       } else {
         console.warn('[detail] object not found for id:', objectId);
       }
@@ -4335,6 +4719,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   await seedThemesFromStrapi();
   renderThemesUI();
 
+  await seedAuthorsFromStrapi();
+  renderAuthorsSubpage();
+
   // Remove active underline when the Themes section is closed
   const themesSection = document.querySelector('#discover-connections #themes-section')?.closest('.content-section');
   if (themesSection) {
@@ -4481,7 +4868,7 @@ function renderThemeToggle(container) {
   btnLight.dataset.theme = 'light';
   btnLight.innerHTML = `<span class="txt">Light</span>`;
 
-  wrap.append(btnDark, sep, btnLight);
+  wrap.append(btnLight, sep, btnDark);
 
   wrap.addEventListener('click', (e) => {
     const b = e.target.closest('.tag-mode-btn');
@@ -4968,8 +5355,31 @@ function initSlideInAccordion(slideInSelector, opts = {}) {
   const observers = new WeakMap();
   const dynamicHeight = opts.dynamicHeight ?? true;
 
+  // NEW: optional scroll-to-top on open (off by default)
+  const scrollOnOpen = opts.scrollOnOpen ?? false;
+  const scrollBehavior = opts.scrollBehavior || 'smooth';
+  let initialising = true;
+
   // choose the real scroll column, not the whole slide-in
   const container = root.querySelector('.vertical-content') || root;
+
+  function scrollSectionToTop(sec) {
+    if (!scrollOnOpen) return;
+
+    // reuse existing scroll-locator used by scroll-up buttons
+    const scroller =
+      (typeof nearestScroller === 'function')
+        ? nearestScroller(sec)
+        : container;
+
+    if (!scroller) return;
+
+    const secTop = sec.getBoundingClientRect().top;
+    const scrollerTop = scroller.getBoundingClientRect().top;
+    const targetTop = secTop - scrollerTop + scroller.scrollTop;
+
+    scroller.scrollTo({ top: targetTop, behavior: scrollBehavior });
+  }
 
   function measureOpenHeight(sec) {
     const content = sec.querySelector('.section-content');
@@ -5054,6 +5464,11 @@ function initSlideInAccordion(slideInSelector, opts = {}) {
       observers.set(content, ro);
     }
 
+    // NEW: when a user opens a section, bring it to the top of the scroll container
+    if (!initialising) {
+      requestAnimationFrame(() => scrollSectionToTop(sec));
+    }
+
     if (focusHeader && header) header.focus();
   }
 
@@ -5094,6 +5509,9 @@ function initSlideInAccordion(slideInSelector, opts = {}) {
   // initial: open first, close rest
   openSection(sections[0]);
   sections.slice(1).forEach(closeSection);
+
+  // NEW: prevent scroll on the initial auto-open
+  initialising = false;
 
   root._accordion = { openSection, closeSection, toggleSection };
 }
@@ -5359,14 +5777,15 @@ function initOverlayMenu() {
     viralatmospheres: ['Blah','Blub'],
     about: ['About MoRePPaR','The Research Project','Summer School','The Book','References'],
     projects: ['Project One','Project Two','Project Three'],
-    team: ['Member One','Member Two','Member Three']
+    team: ['Our Team']
   };
 
   // 2) Label → subpage id + header-left copy
   const SUBPAGE_ROUTES = {
     'About MoRePPaR':       { id: 'subpage-about-moreppar',  header: 'About MoRePPaR' },
     'The Research Project': { id: 'subpage-about-this-project',   header: 'About this project' }, // optional if you add this id later
-    'References':           { id: 'subpage-references',          header: 'References' }
+    'References':           { id: 'subpage-references',          header: 'References' },
+    'Our Team':             { id: 'subpage-team',               header: 'Our Team' },
   };
 
   function setActiveMenu(target){
@@ -5426,6 +5845,7 @@ function initOverlayMenu() {
 // === Subpage initializers (run when a subpage is opened) ===
 const SUBPAGE_INITS = {
   'subpage-references': initReferencesSubpage,
+  'subpage-team': initTeamSubpage,
 };
 
 function runSubpageInit(el, id) {
@@ -5474,6 +5894,20 @@ async function initReferencesSubpage(root) {
     console.error('[references] load failed', err);
     right.innerHTML = '<p>Failed to load references.</p>';
   }
+}
+
+function initTeamSubpage(root) {
+  // If authors already rendered, this is cheap; if not, it renders now.
+  renderAuthorsSubpage?.();
+
+  // Wire accordion AFTER we are visible
+  requestAnimationFrame(() => {
+    initSlideInAccordion('#subpage-team', {
+      mode: 'accordion',
+      dynamicHeight: false,
+      scrollOnOpen: true
+    });
+  });
 }
 
 // Show a text sub-page (by id), hide others, and set header-left
@@ -5551,6 +5985,136 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('resize', updateRightCounterOffset);
 });
 
+// === Rich text enhancement: linkify URLs and embed YouTube ===
+
+// Try to extract a YouTube video ID from a URL string
+function extractYouTubeId(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./i, '');
+    let id = null;
+
+    if (host === 'youtu.be') {
+      id = u.pathname.slice(1);
+    } else if (host === 'youtube.com' || host.endsWith('.youtube.com')) {
+      if (u.pathname === '/watch') {
+        id = u.searchParams.get('v');
+      } else if (u.pathname.startsWith('/embed/')) {
+        id = u.pathname.split('/')[2] || null;
+      } else if (u.pathname.startsWith('/shorts/')) {
+        id = u.pathname.split('/')[2] || null;
+      }
+    }
+
+    if (!id) return null;
+    return id.replace(/[^-\w]/g, '');
+  } catch {
+    return null;
+  }
+}
+
+// Create a YouTube embed wrapper for a given video id
+function createYouTubeEmbed(url, videoId) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'yt-embed';
+
+  const iframe = document.createElement('iframe');
+  iframe.src = 'https://www.youtube-nocookie.com/embed/' + videoId;
+  iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+  iframe.allowFullscreen = true;
+  iframe.loading = 'lazy';
+  iframe.title = 'YouTube video';
+
+  wrapper.appendChild(iframe);
+  return wrapper;
+}
+
+// Replace URLs inside a single text node by <a> or YouTube embeds
+function linkifyTextNode(textNode) {
+  const text = textNode.nodeValue;
+  if (!text || !/https?:\/\/[^\s<]+/i.test(text)) return;
+
+  const parent = textNode.parentNode;
+  if (!parent) return;
+
+  const frag = document.createDocumentFragment();
+  const urlRegex = /https?:\/\/[^\s<]+/gi;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = urlRegex.exec(text)) !== null) {
+    const url = match[0];
+    const index = match.index;
+
+    // Text before the URL
+    if (index > lastIndex) {
+      frag.appendChild(document.createTextNode(text.slice(lastIndex, index)));
+    }
+
+    // YouTube → embed, everything else → normal link
+    const ytId = extractYouTubeId(url);
+    if (ytId) {
+      frag.appendChild(createYouTubeEmbed(url, ytId));
+    } else {
+      const a = document.createElement('a');
+      a.href = url;
+      a.textContent = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      frag.appendChild(a);
+    }
+
+    lastIndex = index + url.length;
+  }
+
+  // Remaining text after the last URL
+  if (lastIndex < text.length) {
+    frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+  }
+
+  parent.replaceChild(frag, textNode);
+}
+
+// Walk a subtree and enhance text nodes (skip anchors, scripts, etc.)
+function walkEnhancer(node) {
+  if (!node) return;
+
+  // Text node
+  if (node.nodeType === 3) { // Node.TEXT_NODE
+    linkifyTextNode(node);
+    return;
+  }
+
+  // Only traverse elements
+  if (node.nodeType !== 1) return; // Node.ELEMENT_NODE
+
+  const tag = node.tagName;
+  if (!tag) return;
+
+  // Do NOT walk into these elements (already links or code-like)
+  const skip = ['A', 'IFRAME', 'SCRIPT', 'STYLE', 'CODE', 'PRE', 'TEXTAREA', 'BUTTON'];
+  if (skip.includes(tag)) return;
+
+  // Iterate children carefully because linkifyTextNode can replace nodes
+  let child = node.firstChild;
+  while (child) {
+    const next = child.nextSibling;
+    walkEnhancer(child);
+    child = next;
+  }
+}
+
+// Public helper: enhance all .content-section .section-content under a root
+function enhanceContentSections(root) {
+  const base = (root && root.querySelectorAll) ? root : document;
+  const containers = base.querySelectorAll('.content-section .section-content');
+  containers.forEach(container => {
+    walkEnhancer(container);
+  });
+}
+
+window.enhanceContentSections = enhanceContentSections;
+
 function applyHeaderOffset() {
   const header = document.querySelector('header');
   if (!header) return;
@@ -5608,6 +6172,11 @@ function initScrollUpButtons() {
 
 document.addEventListener('DOMContentLoaded', () => {
   applyHeaderOffset();
+
+  // Enhance any static content sections (if present on initial load)
+  try {
+    window.enhanceContentSections?.(document);
+  } catch {}
 
   // Update on window resize
   window.addEventListener('resize', applyHeaderOffset);
