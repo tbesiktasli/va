@@ -80,6 +80,126 @@
     color: var(--main-font-color);
   }
 
+  /* ================= Prepage / Splash Screen ================= */
+
+  .prepage {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: var(--main-bg-color) url("img/") center center / contain no-repeat;
+    color: var(--main-font-color);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 24px 28px;
+    opacity: 1;
+    transition: opacity 400ms ease;
+  }
+
+  body.has-prepage {
+    overflow: hidden;
+  }
+
+  /* Top row: "funded by" + logos centered together */
+  .prepage-top {
+    display: flex;
+    justify-content: center;   /* centers text + logos as a unit */
+    align-items: center;
+    gap: 10px;
+    font-size: 0.95em;
+    opacity: 0.9;
+  }
+
+  .prepage-funded-logos {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .prepage-funded-logos img {
+    height: 28px;
+    width: auto;
+  }
+
+  /* Center hero block */
+  .prepage-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 12px;
+    margin-top: -4vh; /* slight optical centering */
+  }
+
+  /* Use ONLY the font sizes from gallery title box */
+  .prepage-headline {
+    font-size: 4.5em;   /* matches .title-box h2 size */ 
+    line-height: 0.9;
+    margin: 0;
+    font-style: italic;
+  }
+
+  .prepage-subline {
+    font-size: 1.5em; /* matches .title-box h3 size */
+    line-height: 1.3;
+    margin: 0;
+    margin-top: 10px;
+    font-weight: 200;
+  }
+
+  .prepage-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 30px;
+  }
+
+  /* neutralize global .button margin-top in this context */
+  #prepage .button {
+    margin-top: 0;
+  }
+
+  /* Bottom row: left text pinned left, logos centered independent */
+  .prepage-bottom {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    font-size: 0.95em;
+    opacity: 0.9;
+  }
+
+  .prepage-collab-text {
+    justify-self: start;
+  }
+
+  .prepage-collab-logos {
+    justify-self: center;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .prepage-collab-logos img {
+    height: 24px;
+    width: auto;
+  }
+
+  /* Step 1: fade out */
+  .prepage.is-fading {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* Step 2: remove from layout after fade */
+  .prepage.is-hidden {
+    display: none;
+  }
+
+  /* small-screen safety */
+  @media (max-width: 700px) {
+    .prepage-headline { font-size: 2.8em; }
+    .prepage-subline  { font-size: 1.3em; }
+  }
+
   .header-center, h1, h2, h3, object, .wide-content .gallery-box .column .item.text, .vertical-content .topics {
     font-family: "Noto Serif Display", serif;
     font-optical-sizing: auto;
@@ -348,6 +468,21 @@
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
+  }
+
+  /* YouTube embeds inside content sections */
+  .content-section .yt-embed {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    margin: 1.5rem 0;
+  }
+
+  .content-section .yt-embed iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
   }
   
   .detail-text {
@@ -2352,6 +2487,123 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   margin: 0 0 12px;
 }
 .text-subpage .two-col-row .right p:last-child { margin-bottom: 0; }
+
+/* ================= Our Team / Authors subpage ================= */
+
+.text-subpage .authors-accordion {
+  margin-top: 0px;
+}
+
+/* Make author sections collapsible (reuse global collapsible rules) */
+.text-subpage .author-section {
+  padding-top: 0; /* tighter; header already provides spacing */
+}
+
+/* Header look + clickability */
+.text-subpage .author-section .section-header {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  cursor: pointer;
+  padding: 22px 0;
+}
+
+.text-subpage .author-section .author-name {
+  font-family: "Noto Serif Display", serif;
+  font-size: 1.6em;
+  font-style: italic;
+  font-weight: 500;
+  margin: 0;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* Team subpage: animate height + fade content in nicely */
+#subpage-team .author-section.collapsible .section-content {
+  max-height: 0;
+  overflow: hidden;
+
+  opacity: 0;                 /* NEW: hidden while collapsed */
+  transition:
+    max-height .35s ease,
+    opacity .2s ease;         /* NEW */
+}
+
+/* When open: fade in slightly AFTER height starts expanding */
+#subpage-team .author-section.collapsible.is-open .section-content {
+  overflow: visible;
+  opacity: 1;                 /* NEW */
+
+  transition-delay:
+    0ms,                      /* max-height: no delay */
+    120ms;                    /* opacity: small delay for nicer feel */
+}
+
+/* Author meta */
+.text-subpage .author-meta .position-dept {
+  font-size: 1em;
+  margin-bottom: 8px;
+}
+.text-subpage .author-meta .institution {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95em;
+  color: var(--main-light-font-color);
+}
+.text-subpage .author-meta .location-icon {
+  width: 14px;
+  height: 14px;
+  opacity: 0.8;
+}
+
+/* Square author photo */
+.text-subpage .author-photo-wrap {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: var(--main-bright-bg-color);
+  overflow: hidden;
+}
+.text-subpage .author-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+#subpage-team .people-heading {
+  margin-top: 80px;   /* tweak value as you like */
+  margin-bottom: 20px;
+}
+
+/* Team subpage only: remove global chevron on h3,
+  keep only the far-right chevron on .section-header */
+#subpage-team .author-section.collapsible h3::after {
+  content: none !important;
+}
+
+#subpage-team .two-col-table {
+  margin-top: 50px;
+}
+
+#subpage-team .two-col-row .left {
+  width: 80%;
+}
+
+#subpage-team .right img {
+  margin-top: 0;
+  padding-left: 0;
+}
+
+/* Team subpage only: don't inherit global 50% right-column limit */
+#subpage-team .two-col-row .right {
+  padding-top: 0;
+  max-width: none;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  padding-top: 0; /* optional: avoids extra top padding in rows */
+}
 
 /* === Scroll-up CTA (generic for any .text-subpage) === */
 .scroll-up-cta {
