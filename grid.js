@@ -319,6 +319,7 @@ export class Grid {
       onClose = () => {},
     } = {}) {
       const panel = document.createElement('div');
+      let wsInline = null;  // ✅ add
       const formattedDate = this._formatDetailDate(obj.date);
       // text objects → use Name if present, else Description
       // everything else → always Description
@@ -344,10 +345,10 @@ export class Grid {
           (obj.type === 'video' && obj.video) ||
           (obj.type === 'audio' && obj.audio)
             ? `
-              <div class="detail-media">
+              <div class="detail-media ${obj.type === 'audio' ? 'audio' : ''}">
                 ${obj.type === 'image' ? `<img src="${obj.image}" alt="">` : ''}
                 ${obj.type === 'video' ? `<video src="${obj.video}" controls playsinline style="width:100%;height:auto"></video>` : ''}
-                ${obj.type === 'audio' ? `<audio src="${obj.audio}" controls style="width:100%"></audio>` : ''}
+                ${obj.type === 'audio' ? `<div class="wave" aria-label="Waveform"></div>` : ''}
               </div>
               `
             : ''
@@ -377,6 +378,47 @@ export class Grid {
         ev.stopPropagation();
         onClose();
       });
+
+      // --- inline WaveSurfer for audio detail panels
+      if (obj.type === 'audio' && obj.audio) {
+        const waveEl = panel.querySelector('.detail-media.audio .wave');
+        if (waveEl) {
+          // create using shared helper if available
+          if (window.createWave) {
+            wsInline = window.createWave(waveEl, obj.audio, { height: 70 });
+          } else if (window.WaveSurfer) {
+            wsInline = window.WaveSurfer.create({
+              container: waveEl,
+              height: 70,
+              barWidth: 1,
+              barGap: 1,
+              normalize: true,
+              responsive: true,
+              interact: true,
+              cursorWidth: 1,
+            });
+            wsInline.load(obj.audio);
+          }
+
+          panel.__wsInline = wsInline; // allow exitDetail() to destroy reliably
+
+          // click toggles play/pause; stopPropagation prevents closing detail
+          waveEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            wsInline?.playPause?.();
+          });
+
+          waveEl.addEventListener('mouseenter', (e) => {
+            e.stopPropagation();
+            try { wsInline?.play?.(); } catch {}
+          }, { passive: true });
+
+          waveEl.addEventListener('mouseleave', (e) => {
+            e.stopPropagation();
+            try { wsInline?.pause?.(); } catch {}
+          }, { passive: true });
+        }
+      }
 
       // --- Open → full-page detail
       const openLink = panel.querySelector('.detail-link');
@@ -705,7 +747,10 @@ export class Grid {
     
       // Remove panel
       const panel = el.querySelector('.detail-panel');
-      if (panel) panel.remove();
+      if (panel) {
+        try { panel.__wsInline?.destroy?.(); } catch {}
+        panel.remove();
+      }
     
       // Restore other tiles only if we pushed them (ungrouped detail case)
       if (pushed) {
@@ -1037,14 +1082,20 @@ export class Grid {
 
           // TEMP: eager-load (disable hover-lazy)
           ws.load(object.audio, peaks, duration);
-          // keep optional hover play/pause hygiene
-          objectDiv.addEventListener('mouseenter', () => { try { ws.play?.(); } catch {} });
-          objectDiv.addEventListener('mouseleave', () => { try { ws.pause?.(); } catch {} });
 
-          // 4) Optional hygiene
-          objectDiv.addEventListener('mouseleave', () => {
-            if (ws.isPlaying && ws.isPlaying()) ws.pause();
-          });
+          // Hover play/pause for tiles — disabled when tile is in inline detail
+          const playOnHover = () => {
+            if (objectDiv.classList.contains('is-detail')) return;
+            try { ws.play?.(); } catch {}
+          };
+
+          const pauseOnLeave = () => {
+            if (objectDiv.classList.contains('is-detail')) return;
+            try { ws.pause?.(); } catch {}
+          };
+
+          objectDiv.addEventListener('mouseenter', playOnHover, { passive: true });
+          objectDiv.addEventListener('mouseleave', pauseOnLeave, { passive: true });
         }
         
         const tagList = Array.isArray(object.connectingTags)
