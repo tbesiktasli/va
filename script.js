@@ -9,6 +9,7 @@ import { Grid } from './grid.js';
 // 'mixed'  → dummy data + all groups from Strapi
 // 'strapi' → only all groups from Strapi 
 const DATA_MODE = 'strapi'; // change to 'mixed' or 'strapi' as needed
+const SHOULD_USE_STRAPI = (DATA_MODE === 'strapi' || DATA_MODE === 'mixed');
 
 // ===== STRAPI SETUP =====
 const STRAPI = {
@@ -40,6 +41,9 @@ function createWave(container, src, overrides = {}) {
   if (src) ws.load(src);
   return ws;
 }
+
+// ✅ add this right here
+window.createWave ??= createWave;
 
 // ================= Prepage / Splash Screen =================
 function initPrepage() {
@@ -342,6 +346,22 @@ async function seedConnectingTagsFromStrapi() {
       return;
     }
 
+    // Sort dynamic (Strapi) groups by numeric Strapi id ascending
+    groups.sort((a, b) => {
+      const na = Number(a.id);
+      const nb = Number(b.id);
+
+      // If both are numeric ids, sort numerically
+      if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+
+      // If only one is numeric, put numeric ones first
+      if (Number.isFinite(na)) return -1;
+      if (Number.isFinite(nb)) return 1;
+
+      // Fallback: stable string sort
+      return String(a.id).localeCompare(String(b.id));
+    });
+
     // Replace current groups with the dynamic ones from Strapi
     TAG_GROUPS.length = 0;
     groups.forEach(g => TAG_GROUPS.push(g));
@@ -513,7 +533,7 @@ window.audioPool = audioPool;
 
 let objectTypes = ['image', 'text', 'video', 'audio'];
 
-let objects = [];
+const dummyObjects = [];
 const groupCount = 5;
 
 // Structured dummy meta per group (title, subtitle, location)
@@ -556,6 +576,8 @@ for (let gid = 1; gid <= groupCount; gid++) {
 }
 // Expose for other modules (e.g., Grid UI if needed)
 window.groupMetaById = groupMetaById;
+
+const dummyGroupMetaById = { ...groupMetaById }; // snapshot for dummy/mixed
 
 
 function randomDateString(startYear = 2018, endYear = 2025) {
@@ -714,27 +736,31 @@ for(let i=0; i<100; i++) {
   }
 
   newObject.tags = getRandomTags();
+  newObject.references = ''; // keep schema aligned with Strapi mode
 
-  objects.push(newObject);
+  // keep dummy schema aligned with app schema
+  newObject.connectingTags = newObject.tags;
+  
+  dummyObjects.push(newObject);
+  
   //console.log(newObject);
 }
 
 // END CREATE DUMMY OBJECTS
 
+// Active dataset starts as dummy; Strapi/mixed will overwrite later.
+let objects = dummyObjects;
 
 // START GROUP CALCULATION AND ADD TO OBJECTS
 
 // END GROUP CALCULATION
 
 // === Group labels (prefer whatever you already stored on objects) ===
-const GROUP_IDS = [...new Set(objects.map(o => o.groupId))];
+const GROUP_IDS = [...new Set(dummyObjects.map(o => o.groupId))];
 const GROUP_LABELS = {};
 for (const gid of GROUP_IDS) {
-  // Try to find a name from any object in that group; fallback to dummy
-  //const any = objects.find(o => o.groupId === gid);
-  //GROUP_LABELS[gid] = any?.groupName || `City ${gid}, Country`;
-  const any = objects.find(o => o.groupId === gid);
-  GROUP_LABELS[gid] = groupMetaById[gid]?.location || `Province ${gid}, Country`;
+  const any = dummyObjects.find(o => o.groupId === gid);
+  GROUP_LABELS[gid] = dummyGroupMetaById[gid]?.location || `Province ${gid}, Country`;
 }
 
 // === Dummy theme content per group (≥5 themes each) ===
@@ -1422,6 +1448,7 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
       // NEW: name/title from Strapi
       name: a.Name || a.name || a.Title || a.title || '',
       description: a.Description || a.description || a.Caption || a.caption || '',
+      references : a.References || a.references || '',
       content: a.Content || a.content || '',
       grid_x: 0, grid_y: 0,
       width, height,
@@ -1537,18 +1564,23 @@ async function batchFetchUploadFilesByNames(names) {
 }
 
 // Unified loader that returns {objects, groupMeta} based on DATA_MODE
+// Unified loader that returns {objects, groupMeta} based on DATA_MODE
 async function loadData(DATA_MODE) {
   if (DATA_MODE === 'dummy') {
-    return { objects, groupMeta: groupMetaById };
+    return { objects: dummyObjects, groupMeta: dummyGroupMetaById };
   }
+
   const s = await loadStrapiAllGroupsAndObjects();
+
   if (DATA_MODE === 'strapi') {
     return { objects: s.objects, groupMeta: s.groupMeta };
   }
-  // mixed: dummy + strapi (merge metas; keep both sets of objects)
-  const mergedMeta = { ...groupMetaById, ...s.groupMeta };
-  return { objects: [...objects, ...s.objects], groupMeta: mergedMeta };
+
+  // mixed = dummy + strapi
+  const mergedMeta = { ...dummyGroupMetaById, ...s.groupMeta };
+  return { objects: [...dummyObjects, ...s.objects], groupMeta: mergedMeta };
 }
+
 
 // START GRID OBJECT
 
@@ -1565,6 +1597,15 @@ window.gridObject = null;
     // Use the chosen data source
     objects = loaded.objects;
     Object.assign(groupMetaById, loaded.groupMeta);
+
+    // NEW: rebuild tag/object compatibility from the active dataset
+    buildTagIndex(objects);
+    updateTagAvailability?.();
+    updateObjectGlowsWithGradient?.();
+    scheduleOffgridUpdate?.();
+    renderSelectionBar?.();
+    syncDetailTagHighlights?.();
+
     console.log('[data] mode=', DATA_MODE, 'groups=', Object.keys(loaded.groupMeta).length, 'objects=', loaded.objects.length);
     gridObject = new Grid('grid', objects, {});
     window.gridObject = gridObject;
@@ -1653,26 +1694,69 @@ function getAttrs(entry) {
 
 // END GRID OBJECT
 
+function isTextPageActive() {
+  return document.body.classList.contains('in-text-subpage')
+    || !!document.querySelector('.text-subpage.active')
+    || document.getElementById('research-page')?.classList.contains('active');
+}
+
 function refreshSlideInsVisibility() {
   const slideIns = document.getElementById('slide-ins');
   if (!slideIns) return;
 
   const galleryActive = document.getElementById('group-gallery')?.classList.contains('active');
-  const state        = window.gridObject?.currentState;
-  const detailActive = document.getElementById('detail-content')?.classList.contains('active');
+  const state         = window.gridObject?.currentState;
+  const detailActive  = document.getElementById('detail-content')?.classList.contains('active');
 
-  // Detect ad-hoc gallery via history.state or a body class (see Step 2)
+  // Detect ad-hoc gallery via history.state or a body class
   const isAdhoc = !!history.state?.adhoc || document.body.classList.contains('in-adhoc-gallery');
 
-  // Normally we only show the sidebar in these grid states…
+  // Grid states where menu sidebar is normally allowed
   const baseAllowedStates = (state === 'ungrouped' || state === 'clustered' || state === 'pre-cluster');
 
-  // …but in ad-hoc gallery we want it visible regardless of state, and even though a gallery is active.
-  const shouldShow = ((baseAllowedStates || isAdhoc) && (!galleryActive || isAdhoc) && !detailActive);
+  // 1) MENU slide-ins (Discover Connections)
+  // Keep existing behavior: visible in grid + adhoc tag gallery, hidden in detail and real group gallery
+  const textActive = (typeof isTextPageActive === 'function' && isTextPageActive());
 
-  slideIns.classList.toggle('visible', !!shouldShow);
+  const shouldShowMenu =
+    !textActive &&
+    (baseAllowedStates || isAdhoc) &&
+    (!galleryActive || isAdhoc) &&
+    !detailActive;
 
-  if (!shouldShow) {
+
+  // 2) CONTENT slide-ins (the 3 new ones)
+  // Show on detail or on non-adhoc group gallery
+  const shouldShowContent =
+    detailActive || (galleryActive && !isAdhoc);
+
+  let anyAllowed = false;
+
+  slideIns.querySelectorAll('.slide-in').forEach(el => {
+    const mode = el.dataset.mode || 'content'; // default all non-menu to content
+    const allowed = (mode === 'menu') ? shouldShowMenu : shouldShowContent;
+    anyAllowed = anyAllowed || allowed;
+
+    el.classList.toggle('is-hidden', !allowed);
+
+    // If a sidebar becomes disallowed, collapse & clean it
+    if (!allowed) {
+      el.classList.remove('expanded', 'secondary-open');
+      el.querySelector('.vertical-content')?.classList.remove('visible');
+
+      const panel = el.querySelector('.secondary-pane');
+      if (panel) {
+        panel.setAttribute('aria-hidden', 'true');
+        panel.innerHTML = '';
+      }
+    }
+  });
+
+  // Container visible if any child is allowed
+  slideIns.classList.toggle('visible', anyAllowed);
+
+  if (!anyAllowed) {
+    // Safety: collapse everything if container is hidden
     slideIns.querySelectorAll('.slide-in').forEach(el => {
       el.classList.remove('expanded', 'secondary-open');
       el.querySelector('.vertical-content')?.classList.remove('visible');
@@ -1966,42 +2050,54 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
   function closeGallery(options = {}) {
     const viaPopstate = !!options.viaPopstate;
   
+    // Reset scroll positions (same behavior you had)
     try {
       groupGalleryEl?.scrollTo({ left: 0, top: 0, behavior: 'auto' });
       groupGalleryEl?.querySelector('.gallery-box')?.scrollTo?.({ left: 0, top: 0, behavior: 'auto' });
     } catch {}
   
+    // Detach gallery observers / media behaviors
     window.__galleryIO__?.onClose?.();
     window.__galleryVideos__?.onClose?.();
     window.__galleryImages__?.onClose?.();
   
+    // Clear gallery DOM
     const box = groupGalleryEl?.querySelector('.gallery-box');
     if (box) box.innerHTML = '';
   
-    groupGalleryEl.classList.remove('active');
+    // Hide gallery, show grid again
+    groupGalleryEl?.classList.remove('active');
     if (gridShellEl) gridShellEl.style.display = '';
   
-    // 👇 critical bits
-    document.body.classList.remove('in-group-gallery');
+    // Remove all gallery-mode markers in one go
+    document.body.classList.remove('in-group-gallery', 'in-adhoc-gallery', 'in-gallery');
     delete document.body.dataset.currentGroupId;
-    window.__dispatchViewChange();
-
-    document.body.classList.remove('in-adhoc-gallery');
-    window.__dispatchViewChange();
+  
+    // If we are closing WITHOUT browser back, clear gallery/adhoc history flags
+    if (!viaPopstate && history.state?.gallery) {
+      try {
+        const nextState = { ...(history.state || {}) };
+        delete nextState.gallery;
+        delete nextState.adhoc;
+        delete nextState.gid;
+  
+        let newHash = location.hash;
+        if (newHash === '#group-gallery' || newHash === '#gallery') newHash = '';
+  
+        history.replaceState(nextState, '', location.pathname + location.search + newHash);
+      } catch {}
+    }
+  
+    // Update global view + selection bar once, after state is clean
+    window.__dispatchViewChange?.();
     if (typeof window.renderSelectionBar === 'function') {
       window.renderSelectionBar();
     }
   
     refreshSlideInsVisibility();
-
-    document.body.classList.remove('in-group-gallery', 'in-adhoc-gallery');
-    window.__dispatchViewChange();
-    if (typeof window.renderSelectionBar === 'function') {
-      window.renderSelectionBar();           // if tags are still selected, bar (and button) come back
-    }
-
+  
     console.log('[gallery] closed');
-  }
+  }  
   
   window.closeGallery = closeGallery;
 
@@ -2489,6 +2585,45 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
     }
 
+    function renderReferencesSection(obj) {
+      const host = document.getElementById('detail-references');
+      if (!host || !obj) return;
+    
+      const esc = s => String(s ?? '')
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;');
+    
+      // Similar to your media-description extraction, but scoped here
+      const extractText = (val) => {
+        if (val == null) return '';
+        if (typeof val === 'string' || typeof val === 'number') return String(val);
+        if (Array.isArray(val)) return val.map(extractText).join('\n');
+        if (typeof val === 'object') {
+          if (val.text) return String(val.text);
+          if (val.children) return extractText(val.children);
+          return Object.values(val).map(extractText).join('\n');
+        }
+        return '';
+      };
+    
+      const raw = extractText(obj.references).trim();
+    
+      if (!raw) {
+        host.innerHTML = '<p>No references.</p>';
+        return;
+      }
+    
+      const paras = raw
+        .split(/\n{2,}/)   // blank-line separated paragraphs
+        .map(p => p.trim())
+        .filter(Boolean);
+    
+      host.innerHTML = paras
+        .map(p => `<p>${esc(p).replace(/\n/g,'<br>')}</p>`)
+        .join('');
+    }    
+
     function renderRelatedThemes(obj) {
       const host = document.getElementById('related-themes');
       if (!host) return;
@@ -2704,6 +2839,7 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       const obj = allObjects.find(o => String(o.id) === String(objectId));
       if (obj) {
         renderDetailPrimary(obj);
+        renderReferencesSection(obj); // NEW
         renderRelatedThemes(obj);
         renderRelatedObjects(obj);
         ensureDetailNav(obj);
@@ -2964,7 +3100,7 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
   })();
  
 
-  backBtnEl?.addEventListener('click', (e) => { e.preventDefault(); closeGallery(); });
+  //backBtnEl?.addEventListener('click', (e) => { e.preventDefault(); closeGallery(); });
 
   if (!gridEl) {
     console.log('[debug] #grid element not found at script load');
@@ -4698,8 +4834,10 @@ window.addEventListener('DOMContentLoaded', async () => {
   setTagGroupPolicy('GLOBAL');       // 'GLOBAL' or 'SCOPED'
   setTagMode('AND');                 // 'AND' or 'OR'
 
-  // 1) try to pull ConnectingTag from Strapi and override TAG_GROUPS
-  await seedConnectingTagsFromStrapi();
+  // 1) pull ConnectingTag only when using Strapi data
+  if (SHOULD_USE_STRAPI) {
+    await seedConnectingTagsFromStrapi();
+  }
 
   initSlideInTags();
   
@@ -4716,10 +4854,11 @@ window.addEventListener('DOMContentLoaded', async () => {
     closeMenuSecondary('#discover-connections');
   });
 
-  await seedThemesFromStrapi();
+  if (SHOULD_USE_STRAPI) {
+    await seedThemesFromStrapi();
+    await seedAuthorsFromStrapi();
+  }
   renderThemesUI();
-
-  await seedAuthorsFromStrapi();
   renderAuthorsSubpage();
 
   // Remove active underline when the Themes section is closed
@@ -4915,9 +5054,6 @@ function syncThemeToggleUI() {
       }
     }
   }
-
-  // call once after `objects` are generated:
-  buildTagIndex(objects);
 
   // Helper: does this object have all required tags (using connectingTags only)?
   function objectHasAllTags(o, requiredSet) {
@@ -5878,18 +6014,23 @@ async function initReferencesSubpage(root) {
     });
 
     right.innerHTML = '';
+
+    const htmlPieces = [];
     rows.forEach(it => {
       const a = (it && (it.attributes || it)) || {};
       const name = a[REFERENCES_PAGE.field] ?? a[REFERENCES_PAGE.field.toLowerCase()];
       if (!name) return;
-      const p = document.createElement('p');
-      p.textContent = name;
-      right.appendChild(p);
+    
+      const html = toParagraphHtml(name); // returns <p>...</p><p>...</p>...
+      if (html) htmlPieces.push(html);
     });
-
+    
+    right.innerHTML = htmlPieces.join('');
+    
     if (!right.children.length) {
       right.innerHTML = '<p>No references yet.</p>';
     }
+
   } catch (err) {
     console.error('[references] load failed', err);
     right.innerHTML = '<p>Failed to load references.</p>';
@@ -5938,6 +6079,10 @@ function openTextSubpage(sectionId, headerText) {
 
   // 4) Focus for a11y
   el?.focus?.();
+  
+  // NEW: re-evaluate sidebars + selection bar on text pages
+  refreshSlideInsVisibility();
+  window.__dispatchViewChange?.();
 }
 window.openTextSubpage = openTextSubpage;
 
@@ -6309,9 +6454,12 @@ function selectionBarIsAllowed() {
     state = window.gridObject?.prevState || state;
   }
 
+  // NEW: never show the selection bar on text pages / research page
+  if (typeof isTextPageActive === 'function' && isTextPageActive()) return false;
+
   // Never in galleries
   if (b.classList.contains('in-group-gallery'))  return false;
-  if (b.classList.contains('in-adhoc-gallery'))  return false;
+  if (b.classList.contains('in-adhoc-gallery'))  return true;
 
   // Allowed grid states (instant show during clustering)
   return state === 'clustered' || state === 'ungrouped' || state === 'pre-cluster';
@@ -6498,6 +6646,11 @@ function renderSelectionBar() {
     return;
   }
 
+  // Are we inside the ad-hoc (tag) gallery?
+  const isAdhoc =
+    document.body.classList.contains('in-adhoc-gallery') ||
+    !!history.state?.adhoc;
+
   // Current selection
   const raw  = window.activeTags;
   const tags = Array.isArray(raw) ? raw : (raw instanceof Set ? [...raw] : []);
@@ -6528,23 +6681,32 @@ function renderSelectionBar() {
     list.appendChild(li);
   }
 
-  // Right-side actions (Create new gallery)
-  let actions = bar.querySelector('.sb-actions');
-  if (!actions) {
-    actions = document.createElement('div');
-    actions.className = 'sb-actions';
-    bar.appendChild(actions);
+  // Right-side actions (Create new gallery) — NOT in ad-hoc tag gallery
+  const existingActions = bar.querySelector('.sb-actions');
+
+  if (isAdhoc) {
+    // In tag gallery, the bar is useful but this button isn't
+    if (existingActions) existingActions.remove();
+  } else {
+    let actions = existingActions;
+    if (!actions) {
+      actions = document.createElement('div');
+      actions.className = 'sb-actions';
+      bar.appendChild(actions);
+    }
+    actions.innerHTML = '';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'button btn-create-gallery';
+    btn.innerHTML = '<span class="text">Create new gallery</span><span class="icon">→</span>';
+    btn.addEventListener('click', () => {
+      const objs = objectsMatchingCurrentFilter();
+      window.openTagsGallery(objs, tags);
+    });
+
+    actions.appendChild(btn);
   }
-  actions.innerHTML = '';
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'button btn-create-gallery';
-  btn.innerHTML = '<span class="text">Create new gallery</span><span class="icon">→</span>';
-  btn.addEventListener('click', () => {
-    const objs = objectsMatchingCurrentFilter();
-    window.openTagsGallery(objs, tags);
-  });
-  actions.appendChild(btn);
 
   // Show
   bar.classList.add('show');
