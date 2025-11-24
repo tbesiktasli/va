@@ -777,6 +777,19 @@ header {
   stroke-width: 1;
 }
 
+/* Text-to-speech FAB on detail page (bottom-left, same edge gap as back button) */
+#content-tts-button {
+  position: absolute;
+  left: 12px;     /* same X as #content-back-button */
+  bottom: 20%;   /* same edge gap but at bottom */
+  z-index: 1200;
+}
+
+/* When hidden, remove from layout */
+#content-tts-button[hidden] {
+  display: none !important;
+}
+
 /* Ungroup button inside the group gallery header */
 #gallery-ungroup {
   position: absolute;
@@ -1002,6 +1015,18 @@ body.in-group-gallery:not(.in-adhoc-gallery) #gallery-ungroup {
   max-width: 40px;            /* collapsed = handle only */
   transition: max-width 0.4s ease;
   overflow: hidden;           /* hide body during expansion */
+}
+
+/* Collapsed content slide-ins: keep layout for animation, but hide & unfocus content */
+#slide-ins .slide-in:not([data-mode="menu"]):not(.expanded) > .vertical-content {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Expanded content slide-ins: show content normally */
+#slide-ins .slide-in:not([data-mode="menu"]).expanded > .vertical-content {
+  visibility: visible;
+  pointer-events: auto;
 }
 
 /* Non-menu slide-ins (content sidebars):
@@ -1768,11 +1793,28 @@ and pin the expanded panel to the right edge. */
   width: var(--handle-w);
 }
 
-/* Body is a flex row: secondary | main */
+/* Body hidden by default so collapsed handles can't reveal content on focus */
 #slide-ins .slide-in[data-mode="menu"] .slide-in-body {
+  display: none;
+}
+
+/* Only when expanded, the body becomes the flex row */
+#slide-ins .slide-in[data-mode="menu"].expanded .slide-in-body {
   display: flex;
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/* Collapsed menu slide-ins: keep layout for animation, but hide & unfocus content */
+#slide-ins .slide-in[data-mode="menu"]:not(.expanded) .slide-in-body {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Expanded menu slide-ins: show content normally */
+#slide-ins .slide-in[data-mode="menu"].expanded .slide-in-body {
+  visibility: visible;
+  pointer-events: auto;
 }
 
 /* Secondary panel: animates width; hidden at 0 */
