@@ -1069,33 +1069,26 @@ export class Grid {
               }
             } catch (e) { /* no peaks available — fine */ }
           })();
-          // 3) Lazy-load audio ONLY on hover (first time)
-          //let loaded = false;
-          //objectDiv.addEventListener('mouseenter', () => {
-          //  if (loaded) return;
-          //  loaded = true;
-          //  // load with peaks if we have them (keeps the drawn shape, just attaches audio)
-          //  ws.load(object.audio, peaks, duration);
-          //  // optionally: auto-play on hover
-          //  // ws.once('ready', () => ws.play());
-          //});
 
           // TEMP: eager-load (disable hover-lazy)
           ws.load(object.audio, peaks, duration);
 
-          // Hover play/pause for tiles — disabled when tile is in inline detail
+          // Hover play/pause for tiles — disabled in grouped mode and when tile is in inline detail
           const playOnHover = () => {
+            if (this.currentState === 'grouped') return;         // ✅ no hover playback in grouped mode
             if (objectDiv.classList.contains('is-detail')) return;
             try { ws.play?.(); } catch {}
           };
 
           const pauseOnLeave = () => {
+            if (this.currentState === 'grouped') return;         // ✅ symmetry / avoid unnecessary calls
             if (objectDiv.classList.contains('is-detail')) return;
             try { ws.pause?.(); } catch {}
           };
 
           objectDiv.addEventListener('mouseenter', playOnHover, { passive: true });
           objectDiv.addEventListener('mouseleave', pauseOnLeave, { passive: true });
+
         }
         
         const tagList = Array.isArray(object.connectingTags)
