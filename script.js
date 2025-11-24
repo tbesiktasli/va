@@ -1361,6 +1361,24 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
     const vidStr = a.VideoPath || a.videoPath || a.video_path || null;
     const audStr = a.AudioPath || a.audioPath || a.audio_path || null;
 
+
+    // Text-to-speech (string field or upload relation)
+    const ttsStr =
+      a.TextToSpeech || a.textToSpeech || a.text_to_speech || null;
+
+    // If Strapi field is an Upload relation, try to get its URL
+    const ttsUploadUrl =
+      tryUploadUrl(a.textToSpeech) || tryUploadUrl(a.TextToSpeech);
+
+    const rawTts = ttsUploadUrl || ttsStr;
+
+    // Resolve relative Strapi upload paths -> absolute URL.
+    // Gate it so we don’t accidentally prefix plain text.
+    const textToSpeech =
+      rawTts && /^(https?:\/\/|\/|uploads\/)/i.test(rawTts)
+        ? strapiAssetUrl(rawTts)
+        : rawTts;
+
     // Upload plugin shapes (v5: field.url; v4: field.data.attributes.url)
     const im = a.image, vi = a.video, au = a.audio;
     const imUrl = im?.url || (im?.data ? (Array.isArray(im.data) ? im.data[0]?.attributes?.url : im.data?.attributes?.url) : undefined);
@@ -1445,7 +1463,6 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
       groupTitle:   groupMeta[appGroupId]?.title || '',
       date: a.Date || a.date || a.createdAt || a.updatedAt || '',
       author,
-      // NEW: name/title from Strapi
       name: a.Name || a.name || a.Title || a.title || '',
       description: a.Description || a.description || a.Caption || a.caption || '',
       references : a.References || a.references || '',
@@ -1453,6 +1470,7 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
       grid_x: 0, grid_y: 0,
       width, height,
       image, video, audio,
+      textToSpeech,
       text,
       tags: regularTags,
       connectingTags,           // ← new: what the sidebar should match
@@ -2207,6 +2225,22 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       }
     }
 
+    function updateTtsControl(obj) {
+      const btn = document.getElementById('content-tts-button');
+      if (!btn) return;
+    
+      // stop any previous TTS when switching objects
+      stopTtsAudio();
+    
+      const hasTts = obj?.type === 'text' && obj.textToSpeech;
+      if (hasTts) {
+        btn.hidden = false;
+        btn.dataset.src = obj.textToSpeech;
+      } else {
+        btn.hidden = true;
+        btn.dataset.src = '';
+      }
+    }    
 
     // Render ONLY the primary slot (title or hero media) in the detail view
     function renderDetailPrimary(obj) {
@@ -2222,6 +2256,9 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
       // basic escape
       const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+      // Replace the slot content according to object type
+      updateTtsControl(obj);
 
       // Replace the slot content according to object type
       switch (obj.type) {
@@ -2409,25 +2446,35 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
           return valEl;
         };
 
-        // Research ← group's Title (link to group gallery)
+        // Research ← group's Title (link to group gallery if group has >1 object)
         if (obj.groupTitle && obj.groupId != null && obj.groupId !== '') {
-          const html = `<a href="#" class="research-link" data-gid="${esc(obj.groupId)}">${esc(obj.groupTitle)}</a>`;
-          const researchEl = setRow('research', obj.groupTitle, { html });
+          const groupCount = getGroupObjects(obj.groupId).length;
+          const shouldLink = groupCount > 1;
 
-          if (researchEl) {
-            // overwrite any previous handler to avoid stacking
-            researchEl.onclick = (ev) => {
-              const a = ev.target.closest('.research-link');
-              if (!a) return;
-              ev.preventDefault();
-              ev.stopPropagation();
+          if (shouldLink) {
+            const html = `<a href="#" class="research-link" data-gid="${esc(obj.groupId)}">${esc(obj.groupTitle)}</a>`;
+            const researchEl = setRow('research', obj.groupTitle, { html });
 
-              const gid = a.dataset.gid;
-              openGroupGalleryFromDetail(gid);
-            };
+            if (researchEl) {
+              // overwrite any previous handler to avoid stacking
+              researchEl.onclick = (ev) => {
+                const a = ev.target.closest('.research-link');
+                if (!a) return;
+                ev.preventDefault();
+                ev.stopPropagation();
+
+                const gid = a.dataset.gid;
+                openGroupGalleryFromDetail(gid);
+              };
+            }
+          } else {
+            // Single-object group: show plain text, no click
+            const researchEl = setRow('research', obj.groupTitle || '');
+            if (researchEl) researchEl.onclick = null;
           }
         } else {
-          setRow('research', obj.groupTitle || '');
+          const researchEl = setRow('research', obj.groupTitle || '');
+          if (researchEl) researchEl.onclick = null;
         }
 
         // Researcher ← Author relation's Name(s) as clickable link(s)
@@ -2639,19 +2686,21 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
         return `${name ? `<h4>${name}</h4>` : ''}${desc ? `<p>${desc}</p>` : ''}`;
       }).join('');
     }   
+
+    // Helper: get all objects in a group (single source of truth)
+    function getGroupObjects(groupId) {
+      const all = (window.gridObject?.objects || window.objects || []);
+      const gid = String(groupId ?? '');
+      return all.filter(o => String(o.groupId) === gid);
+    }
     
     function renderRelatedObjects(obj) {
       const host = document.getElementById('related-objects');
       if (!host || !obj) return;
     
-      // Pull all objects from memory
-      const all = (window.gridObject?.objects || window.objects || []);
-    
       // Related = same group, excluding current object
-      const inGroup = all.filter(o =>
-        String(o.groupId) === String(obj.groupId) &&
-        String(o.id) !== String(obj.id)
-      );
+      const inGroup = getGroupObjects(obj.groupId)
+        .filter(o => String(o.id) !== String(obj.id));
     
       // Keep consistent ordering with your gallery
       const ordered = inGroup.slice().sort(window.galleryComparator);
@@ -2681,6 +2730,47 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
     let __detailWS = null;
     let __detailWS_RO = null;
+    // ===== Text-to-speech hover playback ==================================
+    let __ttsAudio = null;
+
+    function stopTtsAudio() {
+      if (!__ttsAudio) return;
+      try { __ttsAudio.pause(); } catch {}
+      try { __ttsAudio.currentTime = 0; } catch {}
+    }
+
+    (function bindTtsButtonOnce() {
+      const btn = document.getElementById('content-tts-button');
+      if (!btn || btn._ttsBound) return;
+      btn._ttsBound = true;
+
+      function ensureAudio() {
+        if (!__ttsAudio) {
+          __ttsAudio = new Audio();
+          __ttsAudio.preload = 'none';
+        }
+        return __ttsAudio;
+      }
+
+      btn.addEventListener('mouseenter', () => {
+        const src = btn.dataset.src;
+        if (!src) return;
+
+        const a = ensureAudio();
+        if (a.src !== src) a.src = src;
+        a.currentTime = 0;
+        a.play().catch(() => {});
+      });
+
+      btn.addEventListener('mouseleave', stopTtsAudio);
+
+      // Click should have no effect
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+    })();
+
     
     function initDetailWave() {
       const waveDiv = document.getElementById('detail-wave');
@@ -2717,10 +2807,10 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
     // Compute ordered ID list for the current object's group
     function buildDetailNavFor(obj) {
-      const all = (window.gridObject?.objects || window.objects || []);
       const groupId = String(obj.groupId);
-      const inGroup = all.filter(o => String(o.groupId) === groupId);
+      const inGroup = getGroupObjects(groupId);
       const ordered = inGroup.slice().sort(window.galleryComparator);
+      
       return {
         order: ordered.map(o => String(o.id)),
         index: ordered.findIndex(o => String(o.id) === String(obj.id)),
@@ -2828,6 +2918,8 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       // make sure previous detail waveform is gone before rendering a new one
       destroyDetailWave();
 
+      stopTtsAudio(); // ADD THIS
+
       // also clear any previous related-strip waves
       window.__relatedStripAudio?.destroy?.();
 
@@ -2910,6 +3002,7 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       __detailWS = null; __detailWS_RO = null;
 
       destroyDetailWave();
+      stopTtsAudio(); // ADD THIS
 
       detailEl.classList.remove('active');
 
@@ -3341,12 +3434,6 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
           })();
         
           let loaded = false;
-        
-          // first hover → actually load the mp3
-          //item.addEventListener('mouseenter', () => {
-          //  if (!loaded) { loaded = true; ws.load(src); }
-          //  try { ws.play(); } catch {}
-          //}, { passive: true });
 
           // TEMP: eager-load (disable hover-lazy)
           ws.load(src);
@@ -3450,177 +3537,6 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
   // Expose a tiny API so detail open/close can manage these instances
   window.__relatedStripAudio = { init, destroy: destroyAll };
-})();
-
-// === Grid audio waveforms (WaveSurfer) ===
-// Creates one WaveSurfer per #grid .object.audio tile; plays on hover, pauses on mouseout.
-(() => {
-  const grid = document.getElementById('grid');
-  if (!grid) return;
-
-  const wsMap = new Map(); // key = wave.id, val = ws instance
-
-  function initTile(el) {
-    const wave = el.querySelector('.wave');
-    const src  = el.dataset.audioSrc;
-    if (!wave || !src) return;
-
-    if (!wsMap.has(wave.id)) {
-      // create WITHOUT custom media/backend → avoids this.media.addEventListener error
-      const ws = createWave(`#${wave.id}`, null);
-      wsMap.set(wave.id, ws);
-
-      // Try to draw waveform from peaks JSON (doesn't fetch the MP3)
-      const peaksUrl = src.replace(/\.[^/.]+$/, '.peaks.json');
-      (async () => {
-        try {
-          const r = await fetch(peaksUrl, { cache: 'force-cache' });
-          if (!r.ok) return;
-          const j = await r.json();
-          const peaks = Array.isArray(j) ? j : (j.data || j.peaks);
-          const duration = j.duration || j.length;
-          if (peaks?.length) ws.load('', peaks, duration);
-        } catch {}
-      })();
-
-      // Load audio ONLY on first hover
-      //let loaded = false;
-      //el.addEventListener('mouseenter', () => {
-      //  if (!loaded) { loaded = true; ws.load(src); }
-      //  try { ws.play(); } catch {}
-      //}, { passive: true });
-      //el.addEventListener('mouseleave', () => { try { ws.pause(); } catch {} }, { passive: true });
-
-      // TEMP: eager-load (disable hover-lazy)
-      ws.load(src);
-      // keep hover to play/pause only
-      el.addEventListener('mouseenter', () => { try { ws.play(); } catch {} }, { passive: true });
-      el.addEventListener('mouseleave', () => { try { ws.pause(); } catch {} }, { passive: true });
-    }
-  }
-
-  // Lazy-init when tiles are visible
-  const io = new IntersectionObserver((entries) => {
-    entries.forEach(en => {
-      if (!en.isIntersecting) return;
-      initTile(en.target);
-      io.unobserve(en.target);
-    });
-  }, { root: null, threshold: 0.2 });
-
-  /*
-  function observeAudioTiles(root = grid) {
-    root.querySelectorAll('.object.audio').forEach(el => io.observe(el));
-  }
-  */
-
-  function observeAudioTiles(root = grid) {
-    // TEMP: eager-init all audio tiles
-    root.querySelectorAll('.object.audio').forEach(initTile);
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => observeAudioTiles(), { once: true });
-  } else {
-    observeAudioTiles();
-  }
-
-  const mo = new MutationObserver((muts) => {
-    muts.forEach(m => {
-      m.addedNodes?.forEach(node => {
-        if (node.nodeType !== 1) return;
-        //if (node.classList?.contains('object') && node.classList.contains('audio')) {
-        //  io.observe(node);
-        //}
-        //node.querySelectorAll?.('.object.audio').forEach(el => io.observe(el));
-        if (node.classList?.contains('object') && node.classList.contains('audio')) {
-            initTile(node);
-        }
-        node.querySelectorAll?.('.object.audio').forEach(initTile);
-      });
-    });
-  });
-  mo.observe(grid, { childList: true, subtree: true });
-
-  window.__gridWaves ||= {
-    pauseAll() { wsMap.forEach(ws => { try { ws.pause(); } catch {} }); }
-  };
-})();
-
-
-// === Grid audio waveforms (WaveSurfer) ===
-// Creates a waveform inside each #grid .object.audio .wave, lazy-inits on intersection.
-(() => {
-  const grid = document.getElementById('grid');
-  if (!grid) return;
-
-  // Shared registry and API exposed for grid.js to pause waves on detail open
-  const wsRegistry = new Map();
-  window.__gridWaves = {
-    pauseAll() {
-      wsRegistry.forEach(ws => { try { ws.pause?.(); } catch(_){} });
-    },
-    rescan() {
-      observeAllAudioTiles();
-    }
-  };
-
-  // Lazy-create when a tile is on screen
-  const io = new IntersectionObserver((entries) => {
-    entries.forEach(en => {
-      if (!en.isIntersecting) return;
-      const el = en.target;
-      const wave = el.querySelector('.wave');
-      const src  = el.dataset.audioSrc;
-      if (!wave || !src) return;
-
-      if (!wsRegistry.has(wave.id)) {
-        const ws = createWave(`#${wave.id}`, src);
-        ws.load(src);
-
-        // Simple play/pause toggle on click
-        el.addEventListener('click', (e) => {
-          // don't steal clicks from detail open links etc.
-          if ((e.target.closest('.detail-panel')) || (e.target.tagName === 'A')) return;
-          ws.playPause();
-        });
-
-        wsRegistry.set(wave.id, ws);
-      }
-
-      io.unobserve(el); // only need to init once
-    });
-  }, { root: null, threshold: 0.2 });
-
-  // Observe all existing audio tiles (grid items are built once at load)
-  function observeAllAudioTiles() {
-    grid.querySelectorAll('.object.audio').forEach(el => io.observe(el));
-  }
-
-  // Watch for future .object.audio tiles and observe them when they appear
-  const mo = new MutationObserver((muts) => {
-    muts.forEach(m => {
-      m.addedNodes?.forEach(node => {
-        if (node.nodeType !== 1) return;
-
-        // A tile added directly
-        if (node.classList?.contains('object') && node.classList?.contains('audio')) {
-          io.observe(node);
-        }
-
-        // Or audio tiles added deeper inside a wrapper
-        node.querySelectorAll?.('.object.audio').forEach(el => io.observe(el));
-      });
-    });
-  });
-  mo.observe(grid, { childList: true, subtree: true });
-
-  // Kick it off after the grid is created/populated
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', observeAllAudioTiles, { once: true });
-  } else {
-    observeAllAudioTiles();
-  }
 })();
 
 // === Dynamic gallery renderer (fixed 3 items per column; random item widths 100–200px) ===
@@ -5517,6 +5433,55 @@ function initSlideInAccordion(slideInSelector, opts = {}) {
     scroller.scrollTo({ top: targetTop, behavior: scrollBehavior });
   }
 
+  function scheduleScrollToTop(sec, closingSecs = []) {
+    if (!scrollOnOpen) return;
+  
+    const doScroll = () =>
+      requestAnimationFrame(() => scrollSectionToTop(sec));
+  
+    // Nothing collapsing → scroll next frame like before
+    if (!closingSecs.length) {
+      doScroll();
+      return;
+    }
+  
+    let pending = 0;
+    let finishedAll = false;
+  
+    const doneOne = () => {
+      pending--;
+      if (pending <= 0 && !finishedAll) {
+        finishedAll = true;
+        // one extra frame so layout is final
+        doScroll();
+      }
+    };
+  
+    closingSecs.forEach(s => {
+      const content = s.querySelector('.section-content');
+      if (!content) return;
+  
+      pending++;
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        doneOne();
+      };
+  
+      // Wait for the max-height collapse to finish
+      content.addEventListener('transitionend', (e) => {
+        if (!e || e.propertyName === 'max-height') finish();
+      }, { once: true });
+  
+      // Fallback slightly > 0.35s max-height transition
+      setTimeout(finish, 400);
+    });
+  
+    // Safety: if nothing registered as pending
+    if (pending === 0) doScroll();
+  }  
+
   function measureOpenHeight(sec) {
     const content = sec.querySelector('.section-content');
     if (!content) return;
@@ -5575,6 +5540,10 @@ function initSlideInAccordion(slideInSelector, opts = {}) {
   function openSection(sec, focusHeader = false) {
     if (sec.classList.contains('is-open')) return;
 
+    const closingSecs = singleOpen
+    ? sections.filter(s => s !== sec && s.classList.contains('is-open'))
+    : [];  
+
     if (singleOpen) {
       sections.forEach(s => { if (s !== sec) closeSection(s); });
     }
@@ -5600,9 +5569,10 @@ function initSlideInAccordion(slideInSelector, opts = {}) {
       observers.set(content, ro);
     }
 
-    // NEW: when a user opens a section, bring it to the top of the scroll container
+    // When a user opens a section, bring it to the top of the scroll container.
+    // If others were open, wait for their collapse transition so we don't overshoot.
     if (!initialising) {
-      requestAnimationFrame(() => scrollSectionToTop(sec));
+      scheduleScrollToTop(sec, closingSecs);
     }
 
     if (focusHeader && header) header.focus();
@@ -6079,7 +6049,7 @@ function openTextSubpage(sectionId, headerText) {
 
   // 4) Focus for a11y
   el?.focus?.();
-  
+
   // NEW: re-evaluate sidebars + selection bar on text pages
   refreshSlideInsVisibility();
   window.__dispatchViewChange?.();
@@ -6565,6 +6535,9 @@ function goHome() {
     g.groupObjects();
   }
 
+  // NEW: re-evaluate slide-ins now that we are grouped
+  refreshSlideInsVisibility();
+
   // 8) Let header + selection bar recompute their state
   if (typeof window.__dispatchViewChange === 'function') {
     window.__dispatchViewChange();
@@ -6719,13 +6692,18 @@ function initSelectionBar() {
   if (!bar || bar.dataset.inited === '1') return;
   bar.dataset.inited = '1';
 
-  // Click pill to remove tag
   bar.addEventListener('click', (e) => {
     const li = e.target.closest('li[data-tag]');
     if (!li) return;
     const tag = li.dataset.tag;
+
+    // Are we inside the ad-hoc (tag) gallery?
+    const isAdhoc =
+      document.body.classList.contains('in-adhoc-gallery') ||
+      !!history.state?.adhoc;
+
     if (window.activeTags?.has(tag) && typeof window.deselectTagGlobally === 'function') {
-      window.deselectTagGlobally(tag);
+      window.deselectTagGlobally(tag, { closeGalleryWhenEmpty: isAdhoc });
     }
   });
 
