@@ -1107,7 +1107,44 @@ function renderAuthorsSubpage() {
     return;
   }
 
-  host.innerHTML = authors.map(a => `
+  host.innerHTML = authors.map(a => {
+    const bioHtml = toParagraphHtml(a.biography);
+    const pubHtml = toParagraphHtml(a.publication);
+
+    const pos  = (a.position    || '').trim();
+    const dept = (a.department  || '').trim();
+    const inst = (a.institution || '').trim();
+
+    // Position + department block (optional)
+    let posDeptHtml = '';
+    if (pos || dept) {
+      const parts = [];
+      if (pos) {
+        parts.push(`<span class="author-position">${escapeHtml(pos)}</span>`);
+      }
+      if (dept) {
+        parts.push(`<span class="author-department">${escapeHtml(dept)}</span>`);
+      }
+      posDeptHtml = `
+                  <div class="position-dept">
+                    ${parts.join('<span class="sep"> | </span>')}
+                  </div>`;
+    }
+
+    // Institution block (optional)
+    let instHtml = '';
+    if (inst) {
+      instHtml = `
+                  <div class="institution">
+                    <img class="location-icon" src="img/icons/location_16x11.svg" alt="" aria-hidden="true">
+                    <span class="author-institution">${escapeHtml(inst)}</span>
+                  </div>`;
+    }
+
+    // Do we have ANY meta at all?
+    const hasMeta = !!(posDeptHtml || instHtml);
+
+    return `
     <div class="content-section collapsible author-section" data-author-id="${a.id}">
       <div class="section-header">
         <h3 class="author-name">${escapeHtml(a.name)}</h3>
@@ -1116,29 +1153,23 @@ function renderAuthorsSubpage() {
       <div class="section-content">
         <div class="two-col-table">
   
-          <!-- Row 1 -->
+          ${hasMeta ? `
+          <!-- Row 1: Biography heading + meta -->
           <div class="two-col-row">
             <div class="left"><h3>Biography</h3></div>
             <div class="right">
               <div class="author-meta">
-                <div class="position-dept">
-                  <span class="author-position">${escapeHtml(a.position)}</span>
-                  <span class="sep"> | </span>
-                  <span class="author-department">${escapeHtml(a.department)}</span>
-                </div>
-  
-                <!-- NOTE: same as static: no .location class -->
-                <div class="institution">
-                  <img class="location-icon" src="img/icons/location_16x11.svg" alt="" aria-hidden="true">
-                  <span class="author-institution">${escapeHtml(a.institution)}</span>
-                </div>
+                ${posDeptHtml}
+                ${instHtml}
               </div>
             </div>
           </div>
+          ` : ''}
   
-          <!-- Row 2 -->
+          <!-- Row 2: Photo + biography text -->
           <div class="two-col-row">
             <div class="left">
+              ${!hasMeta ? '<h3>Biography</h3>' : ''}
               <div class="author-photo-wrap">
                 ${a.imageUrl
                   ? `<img class="author-photo" src="${a.imageUrl}" alt="${escapeHtml(a.name)}">`
@@ -1147,22 +1178,25 @@ function renderAuthorsSubpage() {
               </div>
             </div>
             <div class="right">
-              ${toParagraphHtml(a.biography)}
+              ${bioHtml}
             </div>
           </div>
   
-          <!-- Row 3 -->
+          ${pubHtml ? `
+          <!-- Row 3: Publications (only if present) -->
           <div class="two-col-row">
             <div class="left"><h3>Publications</h3></div>
             <div class="right">
-              ${toParagraphHtml(a.publication)}
+              ${pubHtml}
             </div>
           </div>
+          ` : ''}
   
         </div>
       </div>
     </div>
-  `).join('');  
+    `;
+  }).join('');  
 }
 
 // Open the Team subpage and expand a specific author section by name
@@ -1175,7 +1209,9 @@ function openAuthorSubpageForName(name) {
 
   // 2) Open the Team/Authors text subpage
   const openTeam = window.openTextSubpage || (typeof openTextSubpage === 'function' ? openTextSubpage : null);
-  openTeam?.('subpage-team');
+  if (openTeam) {
+    openTeam('subpage-team', 'Meet our Team');
+  }
 
   // 3) Wait until the accordion is initialized, then open the right section
   const tryExpand = (attempt = 0) => {
@@ -1261,20 +1297,54 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
   const ENABLE_AUDIO  = true;
 
   const perGroupCounts = new Map();         // appGroupId -> count
-  // Build group meta and a map StrapiGroupId -> appGroupId "s<id>"
   const groupMeta = {};
   const groupIdMap = new Map();
   groups.forEach(g => {
     const a = getAttrs(g);
     const appGroupId = `s${g.id}`;
     groupIdMap.set(g.id, appGroupId);
+
+    // Strapi relations for the 3 content sidebars
+    const aboutFieldsiteRel =
+      a.about_the_fieldsite ||
+      a.aboutTheFieldsite ||
+      a.About_the_fieldsite;
+
+    const aboutResearchRel =
+      a.about_the_research_project ||
+      a.aboutTheResearchProject ||
+      a.About_the_research_project;
+
+    const aboutViralRel =
+      a.about_viral_atmosphere ||
+      a.aboutViralAtmosphere ||
+      a.About_viral_atmosphere;
+
     groupMeta[appGroupId] = {
       title: a.Title || a.title || `Group ${g.id}`,
       subtitle: a.Subtitle || a.subtitle || '',
-      location: a.Location || a.location || ''
+      location: a.Location || a.location || '',
+      // new: 3 optional “About …” sections
+      aboutFieldsite:        extractAboutSection(aboutFieldsiteRel),
+      aboutResearchProject:  extractAboutSection(aboutResearchRel),
+      aboutViralAtmosphere:  extractAboutSection(aboutViralRel),
     };
   });
   slog('normalize.groups', Object.keys(groupMeta).length);
+
+  // Helper to normalize a single “About …” relation (Title + Content)
+  function extractAboutSection(rel) {
+    if (!rel) return null;
+    const list = unwrapRelList(rel);
+    if (!list.length) return null;
+
+    const a = getAttrs(list[0]) || {};
+    const title   = a.Title   || a.title   || '';
+    const content = a.Content || a.content || '';
+
+    if (!title && !content) return null;
+    return { title, content };
+  }
 
   
   // helpers
@@ -1718,6 +1788,51 @@ function isTextPageActive() {
     || document.getElementById('research-page')?.classList.contains('active');
 }
 
+// Mapping between content slide-ins and their groupMeta keys
+const CONTENT_SIDEBAR_CONFIG = [
+  { id: 'about-the-fieldsite',       key: 'aboutFieldsite' },
+  { id: 'about-the-research-project', key: 'aboutResearchProject' },
+  { id: 'viral-atmospheres',          key: 'aboutViralAtmosphere' },
+];
+
+// Fill the 3 content slide-ins from the current group's meta
+function updateContentSidebarsForGroup(groupId) {
+  if (!groupId || !window.groupMetaById) return;
+
+  const meta = window.groupMetaById[groupId];
+  if (!meta) return;
+
+  CONTENT_SIDEBAR_CONFIG.forEach(({ id, key }) => {
+    const sidebar = document.getElementById(id);
+    if (!sidebar) return;
+
+    const data    = meta[key];
+    const titleEl = sidebar.querySelector('.text-page h2');
+    const bodyEl  = sidebar.querySelector('.text-page-body');
+
+    if (!titleEl || !bodyEl) return;
+
+    // Only override if Strapi actually gave us something
+    if (data && (data.title || data.content)) {
+      if (data.title) {
+        titleEl.textContent = data.title;
+      }
+
+      // Content can be plain text or Strapi Rich Text (Blocks).
+      // Normalize it through the existing helper.
+      if (data.content != null && typeof toParagraphHtml === 'function') {
+        const html = toParagraphHtml(data.content);
+        bodyEl.innerHTML = html || '';
+      } else if (typeof data.content === 'string') {
+        // Fallback: plain string, no HTML interpretation
+        bodyEl.textContent = data.content;
+      } else {
+        bodyEl.innerHTML = '';
+      }
+    }
+  });
+}
+
 function refreshSlideInsVisibility() {
   const slideIns = document.getElementById('slide-ins');
   if (!slideIns) return;
@@ -1728,6 +1843,13 @@ function refreshSlideInsVisibility() {
 
   // Detect ad-hoc gallery via history.state or a body class
   const isAdhoc = !!history.state?.adhoc || document.body.classList.contains('in-adhoc-gallery');
+
+  // If we are in a detail view, check how many objects this group's nav has
+  // We only want content sidebars when there is more than one object in the group
+  let detailGroupHasMultiple = true;
+  if (detailActive && window.__detailNav && Array.isArray(window.__detailNav.order)) {
+    detailGroupHasMultiple = window.__detailNav.order.length > 1;
+  }
 
   // Grid states where menu sidebar is normally allowed
   const baseAllowedStates = (state === 'ungrouped' || state === 'clustered' || state === 'pre-cluster');
@@ -1744,9 +1866,10 @@ function refreshSlideInsVisibility() {
 
 
   // 2) CONTENT slide-ins (the 3 new ones)
-  // Show on detail or on non-adhoc group gallery
+  // Show on detail or on non-adhoc group gallery.
+  // On a detail page, hide them if the current group only has one object.
   const shouldShowContent =
-    detailActive || (galleryActive && !isAdhoc);
+    (detailActive && detailGroupHasMultiple) || (galleryActive && !isAdhoc);
 
   let anyAllowed = false;
 
@@ -1897,6 +2020,11 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
         if (tEl) tEl.textContent = meta.title;
         if (sEl) sEl.textContent = meta.subtitle;
       }
+    }
+
+    // Keep the 3 content sidebars in sync with this group
+    if (typeof updateContentSidebarsForGroup === 'function') {
+      updateContentSidebarsForGroup(gid);
     }
   
     // 2) Build the gallery items (columns + mixed .item nodes for this group)
@@ -2409,8 +2537,17 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
               if (typeof markActive === 'function') markActive('cluster');
               if (typeof refreshSlideInsVisibility === 'function') refreshSlideInsVisibility();
 
-              // Re-open inline clustered detail for the SAME object
-              const focusId = obj?.id || window.__detailCtx?.objectId;
+              // Re-open inline clustered detail for the CURRENT detail object
+              let focusId = window.__detailCtx?.objectId || null;
+
+              // Fallback: use current detail nav state if available
+              if (!focusId && window.__detailNav && Array.isArray(window.__detailNav.order)) {
+                const idx = (typeof window.__detailNav.index === 'number')
+                  ? window.__detailNav.index
+                  : 0;
+                focusId = window.__detailNav.order[idx] || window.__detailNav.order[0] || null;
+              }
+
               if (focusId && typeof grid.enterClusterDetail === 'function') {
                 setTimeout(() => {
                   try { grid.enterClusterDetail(String(focusId)); } catch {}
@@ -2428,10 +2565,47 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
         const table = detailEl.querySelector('.flex-table');
         if (!table) return;
 
+        // Normalize visible labels and attach stable keys so JS does not depend on wording
+        const LABEL_RENAMES = {
+          'research':   { key: 'research',   text: 'Project' },
+          'researcher': { key: 'researcher', text: 'Author' },
+        };
+
+        Array.from(table.querySelectorAll('.row')).forEach(row => {
+          const labelEl = row.querySelector('.label');
+          if (!labelEl) return;
+          const current = labelEl.textContent?.trim().toLowerCase();
+          const cfg = LABEL_RENAMES[current];
+          if (!cfg) return;
+
+          // Change what the user sees
+          labelEl.textContent = cfg.text;
+
+          // Attach a stable key for JS lookups
+          if (!labelEl.dataset.labelKey) {
+            labelEl.dataset.labelKey = cfg.key;
+          }
+        });
+
         // supports either plain text OR html for a row; returns the value element
         const setRow = (label, value, opts = {}) => {
-          const row = Array.from(table.querySelectorAll('.row'))
-            .find(r => r.querySelector('.label')?.textContent?.trim().toLowerCase() === label);
+          const labelKey = String(label || '').toLowerCase();
+
+          const row = Array.from(table.querySelectorAll('.row')).find(r => {
+            const labelEl = r.querySelector('.label');
+            if (!labelEl) return false;
+
+            // Prefer the explicit key if present
+            const keyAttr = labelEl.dataset.labelKey?.trim().toLowerCase();
+            if (keyAttr) {
+              return keyAttr === labelKey;
+            }
+
+            // Fallback: match by visible text (for 'date' etc.)
+            const txt = labelEl.textContent?.trim().toLowerCase();
+            return txt === labelKey;
+          });
+
           if (!row) return null;
 
           const valEl = row.querySelector('.value');
@@ -2930,6 +3104,11 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       const allObjects = (window.gridObject?.objects || window.objects || []);
       const obj = allObjects.find(o => String(o.id) === String(objectId));
       if (obj) {
+        // Sync the 3 content sidebars with this object's group
+        const contentGroupId = gid || obj.groupId || null;
+        if (contentGroupId && typeof updateContentSidebarsForGroup === 'function') {
+          updateContentSidebarsForGroup(contentGroupId);
+        }
         renderDetailPrimary(obj);
         renderReferencesSection(obj); // NEW
         renderRelatedThemes(obj);
@@ -5891,7 +6070,7 @@ function initOverlayMenu() {
     'About MoRePPaR':       { id: 'subpage-about-moreppar',  header: 'About MoRePPaR' },
     'The Research Project': { id: 'subpage-about-this-project',   header: 'About this project' }, // optional if you add this id later
     'References':           { id: 'subpage-references',          header: 'References' },
-    'Our Team':             { id: 'subpage-team',               header: 'Our Team' },
+    'Our Team':             { id: 'subpage-team',               header: 'Meet our Team' },
   };
 
   function setActiveMenu(target){
@@ -6365,6 +6544,12 @@ window.setHeaderLeftText = (t) => setHeaderLeft('custom', { text: t });
 function refreshHeaderLeftFromState() {
   const body = document.body;
   const grid = window.gridObject; 
+
+  // If a text subpage (About, References, Team, etc.) is active,
+  // keep whatever header openTextSubpage() already set.
+  if (document.querySelector('.text-subpage.active')) {
+    return;
+  }
 
   // Object detail (full page) or Group Gallery → "Research project in <location>"
   if (body.classList.contains('in-group-gallery')) {
