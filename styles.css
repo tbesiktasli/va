@@ -216,7 +216,7 @@
   }
 
   #grid {
-    border: 1px solid green;
+    /*border: 1px solid green;*/
     position: absolute;
     top: 0px;
     left: 0px;
@@ -328,12 +328,16 @@
     grid-template-rows: auto 1fr auto auto auto;
     gap: 12px;
     padding: 40px;
-    background-color: var(--main-light-background);
+    background-color: var(--main-bright-bg-color);
     border: 1px solid var(--object-text-border-color); /* ← add this line */
     opacity: 0;
     z-index: 10;
     transition: opacity 0.25s ease;
     overflow: hidden;
+  }
+
+  #grid .object.text .detail-panel {
+    border: none;
   }
 
   /* default detail description (media) stays as is */
@@ -968,7 +972,7 @@ body.in-group-gallery:not(.in-adhoc-gallery) #gallery-ungroup {
   display: block;
   max-width: 100%;
   white-space: normal;
-  word-break: break-word;
+  /*word-break: break-word;*/
   hyphens: auto;
   line-height: 1.1;
 }
@@ -1165,10 +1169,10 @@ and pin the expanded panel to the right edge. */
   padding-left: var(--vc-pad-left);
 }
 
-/* Sticky rail that spans into the left/right padding (so prev sits in the gutter) */
 #detail-content .vertical-content .detail-nav-arrows {
   position: sticky;
-  top: 30vh;                                   /* your request */
+  /* Vertically center relative to the visible height of #detail-content */
+  top: 50%;
   z-index: 10;
   pointer-events: none;                         /* wrapper ignores clicks */
 
@@ -1372,6 +1376,7 @@ and pin the expanded panel to the right edge. */
 
 #slide-ins .vertical-content {
   padding-left: 50px;
+  padding-right: 50px;
 }
 
 #slide-ins h2 {
@@ -1539,17 +1544,18 @@ and pin the expanded panel to the right edge. */
 #discover-connections .dc-project-radio {
   width: 14px;
   height: 14px;
-  border: 1.5px solid var(--main-outline-color);
+  border: 1px solid var(--main-outline-color);
   border-radius: 9999px;
   flex: 0 0 14px;
   position: relative;
 }
 
-#discover-connections .dc-project-item.is-selected .dc-project-radio::after {
+#discover-connections .dc-project-item.is-selected .dc-project-radio::after,
+#discover-connections .dc-project-item:hover .dc-project-radio::after {
   content: '';
   position: absolute;
-  inset: 3px;
-  background: var(--main-light-outline-color);
+  inset: 4px;
+  background: var(--main-outline-color);
   border-radius: 9999px;
 }
 
@@ -2162,15 +2168,15 @@ ul.tag-group-switch {
 
 .menu-item {
   cursor: pointer;
-  font-weight: 500;
+  font-weight: 300;
 }
 
 .menu-item:hover {
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .menu-item.active {
-  font-weight: 600;
+  font-weight: 500;
   position: relative;
 }
 
@@ -2479,6 +2485,14 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   width: 100%;
 }
 
+.slide-in .text-page h2 {
+  font-size: 2em;
+}
+
+.slide-in .text-page p {
+  padding: 0;
+}
+
 /* Typography */
 .text-subpage h2 {
   font-family: "Albert Sans", sans-serif;
@@ -2552,6 +2566,7 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   font-weight: 500;
   font-size: 0.9em;
   margin: 0;
+  margin-bottom: 20px;
   text-transform: uppercase;
 }
 
@@ -2638,6 +2653,7 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   aspect-ratio: 1 / 1;
   background: var(--main-bright-bg-color);
   overflow: hidden;
+  margin-bottom: 40px;
 }
 .text-subpage .author-photo {
   width: 100%;
