@@ -8,7 +8,7 @@ function fitTextToContainer(container, maxFontSize = 100, minFontSize = 6) {
 
   span.style.display = 'inline-block';
   span.style.whiteSpace = 'pre-wrap';
-  span.style.wordWrap = 'break-word';
+  //span.style.wordWrap = 'break-word';
   span.style.minWidth = '0';  // allow flex item to shrink inside flex container
 
     // Account for container padding so text fits inside the card
@@ -307,10 +307,11 @@ export class Grid {
       if (!dateLike) return '';
       const d = new Date(dateLike);
       if (isNaN(d.getTime())) return '';
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
       const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
       const yyyy = d.getFullYear();
-      return `${mm} / ${dd} / ${yyyy}`;
+      // Same as object detail page: DD/MM/YYYY
+      return `${dd}/${mm}/${yyyy}`;
     }
 
     // Shared inline detail panel for both ungrouped and clustered flows
