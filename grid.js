@@ -129,7 +129,7 @@ export class Grid {
       this.computeDynamicGroupCenters();
       this.applyGroupedScatter(this.GROUPED_SPREAD, this.GROUPED_JITTER);
       this.fitToView('grouped', 200);
-      this.initDrag();
+      this.initDrag(); // performance
       this.initWheelBlock();
       //this.groupObjects();
       this.groupObjectsInstant();
