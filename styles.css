@@ -225,9 +225,16 @@
     touch-action: none;         /* no touch panning/zooming by browser */
   }
 
-  #grid.dragging { 
-    cursor: grabbing; 
+  #grid.dragging {
+    cursor: grabbing;
+    user-select: none;
+    -webkit-user-select: none; /* Safari */
   }
+  
+  #grid.dragging * {
+    user-select: none;
+    -webkit-user-select: none; /* Safari */
+  }  
 
   .object {
     position: absolute;
@@ -1656,6 +1663,15 @@ and pin the expanded panel to the right edge. */
   margin-bottom: 40px;
 }
 
+.content-section .detail-content ul {
+  padding: 0 100px;
+  margin-left: 20px;
+  list-style: circle;
+}
+.content-section .detail-content ul li {
+  margin-bottom: 5px;
+}
+
 /* Make header a flex row so the chevron can sit at the far right */
 .content-section.collapsible h3,
 .content-section.collapsible .section-header {
@@ -1824,13 +1840,8 @@ and pin the expanded panel to the right edge. */
   width: var(--handle-w);
 }
 
-/* Body hidden by default so collapsed handles can't reveal content on focus */
+/* Body is always flex; we hide it via visibility/pointer-events for collapsed state */
 #slide-ins .slide-in[data-mode="menu"] .slide-in-body {
-  display: none;
-}
-
-/* Only when expanded, the body becomes the flex row */
-#slide-ins .slide-in[data-mode="menu"].expanded .slide-in-body {
   display: flex;
   flex: 1 1 auto;
   min-width: 0;
