@@ -11,6 +11,94 @@ import { Grid } from './grid.js';
 const DATA_MODE = 'strapi'; // change to 'mixed' or 'strapi' as needed
 const SHOULD_USE_STRAPI = (DATA_MODE === 'strapi' || DATA_MODE === 'mixed');
 
+// ===== RUNTIME FEATURE FLAGS / UA HINTS =====
+const UA = navigator.userAgent || '';
+// crude but effective Safari detection (excludes Chrome/Edge on macOS + iOS Chrome)
+const IS_SAFARI = /safari/i.test(UA) && !/chrome|chromium|android/i.test(UA);
+
+if (IS_SAFARI) {
+  document.documentElement.classList.add('is-safari');
+} else {
+  document.documentElement.classList.add('is-not-safari');
+}
+
+// ===== VIEW STATE / HISTORY =====
+const VIEW = {
+  PREPAGE: 'prepage',
+  HOME: 'home',
+  GALLERY: 'gallery',
+  DETAIL: 'detail',
+  RESEARCH: 'research',
+  SUBPAGE: 'subpage',
+};
+
+/**
+ * Push a new logical view into browser history.
+ * `payload` can carry extra info (e.g. sectionId, objectId, gid).
+ */
+function pushViewState(view, payload = {}, hash) {
+  try {
+    const next = { view, ...payload };
+    const current = history.state;
+
+    // Very simple dedupe by view type; you can refine later if needed
+    if (!current || current.view !== view) {
+      const base = location.pathname + location.search;
+      const url = hash ? (base + hash) : base;
+      history.pushState(next, '', url);
+    }
+  } catch (err) {
+    console.warn('[view] pushViewState failed', err);
+  }
+}
+
+/**
+ * Apply a view state to the UI.
+ * For now we only handle HOME, SUBPAGE, RESEARCH here.
+ * Gallery / Detail still use their existing listeners.
+ */
+function applyViewFromState(state) {
+  const view = state?.view;
+
+  // Let existing (legacy) handlers manage gallery/detail states for now
+  if (state && (state.gallery || state.detail)) {
+    return;
+  }
+
+  if (view === VIEW.SUBPAGE) {
+    const sectionId = state.sectionId;
+    const headerText = state.headerText || '';
+    if (sectionId && typeof openTextSubpage === 'function') {
+      // prevent re-pushing history from inside
+      openTextSubpage(sectionId, headerText, { skipHistory: true });
+    } else if (typeof goHome === 'function') {
+      goHome({ skipHistory: true });
+    }
+    return;
+  }
+
+  if (view === VIEW.RESEARCH) {
+    if (typeof window.openResearchPage === 'function') {
+      window.openResearchPage({ skipHistory: true });
+    }
+    return;
+  }
+
+  if (view === VIEW.HOME || view === VIEW.PREPAGE || !view) {
+    if (typeof goHome === 'function') {
+      goHome({ skipHistory: true });
+    }
+    return;
+  }
+
+  // Other view types (GALLERY, DETAIL, PREPAGE with separate behavior) can be added here later.
+}
+
+// Central popstate: delegates to applyViewFromState
+window.addEventListener('popstate', (e) => {
+  applyViewFromState(e.state || null);
+});
+
 // ===== STRAPI SETUP =====
 const STRAPI = {
   base: 'https://va-cms.mpgs.de/api', // e.g. http://localhost:1337/api
@@ -1449,6 +1537,21 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
         ? strapiAssetUrl(rawTts)
         : rawTts;
 
+    // InlineContentImage (single media or string path) → absolute URL
+    const rawInlineImg = tryUploadUrl(
+      a.InlineContentImage ||
+      a.inlineContentImage ||
+      a.inline_content_image
+    );
+    const inlineContentImage = rawInlineImg ? strapiAssetUrl(rawInlineImg) : '';
+
+    // Second rich text field (same semantics as Content)
+    const content2 =
+      a.Content2 ||
+      a.content2 ||
+      a.content_2 ||
+      '';
+
     // Upload plugin shapes (v5: field.url; v4: field.data.attributes.url)
     const im = a.image, vi = a.video, au = a.audio;
     const imUrl = im?.url || (im?.data ? (Array.isArray(im.data) ? im.data[0]?.attributes?.url : im.data?.attributes?.url) : undefined);
@@ -1545,7 +1648,9 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
       tags: regularTags,
       connectingTags,           // ← new: what the sidebar should match
       themes,
-      _pathHints: pathHints
+      _pathHints: pathHints,
+      inlineContentImage,
+      content2
     });
   }
 
@@ -2745,8 +2850,29 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
         }
 
         if (obj.type === 'text') {
-          // TEXT → object.Content as HTML/paragraphs (inside wrapper)
-          const html = richToHTML(obj.content);
+          // TEXT → Content + InlineContentImage + Content2
+          const parts = [];
+
+          // 1) Main Content (existing)
+          const contentHtml = richToHTML(obj.content);
+          if (contentHtml) parts.push(contentHtml);
+
+          // 2) Inline content image (optional)
+          if (obj.inlineContentImage) {
+            const imgUrl = esc(obj.inlineContentImage);
+            parts.push(
+              `<figure class="detail-inline-image">
+                 <img src="${imgUrl}" alt="">
+               </figure>`
+            );
+          }
+
+          // 3) Second rich text field
+          const content2Html = richToHTML(obj.content2);
+          if (content2Html) parts.push(content2Html);
+
+          const html = parts.join('\n');
+
           if (html) {
             const wrap = document.createElement('div');
             wrap.className = 'detail-content';
@@ -5300,6 +5426,7 @@ function updateObjectGlowsWithGradient() {
     // nothing selected → no glow
     if (selected.length === 0) {
       glow.style.setProperty('--glow', 'transparent');
+      glow.style.setProperty('--glow-color', 'transparent'); // added
       return;
     }
 
@@ -5308,6 +5435,7 @@ function updateObjectGlowsWithGradient() {
       const matchesAny = tags.some(t => activeTags.has(t));
       if (!matchesAny) {
         glow.style.setProperty('--glow', 'transparent');
+        glow.style.setProperty('--glow-color', 'transparent'); // added
         return;
       }
 
@@ -5323,6 +5451,8 @@ function updateObjectGlowsWithGradient() {
       });
       const conic = `conic-gradient(from 0deg at 50% 50%, ${stops.join(", ")})`;
       glow.style.setProperty('--glow', conic);
+      // use the first tag color as a simple flat color for Safari
+      glow.style.setProperty('--glow-color', colors[0] || 'transparent');
       return;
     }
 
@@ -5333,6 +5463,7 @@ function updateObjectGlowsWithGradient() {
     if (!matchesSome) {
       // no overlap at all → no glow
       glow.style.setProperty('--glow', 'transparent');
+      glow.style.setProperty('--glow-color', 'transparent'); // added
       return;
     }
 
@@ -5351,6 +5482,8 @@ function updateObjectGlowsWithGradient() {
     });
     const conic = `conic-gradient(from 0deg at 50% 50%, ${stops.join(", ")})`;
     glow.style.setProperty('--glow', conic);
+    // use the first tag color as a simple flat color for Safari
+    glow.style.setProperty('--glow-color', colors[0] || 'transparent');
   });
 }
 
@@ -6201,7 +6334,7 @@ function initTeamSubpage(root) {
 }
 
 // Show a text sub-page (by id), hide others, and set header-left
-function openTextSubpage(sectionId, headerText) {
+function openTextSubpage(sectionId, headerText, options = {}) {
   // 0) Hide grid + any other main views (gallery/detail/research)
   const gridShell = document.getElementById('grid-shell');
   if (gridShell) gridShell.style.display = 'none';
@@ -6232,6 +6365,15 @@ function openTextSubpage(sectionId, headerText) {
   // NEW: re-evaluate sidebars + selection bar on text pages
   refreshSlideInsVisibility();
   window.__dispatchViewChange?.();
+
+  // Register this subpage as a distinct view in history
+  if (!options.skipHistory && typeof pushViewState === 'function') {
+    pushViewState(
+      VIEW.SUBPAGE,
+      { sectionId, headerText },
+      `#${sectionId}`
+    );
+  }
 }
 window.openTextSubpage = openTextSubpage;
 
@@ -6678,7 +6820,7 @@ window.__wireHeaderToGrid = wireHeaderToGrid;
 window.__dispatchViewChange = dispatchViewChange;
 
 // Centralised "Home" navigation: reset to grouped grid view
-function goHome() {
+function goHome(options = {}) {
   const gridShell   = document.getElementById('grid-shell');
   const overlayMenu = document.getElementById('overlay-menu');
 
@@ -6726,6 +6868,11 @@ function goHome() {
   // 8) Let header + selection bar recompute their state
   if (typeof window.__dispatchViewChange === 'function') {
     window.__dispatchViewChange();
+  }
+
+  // Record this in history unless we’re being called from a popstate handler
+  if (!options.skipHistory && typeof pushViewState === 'function') {
+    pushViewState(VIEW.HOME, {}, '#home');
   }
 }
 window.goHome = goHome;
