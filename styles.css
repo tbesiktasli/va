@@ -604,6 +604,31 @@
     -webkit-mask-composite: xor;
     mask-composite: exclude;
   }  
+
+/* Safari fallback for object glows:
+   use the conic gradient as a multi-color border image.
+   No blur, no mask, no blend-mode. */
+   html.is-safari .object-glow {
+    inset: 0;                      /* align to card edges */
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 0;
+  
+    /* kill heavy effects */
+    filter: none;
+    mix-blend-mode: normal;
+    opacity: 1;
+    box-shadow: none;
+  
+    /* multi-color border from the existing --glow gradient */
+    border: 2px solid transparent;
+    border-image: var(--glow) 1;
+  }
+  
+  /* Safari: we don’t need the masked halo pseudo element at all */
+  html.is-safari .object-glow::before {
+    content: none;
+  }  
   
 #controls {
   position: fixed;
