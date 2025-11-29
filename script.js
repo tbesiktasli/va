@@ -1157,11 +1157,41 @@ function renderStrapiBlocks(blocks) {
 
   blocks.forEach(block => {
     if (!block) return;
+
     const children = Array.isArray(block.children) ? block.children : [];
+    const type = (block.type || '').toLowerCase();
+
+    // --- NEW: list support (unordered / ordered) ---
+    if (type === 'list') {
+      // Strapi v5: format is 'unordered' or 'ordered'
+      const format = (block.format || '').toLowerCase();
+      const listTag = (format === 'ordered' || format === 'numbered') ? 'ol' : 'ul';
+
+      const items = children
+        .map(item => {
+          if (!item) return '';
+
+          // list-item usually has its own children array
+          const itemChildren = Array.isArray(item.children) ? item.children : [];
+          const itemInner = itemChildren.length
+            ? itemChildren.map(renderStrapiInline).join('')
+            : renderStrapiInline(item);
+
+          return itemInner ? `<li>${itemInner}</li>` : '';
+        })
+        .filter(Boolean);
+
+      if (items.length) {
+        out.push(`<${listTag}>${items.join('')}</${listTag}>`);
+      }
+
+      // List handled, skip the generic block handling below
+      return;
+    }
+
+    // Shared inline content for non-list blocks
     const inner = children.map(renderStrapiInline).join('');
     if (!inner) return;
-
-    const type = (block.type || '').toLowerCase();
 
     if (type === 'heading' || type === 'heading1' || type === 'h1') {
       out.push(`<h1>${inner}</h1>`);
@@ -1169,6 +1199,10 @@ function renderStrapiBlocks(blocks) {
       out.push(`<h2>${inner}</h2>`);
     } else if (type === 'heading3' || type === 'h3') {
       out.push(`<h3>${inner}</h3>`);
+    }
+    // --- NEW: blockquote / quote support ---
+    else if (type === 'quote' || type === 'blockquote') {
+      out.push(`<blockquote>${inner}</blockquote>`);
     } else {
       // default: paragraph block
       out.push(`<p>${inner}</p>`);
@@ -2413,6 +2447,23 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     const groupGalleryEl = document.getElementById('group-gallery');
     const detailEl       = document.getElementById('detail-content');
 
+    function resetDetailScroll() {
+      // Reset the main detail scroller
+      if (detailEl) {
+        try {
+          detailEl.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        } catch {
+          detailEl.scrollTop = 0;
+          detailEl.scrollLeft = 0;
+        }
+      }
+
+      // Also reset page scroll in case the browser scrolls the body instead
+      try {
+        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      } catch {}
+    }
+
     // --- detail-page prev/next UI (inside vertical-content) ---
     function attachDetailNavUI() {
       const vc = detailEl?.querySelector('.vertical-content');
@@ -3312,6 +3363,7 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
       // Show the detail screen
       detailEl.classList.add('active');
+      detailEl.scrollTop = 0;   // <— NEW: always start detail view at top
 
       // Defer WaveSurfer init until after #detail-content is visible and laid out
       requestAnimationFrame(() => {
@@ -3360,6 +3412,14 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
       destroyDetailWave();
       stopTtsAudio(); // ADD THIS
+
+      // NEW: stop any native media (video/audio) that might be playing in the detail view
+      detailEl.querySelectorAll('video, audio').forEach((media) => {
+        try {
+          media.pause();
+          media.currentTime = 0;
+        } catch {}
+      });
 
       detailEl.classList.remove('active');
 
