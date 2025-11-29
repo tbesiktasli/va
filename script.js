@@ -1129,12 +1129,65 @@ function escapeHtml(s) {
     .replace(/'/g, '&#39;');
 }
 
+// Render Strapi-style rich text blocks (with basic inline formatting)
+function renderStrapiInline(node) {
+  if (!node) return '';
+
+  // Some editors may nest marks/children recursively
+  if (Array.isArray(node.children)) {
+    return node.children.map(renderStrapiInline).join('');
+  }
+
+  const rawText = (typeof node.text === 'string') ? node.text : '';
+  if (!rawText) return '';
+
+  let text = escapeHtml(rawText).replace(/\n/g, '<br>');
+
+  // basic inline marks: bold / italic / underline
+  if (node.bold || node.strong)    text = `<strong>${text}</strong>`;
+  if (node.italic || node.em || node.emphasis) text = `<em>${text}</em>`;
+  if (node.underline || node.underlined)       text = `<u>${text}</u>`;
+
+  return text;
+}
+
+function renderStrapiBlocks(blocks) {
+  if (!Array.isArray(blocks)) return '';
+  const out = [];
+
+  blocks.forEach(block => {
+    if (!block) return;
+    const children = Array.isArray(block.children) ? block.children : [];
+    const inner = children.map(renderStrapiInline).join('');
+    if (!inner) return;
+
+    const type = (block.type || '').toLowerCase();
+
+    if (type === 'heading' || type === 'heading1' || type === 'h1') {
+      out.push(`<h1>${inner}</h1>`);
+    } else if (type === 'heading2' || type === 'h2') {
+      out.push(`<h2>${inner}</h2>`);
+    } else if (type === 'heading3' || type === 'h3') {
+      out.push(`<h3>${inner}</h3>`);
+    } else {
+      // default: paragraph block
+      out.push(`<p>${inner}</p>`);
+    }
+  });
+
+  return out.join('');
+}
+
 // Convert Strapi rich-text-ish values into <p>...</p> blocks
 function toParagraphHtml(val) {
   if (!val) return '';
 
   // if Strapi rich text blocks array
   if (Array.isArray(val)) {
+    const htmlFromBlocks = renderStrapiBlocks(val);
+    if (htmlFromBlocks) return htmlFromBlocks;
+
+    // Fallback: previous behaviour – plain text only
     const text = val.map(b =>
       (b?.children || []).map(c => c?.text || '').join('')
     ).join('\n\n');
@@ -1146,7 +1199,9 @@ function toParagraphHtml(val) {
     .map(s => s.trim())
     .filter(Boolean);
 
-  return paras.map(p => `<p>${escapeHtml(p)}</p>`).join('');
+  return paras
+    .map(p => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`)
+    .join('');
 }
 
 async function seedAuthorsFromStrapi() {
@@ -2838,16 +2893,13 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
         }
 
         function richToHTML(val) {
-          if (typeof val === 'string' && isHTMLString(val)) return val; // already HTML
-          const raw = extractText(val).trim();
-          if (!raw) return '';
-          return raw
-            .split(/\n{2,}/)
-            .map(s => s.trim())
-            .filter(Boolean)
-            .map(p => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`)
-            .join('');
-        }
+          // 1) If it's already an HTML string, keep it as-is
+          if (typeof val === 'string' && isHTMLString(val)) {
+            return val;
+          }
+          // 2) Otherwise, reuse the global helper that also understands Strapi blocks
+          return toParagraphHtml(val);
+        }        
 
         if (obj.type === 'text') {
           // TEXT → Content + InlineContentImage + Content2
