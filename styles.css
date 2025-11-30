@@ -481,6 +481,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    color: var(--main-font-color);
   }
   
   /* New: draw close icon from currentColor */
@@ -553,6 +554,19 @@
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
+  }
+
+    /* Inline images inside the detail text/info column */
+  .detail-inline-image {
+    max-width: 100%;      /* don’t let the wrapper exceed its column */
+    margin: 1rem 0;       /* optional: spacing similar to paragraphs */
+    padding-right: 100px;
+  }
+
+  .detail-inline-image img {
+    display: block;
+    max-width: 100%;      /* cap width to whatever space the column has */
+    height: auto;         /* keep aspect ratio */
   }
 
   /* YouTube embeds inside content sections */
@@ -1751,6 +1765,21 @@ and pin the expanded panel to the right edge. */
 }
 .content-section .detail-content ul li {
   margin-bottom: 10px;
+}
+
+/* Clickable footnote markers (superscript digits) */
+.detail-footnote-ref {
+  cursor: pointer;
+}
+
+.detail-footnote-ref:hover {
+  text-decoration: underline;
+}
+
+.content-section .detail-content .detail-footnotes {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--main-light-outline-color);
 }
 
 /* Make header a flex row so the chevron can sit at the far right */
