@@ -479,6 +479,17 @@ export class Grid {
       return panel;
     }
 
+    // Remove any inline detail panels that might still be attached to grid cards
+    _removeAllInlineDetailPanels() {
+      if (!this.htmlGridElement) return;
+
+      const panels = this.htmlGridElement.querySelectorAll('.detail-panel');
+      panels.forEach((panel) => {
+        try { panel.__wsInline?.destroy?.(); } catch {}
+        panel.remove();
+      });
+    }
+
     enterDetail(objectId, opts = {}) {
       if (this.currentState !== 'ungrouped' || this._detail?.active) return;
     
@@ -709,6 +720,12 @@ export class Grid {
     
       // Stage 2: after slide completes, expand keeping center fixed
       const expand = () => {
+
+        // 🚧 Guard against races: if detail has been closed or replaced, do nothing
+        if (!this._detail?.active || this._detail.id !== obj.id) {
+          return;
+        }
+
         const targetLeft2 = cx - width / 2;
         const targetTop2  = cy  - height / 2;
         const dx2 = targetLeft2 - obj.grid_x;
@@ -746,12 +763,8 @@ export class Grid {
       const focusObj = this.objects.find(o => o.id === id);
       const el = document.getElementById(id);
     
-      // Remove panel
-      const panel = el.querySelector('.detail-panel');
-      if (panel) {
-        try { panel.__wsInline?.destroy?.(); } catch {}
-        panel.remove();
-      }
+      // Remove any inline detail panels that might still be attached
+      this._removeAllInlineDetailPanels();
     
       // Restore other tiles only if we pushed them (ungrouped detail case)
       if (pushed) {
