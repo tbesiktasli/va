@@ -3062,40 +3062,16 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       const host = document.getElementById('detail-references');
       if (!host || !obj) return;
     
-      const esc = s => String(s ?? '')
-        .replace(/&/g,'&amp;')
-        .replace(/</g,'&lt;')
-        .replace(/>/g,'&gt;');
+      // Use the shared Strapi → <p>…</p> helper so References behaves
+      // like Content and other rich text fields.
+      const html = toParagraphHtml(obj.references);
     
-      // Similar to your media-description extraction, but scoped here
-      const extractText = (val) => {
-        if (val == null) return '';
-        if (typeof val === 'string' || typeof val === 'number') return String(val);
-        if (Array.isArray(val)) return val.map(extractText).join('\n');
-        if (typeof val === 'object') {
-          if (val.text) return String(val.text);
-          if (val.children) return extractText(val.children);
-          return Object.values(val).map(extractText).join('\n');
-        }
-        return '';
-      };
-    
-      const raw = extractText(obj.references).trim();
-    
-      if (!raw) {
+      if (html && html.trim()) {
+        host.innerHTML = html;
+      } else {
         host.innerHTML = '<p>No references.</p>';
-        return;
       }
-    
-      const paras = raw
-        .split(/\n{2,}/)   // blank-line separated paragraphs
-        .map(p => p.trim())
-        .filter(Boolean);
-    
-      host.innerHTML = paras
-        .map(p => `<p>${esc(p).replace(/\n/g,'<br>')}</p>`)
-        .join('');
-    }    
+    } 
 
     function renderRelatedThemes(obj) {
       const host = document.getElementById('related-themes');
