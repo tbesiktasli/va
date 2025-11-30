@@ -2128,6 +2128,22 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
   const groupGalleryEl = document.getElementById('group-gallery');
   const backBtnEl = document.getElementById('content-back-button');
 
+  // Keep group gallery scroll (the .scroll-container-horizontal) easy to reset from anywhere
+  function resetGalleryScrollPositions() {
+    try {
+      // Outer horizontal scroller: #group-gallery.scroll-container-horizontal
+      groupGalleryEl?.scrollTo({ left: 0, top: 0, behavior: 'auto' });
+
+      // Inner box, just in case it ever becomes scrollable
+      groupGalleryEl
+        ?.querySelector('.gallery-box')
+        ?.scrollTo?.({ left: 0, top: 0, behavior: 'auto' });
+    } catch {}
+  }
+
+  // Optional: expose for other modules (detail re-entry)
+  window.resetGroupGalleryScroll = resetGalleryScrollPositions;
+
   // Render the ad-hoc gallery title: one removable chip per tag (each with an "X").
   function renderAdhocGalleryTitle(tagsMaybe) {
     const tEl = document.querySelector('#group-gallery .title-box h2');
@@ -2204,6 +2220,8 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     // Hide the grid shell, then show gallery
     if (gridShellEl) gridShellEl.style.display = 'none';
     groupGalleryEl.classList.add('active');
+
+    resetGalleryScrollPositions();
   
     // 1) Title + subtitle for this group
     if (gid && window.groupMetaById) {
@@ -2300,6 +2318,8 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     if (gridShellEl) gridShellEl.style.display = 'none';
     groupGalleryEl.classList.add('active');
 
+    resetGalleryScrollPositions();
+
     // Title: one removable chip per tag; no group subtitle
     if (typeof renderAdhocGalleryTitle === 'function') {
       renderAdhocGalleryTitle(titleLines);
@@ -2390,11 +2410,8 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
   function closeGallery(options = {}) {
     const viaPopstate = !!options.viaPopstate;
   
-    // Reset scroll positions (same behavior you had)
-    try {
-      groupGalleryEl?.scrollTo({ left: 0, top: 0, behavior: 'auto' });
-      groupGalleryEl?.querySelector('.gallery-box')?.scrollTo?.({ left: 0, top: 0, behavior: 'auto' });
-    } catch {}
+    // Reset scroll positions (shared with detail re-entry)
+    resetGalleryScrollPositions();
   
     // Detach gallery observers / media behaviors
     window.__galleryIO__?.onClose?.();
@@ -2448,20 +2465,26 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     const detailEl       = document.getElementById('detail-content');
 
     function resetDetailScroll() {
-      // Reset the main detail scroller
-      if (detailEl) {
+      if (!detailEl) return;
+
+      // Prefer the inner vertical-content (actual scrolling area in detail page)
+      const vc = detailEl.querySelector('.vertical-content');
+      if (vc) {
         try {
-          detailEl.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+          vc.scrollTo({ top: 0, left: 0, behavior: 'auto' });
         } catch {
-          detailEl.scrollTop = 0;
-          detailEl.scrollLeft = 0;
+          vc.scrollTop = 0;
+          vc.scrollLeft = 0;
         }
       }
 
-      // Also reset page scroll in case the browser scrolls the body instead
+      // Also reset the outer container just in case
       try {
-        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-      } catch {}
+        detailEl.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      } catch {
+        detailEl.scrollTop = 0;
+        detailEl.scrollLeft = 0;
+      }
     }
 
     // --- detail-page prev/next UI (inside vertical-content) ---
@@ -3361,9 +3384,11 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       // Hide grid shell (we'll come back to it on close)
       if (gridShellEl) gridShellEl.style.display = 'none';
 
+      // Reset scroll so every detail opens at the top
+      resetDetailScroll();
+
       // Show the detail screen
       detailEl.classList.add('active');
-      detailEl.scrollTop = 0;   // <— NEW: always start detail view at top
 
       // Defer WaveSurfer init until after #detail-content is visible and laid out
       requestAnimationFrame(() => {
@@ -3412,6 +3437,9 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
       destroyDetailWave();
       stopTtsAudio(); // ADD THIS
+
+      // Reset scroll so the next opened detail starts at the top
+      resetDetailScroll();
 
       // NEW: stop any native media (video/audio) that might be playing in the detail view
       detailEl.querySelectorAll('video, audio').forEach((media) => {
