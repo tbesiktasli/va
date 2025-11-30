@@ -1,17 +1,25 @@
-function fitTextToContainer(container, maxFontSize = 100, minFontSize = 6) {
-  const span = container.querySelector('span');
+function fitTextToContainer(container, maxFontSize = 100, minFontSize = 7) {
+  // Prefer the scaling-text span if you have it, but fall back to any span
+  const span = container.querySelector('.scaling-text') || container.querySelector('span');
   if (!span) return;
 
-  let low = minFontSize;
-  let high = maxFontSize;
-  let fontSize = high;
+  // Optional: burger icon we added for the fallback state
+  const placeholder = container.querySelector('.text-placeholder-icon');
 
-  span.style.display = 'inline-block';
+  // --- Reset visual state so we can measure correctly ---
+  container.classList.remove('text-too-small');
+
+  span.style.display = 'inline-block';  // participate in flex layout for measurement
+  span.style.opacity = '';              // clear any old opacity-based hiding
   span.style.whiteSpace = 'pre-wrap';
   //span.style.wordWrap = 'break-word';
-  span.style.minWidth = '0';  // allow flex item to shrink inside flex container
+  span.style.minWidth = '0';            // allow flex item to shrink inside flex container
 
-    // Account for container padding so text fits inside the card
+  if (placeholder) {
+    placeholder.style.display = 'none'; // hidden by default in normal case
+  }
+
+  // Account for container padding so text fits inside the card
   const cs = getComputedStyle(container);
   const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
   const padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
@@ -19,21 +27,54 @@ function fitTextToContainer(container, maxFontSize = 100, minFontSize = 6) {
   const availH = Math.max(0, container.clientHeight - padY);
   span.style.maxWidth = `${availW}px`;
 
+  // If there is literally no space, fall back immediately
+  if (availW <= 0 || availH <= 0) {
+    container.classList.add('text-too-small');
+    span.style.display = 'none';
+    if (placeholder) placeholder.style.display = 'block';
+    return;
+  }
+
+  // --- Pre-check the smallest font size (minFontSize) ---
+  span.style.fontSize = `${minFontSize}px`;
+  const minFits =
+    span.scrollWidth  <= availW &&
+    span.scrollHeight <= availH;
+
+  if (!minFits) {
+    // Even the smallest size does not fit → show burger icon instead of text
+    container.classList.add('text-too-small');
+    span.style.display = 'none';
+    if (placeholder) placeholder.style.display = 'block';
+    return;
+  }
+
+  // At least minFontSize fits; now binary-search for the largest size that still fits
+  let low = minFontSize;
+  let high = maxFontSize;
+  let best = minFontSize;
+
   while (low <= high) {
     const mid = (low + high) >> 1;
     span.style.fontSize = `${mid}px`;
 
-    const fits = (span.scrollWidth <= availW) && (span.scrollHeight <= availH);
+    const fits =
+      span.scrollWidth  <= availW &&
+      span.scrollHeight <= availH;
 
     if (fits) {
-      fontSize = mid;
+      best = mid;
       low = mid + 1;
     } else {
       high = mid - 1;
     }
   }
 
-  span.style.fontSize = `${fontSize}px`;
+  // Final normal state: text visible, icon hidden
+  span.style.fontSize = `${best}px`;
+  span.style.display = 'inline-block';
+  container.classList.remove('text-too-small');
+  if (placeholder) placeholder.style.display = 'none';
 }
 window.fitTextToContainer = fitTextToContainer;
 
@@ -63,6 +104,9 @@ export class Grid {
       this.currentState = 'grouped';
       this._detail = { active: false };
       this._clusterTimer = null;
+
+      // Single Audio() instance for hover TTS on tiles
+      this._hoverTtsAudio = null;
 
       // Tunables for grouped layout (increase to spread items apart)
       this.GROUPED_SPREAD = 38;  // was ~16
@@ -495,6 +539,9 @@ export class Grid {
     
       const obj = this.objects.find(o => o.id === objectId);
       if (!obj) return;
+
+      // Stop any hover TTS audio when opening inline detail
+      this.stopHoverTts();
     
       const el = document.getElementById(obj.id);
 
@@ -636,6 +683,10 @@ export class Grid {
     
       const obj = this.objects.find(o => o.id === objectId);
       if (!obj) return;
+
+      // Stop any hover TTS audio when opening clustered inline detail
+      this.stopHoverTts();
+
       const el = document.getElementById(obj.id);
     
       // Detail size = half of ungrouped in both dimensions
@@ -821,6 +872,20 @@ export class Grid {
         v.pause();
         v.currentTime = 0;
       });
+    }
+
+    _ensureHoverTtsAudio() {
+      if (!this._hoverTtsAudio) {
+        this._hoverTtsAudio = new Audio();
+        this._hoverTtsAudio.preload = 'none';
+      }
+      return this._hoverTtsAudio;
+    }
+
+    stopHoverTts() {
+      if (!this._hoverTtsAudio) return;
+      try { this._hoverTtsAudio.pause(); } catch {}
+      try { this._hoverTtsAudio.currentTime = 0; } catch {}
     }
 
     _rand01(seed) {
@@ -1021,6 +1086,62 @@ export class Grid {
           span.className = 'scaling-text';
           span.textContent = object.text;
           objectDiv.appendChild(span);
+
+          // Inline burger icon used as "too small to show text" placeholder
+          const svgNS = 'http://www.w3.org/2000/svg';
+          const icon = document.createElementNS(svgNS, 'svg');
+          icon.setAttribute('class', 'burger burger--rect text-placeholder-icon');
+          icon.setAttribute('viewBox', '0 0 28 20');
+          icon.setAttribute('aria-hidden', 'true');
+          icon.setAttribute('focusable', 'false');
+
+          const bars = [
+            { className: 'bar bar--top', y: 2 },
+            { className: 'bar bar--mid', y: 9 },
+            { className: 'bar bar--bot', y: 16 },
+          ];
+
+          for (const { className, y } of bars) {
+            const rect = document.createElementNS(svgNS, 'rect');
+            rect.setAttribute('class', className);
+            rect.setAttribute('x', '4');
+            rect.setAttribute('y', String(y));
+            rect.setAttribute('width', '20');
+            rect.setAttribute('height', '1');
+            rect.setAttribute('rx', '0.5');
+            icon.appendChild(rect);
+          }
+
+          objectDiv.appendChild(icon);
+
+          // 🔊 Hover text-to-speech for text objects (only if they have TTS audio)
+          if (object.textToSpeech) {
+            const ttsSrc = object.textToSpeech;
+            objectDiv.dataset.ttsSrc = ttsSrc; // convenient for debugging
+
+            const playHoverTts = () => {
+              // Only in ungrouped or clustered views (not grouped, not detail)
+              if (this.currentState !== 'ungrouped' && this.currentState !== 'clustered') return;
+              if (this._detail?.active) return; // inline detail open → no hover playback
+              if (!ttsSrc) return;
+
+              const a = this._ensureHoverTtsAudio();
+              if (a.src !== ttsSrc) {
+                a.src = ttsSrc;
+              }
+              try { a.currentTime = 0; } catch {}
+              a.play().catch(() => {
+                // ignore autoplay / other transient errors
+              });
+            };
+
+            const stopHoverTts = () => {
+              this.stopHoverTts();
+            };
+
+            objectDiv.addEventListener('mouseenter', playHoverTts, { passive: true });
+            objectDiv.addEventListener('mouseleave', stopHoverTts, { passive: true });
+          }
         }
 
         if (object.type === 'video') {
