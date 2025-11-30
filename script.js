@@ -1728,6 +1728,7 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
       name: a.Name || a.name || a.Title || a.title || '',
       description: a.Description || a.description || a.Caption || a.caption || '',
       references : a.References || a.references || '',
+      footNotes : a.FootNotes || a.footNotes || a.footnotes || a.foot_notes || '',
       content: a.Content || a.content || '',
       grid_x: 0, grid_y: 0,
       width, height,
@@ -2976,7 +2977,7 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
         }        
 
         if (obj.type === 'text') {
-          // TEXT → Content + InlineContentImage + Content2
+          // TEXT → Content + InlineContentImage + Content2 (+ FootNotes)
           const parts = [];
 
           // 1) Main Content (existing)
@@ -2996,6 +2997,18 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
           // 3) Second rich text field
           const content2Html = richToHTML(obj.content2);
           if (content2Html) parts.push(content2Html);
+
+          // 4) FootNotes (optional, rendered last in .detail-content)
+          const footNotesHtml = richToHTML(
+            obj.footNotes ?? obj.footnotes ?? obj.foot_notes
+          );
+          if (footNotesHtml) {
+            parts.push(
+              `<div class="detail-footnotes">
+                 ${footNotesHtml}
+               </div>`
+            );
+          }
 
           const html = parts.join('\n');
 
@@ -6613,49 +6626,128 @@ function createYouTubeEmbed(url, videoId) {
 }
 
 // Replace URLs inside a single text node by <a> or YouTube embeds
+// and also turn superscript digits (¹²³ etc.) into clickable footnote links
+function wireFootnoteRef(el) {
+  if (!el) return;
+
+  // Avoid double-binding on the same element
+  if (el.dataset && el.dataset.footnoteLinked === '1') return;
+  if (el.dataset) {
+    el.dataset.footnoteLinked = '1';
+  }
+
+  // Always make it look clickable
+  el.classList.add('detail-footnote-ref');
+
+  el.addEventListener('click', (ev) => {
+    const root =
+      el.closest('#detail-content') ||
+      el.closest('.scroll-container-vertical') ||
+      document;
+
+    const footnotes = root.querySelector('.detail-footnotes');
+    if (!footnotes) {
+      // No footnotes in this view → do nothing special
+      return;
+    }
+
+    ev.preventDefault();
+    ev.stopPropagation();
+    footnotes.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
 function linkifyTextNode(textNode) {
   const text = textNode.nodeValue;
-  if (!text || !/https?:\/\/[^\s<]+/i.test(text)) return;
+  if (!text) return;
+
+  // Quick check: if there's no URL and no superscript digits, skip
+  const hasUrl = /https?:\/\/[^\s<]+/i.test(text);
+  const hasSupDigit = /[⁰¹²³⁴⁵⁶⁷⁸⁹]/.test(text); // ¹²³, ⁴…⁹, ⁰
+  if (!hasUrl && !hasSupDigit) return;
 
   const parent = textNode.parentNode;
   if (!parent) return;
 
   const frag = document.createDocumentFragment();
-  const urlRegex = /https?:\/\/[^\s<]+/gi;
+
+  // Match either URLs or runs of superscript digits
+  const tokenRegex = /https?:\/\/[^\s<]+|[⁰¹²³⁴⁵⁶⁷⁸⁹]+/gi;
   let lastIndex = 0;
   let match;
 
-  while ((match = urlRegex.exec(text)) !== null) {
-    const url = match[0];
+  while ((match = tokenRegex.exec(text)) !== null) {
+    const token = match[0];
     const index = match.index;
 
-    // Text before the URL
+    // Text before this token
     if (index > lastIndex) {
       frag.appendChild(document.createTextNode(text.slice(lastIndex, index)));
     }
 
-    // YouTube → embed, everything else → normal link
-    const ytId = extractYouTubeId(url);
-    if (ytId) {
-      frag.appendChild(createYouTubeEmbed(url, ytId));
+    if (/^https?:\/\//i.test(token)) {
+      // URL → YouTube embed or normal link (existing behavior)
+      const url = token;
+      const ytId = extractYouTubeId(url);
+      if (ytId) {
+        frag.appendChild(createYouTubeEmbed(url, ytId));
+      } else {
+        const a = document.createElement('a');
+        a.href = url;
+        a.textContent = url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        frag.appendChild(a);
+      }
     } else {
-      const a = document.createElement('a');
-      a.href = url;
-      a.textContent = url;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      frag.appendChild(a);
+      // Superscript footnote marker(s) like "²" or "¹²"
+      const span = document.createElement('span');
+      span.textContent = token;
+      wireFootnoteRef(span);
+      frag.appendChild(span);
     }
 
-    lastIndex = index + url.length;
+    lastIndex = index + token.length;
   }
 
-  // Remaining text after the last URL
+  // Remaining text after the last token
   if (lastIndex < text.length) {
     frag.appendChild(document.createTextNode(text.slice(lastIndex)));
   }
 
   parent.replaceChild(frag, textNode);
+}
+
+function attachFootnoteLink(supEl) {
+  if (!supEl || supEl.dataset.footnoteLink === '1') return;
+
+  const text = (supEl.textContent || '').trim();
+  if (!text) return;
+
+  // Accept normal digits and superscript digits (¹²³ and ⁰–⁹)
+  const isFootnoteNumber = /^[0-9\u00B9\u00B2\u00B3\u2070-\u2079]+$/.test(text);
+  if (!isFootnoteNumber) return;
+
+  // Find the relevant container for this detail block
+  const container =
+    supEl.closest('.content-section .section-content') ||
+    supEl.closest('.detail-content') ||
+    supEl.closest('.content-section');
+
+  if (!container) return;
+
+  const footnotes = container.querySelector('.detail-footnotes');
+  if (!footnotes) return;
+
+  // Mark so we don't re-wire the same node twice
+  supEl.dataset.footnoteLink = '1';
+  supEl.classList.add('detail-footnote-ref');
+
+  supEl.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    footnotes.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 }
 
 // Walk a subtree and enhance text nodes (skip anchors, scripts, etc.)
@@ -6673,6 +6765,11 @@ function walkEnhancer(node) {
 
   const tag = node.tagName;
   if (!tag) return;
+
+  // Superscripts → link to FootNotes (if present in this detail block)
+  if (tag === 'SUP') {
+    attachFootnoteLink(node);
+  }
 
   // Do NOT walk into these elements (already links or code-like)
   const skip = ['A', 'IFRAME', 'SCRIPT', 'STYLE', 'CODE', 'PRE', 'TEXTAREA', 'BUTTON'];
