@@ -351,6 +351,24 @@
     line-height: 1.3;
   }
 
+  /* Grid text overflow fallback: show burger icon instead of unreadable text */
+  #grid .object.text .text-placeholder-icon {
+    display: none;        /* hidden by default */
+    width: 40%;
+    max-width: 60px;      /* optional: keep it from getting too large */
+    height: auto;
+  }
+
+  /* When the text is too small to be useful, hide the text and show the icon */
+  #grid .object.text.text-too-small .scaling-text {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  #grid .object.text.text-too-small .text-placeholder-icon {
+    display: block;
+  }
+
   /* WaveSurfer in grid audio tiles */
   #grid .object.audio .wave {
     position: absolute;
@@ -860,17 +878,30 @@ header {
   stroke-width: 1;
 }
 
-/* Text-to-speech FAB on detail page (bottom-left, same edge gap as back button) */
+/* Text-to-speech FAB on detail page (stacked under back button like #gallery-ungroup) */
 #content-tts-button {
   position: absolute;
-  left: 12px;     /* same X as #content-back-button */
-  bottom: 20%;   /* same edge gap but at bottom */
+  top: calc(var(--fab-edge-gap) + var(--fab-size) + 9px);  /* same vertical offset as #gallery-ungroup */
+  left: var(--fab-edge-gap);                               /* same X as back button / ungroup button */
   z-index: 1200;
 }
 
 /* When hidden, remove from layout */
 #content-tts-button[hidden] {
   display: none !important;
+}
+
+/* TTS icon states */
+#content-tts-button .tts-icon--pause {
+  display: none; /* default: only speaker visible */
+}
+
+#content-tts-button.is-playing .tts-icon--speaker {
+  display: none;
+}
+
+#content-tts-button.is-playing .tts-icon--pause {
+  display: block;
 }
 
 /* Ungroup button inside the group gallery header */
