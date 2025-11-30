@@ -180,6 +180,31 @@
     margin-top: 0;
   }
 
+  .prepage-mobile-message {
+    display: none;               /* hidden by default (desktop) */
+    font-size: 0.95em;
+    text-align: center;
+    max-width: 260px;
+    line-height: 1.4;
+  }
+  
+  @media (max-width: 768px) {
+    .prepage-actions {
+      flex-direction: column;
+      align-items: center;
+    }
+  
+    /* On mobile: hide both buttons */
+    .prepage-actions .button {
+      display: none;
+    }
+  
+    /* On mobile: show the "Coming soon to mobile" text */
+    .prepage-actions .prepage-mobile-message {
+      display: block;
+    }
+  }  
+
   /* Bottom row: left text pinned left, logos centered independent */
   .prepage-bottom {
     display: grid;
