@@ -405,7 +405,12 @@ export class Grid {
           <ul class="detail-tags tags">${(obj.connectingTags || []).map(t => `<li>${t}</li>`).join('')}</ul>
           <a class="detail-link" href="#" target="_blank" rel="noopener">
             Discover
-            <img src="img/icons/arrow_button_33x18px.svg" alt="" class="detail-link-icon">
+            <svg class="detail-link-icon"
+                viewBox="0 0 33 18"
+                aria-hidden="true"
+                fill="currentColor" stroke="currentColor">
+              <path d="M32.8,9.49l-8.31,8.31c-.27.27-.71.27-.98,0s-.27-.71,0-.98l7.13-7.13H.69c-.38,0-.69-.31-.69-.69s.31-.69.69-.69h29.94l-7.12-7.12c-.27-.27-.27-.71,0-.98s.71-.27.98,0l8.31,8.31c.27.27.27.71,0,.98Z"/>
+            </svg>
           </a>
         </div>
       `;
