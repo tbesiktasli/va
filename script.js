@@ -3161,8 +3161,15 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
     function stopTtsAudio() {
       if (!__ttsAudio) return;
+
       try { __ttsAudio.pause(); } catch {}
       try { __ttsAudio.currentTime = 0; } catch {}
+
+      // Also reset the visual state of the TTS button (icon back to speaker)
+      const btn = document.getElementById('content-tts-button');
+      if (btn) {
+        btn.classList.remove('is-playing');
+      }
     }
 
     (function bindTtsButtonOnce() {
@@ -3174,29 +3181,53 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
         if (!__ttsAudio) {
           __ttsAudio = new Audio();
           __ttsAudio.preload = 'none';
+
+          // When audio finishes naturally, reset the button icon
+          __ttsAudio.addEventListener('ended', () => {
+            const b = document.getElementById('content-tts-button');
+            if (b) {
+              b.classList.remove('is-playing');
+            }
+          });
         }
         return __ttsAudio;
       }
 
-      btn.addEventListener('mouseenter', () => {
-        const src = btn.dataset.src;
-        if (!src) return;
-
-        const a = ensureAudio();
-        if (a.src !== src) a.src = src;
-        a.currentTime = 0;
-        a.play().catch(() => {});
-      });
-
-      btn.addEventListener('mouseleave', stopTtsAudio);
-
-      // Click should have no effect
+      // Click toggles play / stop
       btn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
+
+        const src = btn.dataset.src;
+        if (!src) {
+          // Nothing to play
+          return;
+        }
+
+        const a = ensureAudio();
+
+        // If we're currently not playing, start playback
+        if (!btn.classList.contains('is-playing')) {
+          if (a.src !== src) {
+            a.src = src;
+          }
+          try {
+            a.currentTime = 0;
+          } catch {}
+          a.play()
+            .then(() => {
+              btn.classList.add('is-playing');
+            })
+            .catch(() => {
+              // If play fails (autoplay restrictions, etc.), keep state clean
+              btn.classList.remove('is-playing');
+            });
+        } else {
+          // Already playing -> stop
+          stopTtsAudio();
+        }
       });
     })();
-
     
     function initDetailWave() {
       const waveDiv = document.getElementById('detail-wave');
