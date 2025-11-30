@@ -52,6 +52,10 @@
   --icon-section-toggle: url('img/icons/arrow_expand.svg');
   /* override this if you want a fixed color instead of current text color */
   --section-toggle-icon-color: initial; /* e.g., var(--main-light-font-color) */
+
+  --prepage-bg-image: url("img/prescreen-bg.svg"); /* adjust path if needed */
+  --prepage-bg-size: 80%;
+  --prepage-bg-opacity: 0.05;                      /* tweak to taste */
 }
 
 :root[data-theme="dark"] {
@@ -86,7 +90,7 @@
     position: fixed;
     inset: 0;
     z-index: 10000;
-    background: var(--main-bg-color) url("img/") center center / contain no-repeat;
+    background: var(--main-bg-color);
     color: var(--main-font-color);
     display: flex;
     flex-direction: column;
@@ -94,6 +98,24 @@
     padding: 24px 28px;
     opacity: 1;
     transition: opacity 400ms ease;
+  }
+
+  .prepage::before {
+    content: "";
+    position: absolute;
+    inset: 0;              /* fill the prepage container */
+    margin: auto;          /* combined with width/height centers it */
+    width: var(--prepage-bg-size);
+    height: var(--prepage-bg-size);
+
+    background-image: var(--prepage-bg-image);
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: contain;
+
+    opacity: var(--prepage-bg-opacity); /* affects only the SVG layer */
+    pointer-events: none;               /* don’t block clicks */
+    z-index: -1;
   }
 
   body.has-prepage {
@@ -935,6 +957,8 @@ body.in-group-gallery:not(.in-adhoc-gallery) #gallery-ungroup {
   color: var(--main-font-color);
   align-items: center;
   box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+  text-decoration: none !important;
+  background-color: var(--main-bg-color);
 }
 .button:hover {
   box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
@@ -1181,8 +1205,8 @@ and pin the expanded panel to the right edge. */
 .vertical-content .right blockquote {
   font-style: italic;
   font-size: 0.9em;
-  margin-top: 50px;
-  margin-bottom: 50px;
+  margin-top: 30px;
+  margin-bottom: 30px;
   padding-left: 50px;
   padding-right: 120px;
   line-height: 2em;
@@ -1499,11 +1523,6 @@ and pin the expanded panel to the right edge. */
   font-size: 0.9em;
 }
 
-.flex-table .value a {
-  color: inherit;
-  text-decoration: underline;
-}
-
 /* Detail: description block (for media objects) */
 .detail-description-block {
   padding: 0 100px;
@@ -1540,6 +1559,11 @@ and pin the expanded panel to the right edge. */
 
 .content-section .section-content {
   height: 100%;
+}
+
+.section-content a {
+  color: inherit;
+  text-decoration: underline;
 }
 
 /* sidebar accordion must be allowed to collapse */
@@ -1664,12 +1688,13 @@ and pin the expanded panel to the right edge. */
 }
 
 .content-section .detail-content ul {
+  font-size: 0.9em;
   padding: 0 100px;
   margin-left: 20px;
-  list-style: circle;
+  list-style: disc;
 }
 .content-section .detail-content ul li {
-  margin-bottom: 5px;
+  margin-bottom: 10px;
 }
 
 /* Make header a flex row so the chevron can sit at the far right */
@@ -1944,7 +1969,7 @@ and pin the expanded panel to the right edge. */
   height: 15px;
 
   /* same visual tokens as .fab */
-  background: #fff;
+  background: var(--main-bright-bg-color);
   border: 1px solid var(--main-outline-color);
   border-radius: 50%;
   color: var(--main-font-color);
