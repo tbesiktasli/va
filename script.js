@@ -6651,11 +6651,50 @@ function initSubpageLinkShortcuts() {
   });
 }
 
+function initArrowListScrolling() {
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest('.arrow-list a[href^="#"]');
+    if (!link) return;
+
+    const href = link.getAttribute('href');
+    if (!href || !href.startsWith('#')) return;
+
+    const targetId = href.slice(1).trim();
+    if (!targetId) return;
+
+    const target = document.getElementById(targetId);
+    if (!target) return;
+
+    // We fully override default behavior
+    event.preventDefault();
+    event.stopPropagation?.();
+
+    // Use the same scroll-locator as scroll-up buttons
+    const scroller = (typeof nearestScroller === 'function')
+      ? nearestScroller(target)
+      : target.closest('.scroll-container-vertical') ||
+        document.scrollingElement ||
+        document.documentElement;
+
+    if (!scroller) return;
+
+    const targetRect   = target.getBoundingClientRect();
+    const scrollerRect = scroller.getBoundingClientRect();
+    const targetTop    = targetRect.top - scrollerRect.top + scroller.scrollTop;
+
+    scroller.scrollTo({
+      top: targetTop,
+      behavior: 'smooth'
+    });
+  });
+}
+
 // Run once DOM is ready (keep your existing DOMContentLoaded handlers)
 document.addEventListener('DOMContentLoaded', () => {
   initSlideIns();
   initOverlayMenu();
   initSubpageLinkShortcuts();
+  initArrowListScrolling();   // ← add this line
   initAuthorBylineLinks();
   // Insert Dark | Light before the burger
   renderThemeToggle(document.querySelector('.header-right'));
