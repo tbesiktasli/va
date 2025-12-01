@@ -1879,6 +1879,9 @@ window.gridObject = null;
     const loaded = await loadData(DATA_MODE);
     // Use the chosen data source
     objects = loaded.objects;
+
+    // Reset groupMetaById so we don't keep dummy meta when in 'strapi' mode
+    Object.keys(groupMetaById).forEach((key) => delete groupMetaById[key]);
     Object.assign(groupMetaById, loaded.groupMeta);
 
     // NEW: rebuild tag/object compatibility from the active dataset
