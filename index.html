@@ -410,7 +410,7 @@
     </div>
 
     <!-- Simple text page (hidden by default, shown via JS) -->
-    <div id="subpage-about-this-project" class="scroll-container-vertical text-subpage">
+    <div id="subpage-introduction" class="scroll-container-vertical text-subpage">
       <!-- Back button (same look as detail) -->
 
       <div class="vertical-content">
@@ -461,6 +461,73 @@
         </div>
       </div>
     </div>
+
+    <!-- Simple text page (hidden by default, shown via JS) -->
+    <div id="subpage-about" class="scroll-container-vertical text-subpage">
+      <!-- Back button (same look as detail) -->
+
+      <div class="vertical-content">
+        <div class="text-page">
+          <h2>About this project</h2>
+          <h1>Viral Atmospheres Archive: An Archive for Exploring How Feelings Drive a Pandemic</h1>
+
+          <p>
+            This online archive is a collaborative, artistic and experimental science communication project that emerged from the MoRePPaR research on the “Mobility Regimes of Pandemic Preparedness and Response in the Case of Covid-19”, an international research cooperation on the affective dimensions of the Covid-19 pandemic studied primarily in the Democratic Republic of the Congo, Germany, South Africa and South Korea. The archive also comprises field research conducted in China and the US associated with the project.
+          </p>
+            
+          <p>
+          The involved institutions are the Yonsei University in Seoul, South Korea, the Witwatersrand University in Johannesburg, South Africa, the Pole Institute in Goma, Democratic Republic of the Congo, the Freie Universität in Berlin, Germany and the Bernhard-Nocht-Institute for Tropical Medicine in Hamburg, Germany.
+          </p>
+          
+          <p>
+          The online archive is an interactive digital memory project that sits at the intersection of collection, archive, and exhibition, and aims to give insight into the felt experiences of public health emergencies, more specifically the Covid-19 pandemic. The material on this website mostly stems from ethnographic research conducted in the framework of the MoRePPaR-research and collects experiences and voices from researchers and interlocutors mixed with photos, videos and sounds from their life worlds. All materials have been collected, curated and created from 2022 onwards, as the pandemic had already mostly subsided and yet was lingering in memories, emotions and spaces people inhabited at the time of field research.
+          </p>            
+
+          <!-- ADD THIS BLOCK AT THE BOTTOM OF .text-page -->
+          <div class="subpage-further-reading">
+            <h3>Further context</h3>
+            <p>To engage with the ideas behind this project, continue exploring:</p>
+
+            <ul class="further-reading-list">
+              <li>
+                <span class="further-reading-icon" aria-hidden="true">
+                  <!-- Inline arrow icon: uses currentColor for dark mode -->
+                  <svg viewBox="0 0 33 18">
+                    <g fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.5"
+                      stroke-linecap="round"
+                      stroke-linejoin="round">
+                      <line x1="1" y1="9" x2="32" y2="9"></line>
+                      <polyline points="25 2 32 9 25 16"></polyline>
+                    </g>
+                  </svg>
+                </span>
+                <div class="further-reading-text">
+                  <a href="#subpage-introduction" class="further-reading-title" data-subpage-id="subpage-introduction" data-subpage-header="Introduction">
+                    Introduction
+                  </a>
+                  <div class="further-reading-subline">
+                    Learn more about the conceptual framework and aims of the project.
+                  </div>
+                </div>
+              </li>
+            </ul>
+          </div>
+          <!-- END further reading block -->
+
+          <div class="scroll-up-cta">
+            <button type="button"
+                    class="scroll-up"
+                    data-icon-src="img/icons/arrow_counter_10x12px.svg">
+              <span class="icon" aria-hidden="true"></span>
+              <span class="label">scroll up</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
 
     <!-- Simple text page (hidden by default, shown via JS) -->
     <div id="subpage-about-moreppar" class="scroll-container-vertical text-subpage">
@@ -797,9 +864,8 @@
     <div class="overlay-content">
       <div class="main-menu">
         <div class="menu-item" data-target="viralatmospheres">Viral Atmospheres</div>
-        <div class="menu-item" data-target="about">About MoRePPaR</div>
         <div class="menu-item" data-target="projects">Research Projects</div>
-        <div class="menu-item" data-target="team">Our Team</div>
+        <div class="menu-item" data-target="team">Team</div>
       </div>
       <div class="sub-menu" id="sub-menu"></div>
     </div>
