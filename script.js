@@ -140,30 +140,54 @@ function initPrepage() {
 
   document.body.classList.add('has-prepage');
 
+  // Shared fade-out helper for Explore + Learn more
+  const closePrepage = (afterFn) => {
+    // start fade
+    prepage.classList.add('is-fading');
+
+    const finish = () => {
+      prepage.classList.add('is-hidden');
+      document.body.classList.remove('has-prepage');
+      if (typeof afterFn === 'function') {
+        afterFn();
+      }
+    };
+
+    // remove after transition ends (with fallback)
+    const to = setTimeout(finish, 450);
+    prepage.addEventListener(
+      'transitionend',
+      () => {
+        clearTimeout(to);
+        finish();
+      },
+      { once: true }
+    );
+  };
+
   const exploreBtn = document.getElementById('prepage-explore');
   if (exploreBtn) {
     exploreBtn.addEventListener('click', (e) => {
       e.preventDefault();
-    
-      // start fade
-      prepage.classList.add('is-fading');
-    
-      const finish = () => {
-        prepage.classList.add('is-hidden');
-        document.body.classList.remove('has-prepage');
-      };
-    
-      // remove after transition ends (with fallback)
-      const to = setTimeout(finish, 450);
-      prepage.addEventListener('transitionend', () => {
-        clearTimeout(to);
-        finish();
-      }, { once: true });
-    });     
+      // Explore: just close prepage and reveal the home grid behind it
+      closePrepage();
+    });
   }
 
-  // Learn more has no target yet (intentionally left empty)
+  const learnMoreBtn = document.getElementById('prepage-learn-more');
+  if (learnMoreBtn) {
+    learnMoreBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      // Learn more: close prepage, then open the About text subpage
+      closePrepage(() => {
+        if (typeof openTextSubpage === 'function') {
+          openTextSubpage('subpage-about', 'About');
+        }
+      });
+    });
+  }
 }
+
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initPrepage);
 } else {
@@ -6355,18 +6379,24 @@ function initOverlayMenu() {
 
   // 1) Submenu entries
   const subItemsMap = {
-    viralatmospheres: ['Blah','Blub'],
-    about: ['About MoRePPaR','The Research Project','Summer School','The Book','References'],
-    projects: ['Project One','Project Two','Project Three'],
-    team: ['Our Team']
+    // Viral Atmospheres has two subpages: About (placeholder) and Introduction
+    viralatmospheres: ['About', 'Introduction'],
+
+    // Research Projects and Team have no submenu items
+    projects: [],
+    team: [],
   };
+
 
   // 2) Label → subpage id + header-left copy
   const SUBPAGE_ROUTES = {
-    'About MoRePPaR':       { id: 'subpage-about-moreppar',  header: 'About MoRePPaR' },
-    'The Research Project': { id: 'subpage-about-this-project',   header: 'About this project' }, // optional if you add this id later
-    'References':           { id: 'subpage-references',          header: 'References' },
-    'Our Team':             { id: 'subpage-team',               header: 'Meet our Team' },
+    // Viral Atmospheres → About + Introduction pages
+    'About':        { id: 'subpage-about',        header: 'About' },
+    'Introduction': { id: 'subpage-introduction', header: 'Introduction' },
+
+    // Other existing text pages
+    'References':   { id: 'subpage-references',   header: 'References' },
+    'Team':         { id: 'subpage-team',         header: 'Meet our Team' },
   };
 
   function setActiveMenu(target){
@@ -6420,7 +6450,39 @@ function initOverlayMenu() {
   headerClose?.addEventListener('click', closeOverlay);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) closeOverlay(e); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeOverlay(e); });
-  mainItems.forEach(i => i.addEventListener('click', () => setActiveMenu(i.dataset.target)));
+  mainItems.forEach(i => i.addEventListener('click', () => {
+    const target = i.dataset.target;
+
+    // Viral Atmospheres: show its sub-menu (About, Introduction)
+    if (target === 'viralatmospheres') {
+      setActiveMenu(target);
+      return;
+    }
+
+    // Research Projects: go directly to Home (grid)
+    if (target === 'projects') {
+      if (typeof goHome === 'function') {
+        goHome();
+      } else {
+        // Fallback: just close the overlay if goHome is not available
+        closeOverlay();
+      }
+      return;
+    }
+
+    // Team: open Team subpage directly (no sub-menu)
+    if (target === 'team') {
+      const route = SUBPAGE_ROUTES['Team'];
+      if (route && typeof openTextSubpage === 'function') {
+        closeOverlay();
+        openTextSubpage(route.id, route.header);
+      }
+      return;
+    }
+
+    // Default behavior (if new menu items are added later)
+    setActiveMenu(target);
+  }));
 }
 
 // === Subpage initializers (run when a subpage is opened) ===
@@ -6540,10 +6602,34 @@ function openTextSubpage(sectionId, headerText, options = {}) {
 }
 window.openTextSubpage = openTextSubpage;
 
+window.openTextSubpage = openTextSubpage;
+
+// Generic handler: any element with data-subpage-id will open that text subpage
+function initSubpageLinkShortcuts() {
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest('[data-subpage-id]');
+    if (!link) return;
+
+    const sectionId = link.getAttribute('data-subpage-id');
+    if (!sectionId) return;
+
+    const headerText =
+      link.getAttribute('data-subpage-header') ||
+      (link.textContent || '').trim() ||
+      'Information';
+
+    if (typeof openTextSubpage !== 'function') return;
+
+    event.preventDefault();
+    openTextSubpage(sectionId, headerText);
+  });
+}
+
 // Run once DOM is ready (keep your existing DOMContentLoaded handlers)
 document.addEventListener('DOMContentLoaded', () => {
   initSlideIns();
   initOverlayMenu();
+  initSubpageLinkShortcuts();
   // Insert Dark | Light before the burger
   renderThemeToggle(document.querySelector('.header-right'));
   syncThemeToggleUI();
