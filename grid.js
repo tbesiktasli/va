@@ -87,6 +87,7 @@ export class Grid {
         // change this default to make everything appear larger/smaller at start
         baseZoom: 1, // e.g. 1.25 for bigger, 0.85 for smaller
         objectScale: 0.8, // NEW: starting size for all objects (1 = keep original)
+        detailConnectingTagLimit: null,
       };
       this.objects = objects;
       // NEW: pre-scale object widths/heights so initial zoom can remain 1
@@ -380,6 +381,16 @@ export class Grid {
       if (obj.type === 'text') {
         panel.classList.add('detail-text-object');
       }
+
+      // Limit number of connecting tags in inline detail panel (optional)
+      const allConnectingTags = Array.isArray(obj.connectingTags) ? obj.connectingTags : [];
+      const maxDetailTags = this.display?.detailConnectingTagLimit;
+      const detailConnectingTags = (
+        typeof maxDetailTags === 'number' && maxDetailTags > 0
+          ? allConnectingTags.slice(0, maxDetailTags)
+          : allConnectingTags
+      );
+
       panel.innerHTML = `
         <button class="detail-close" aria-label="Close"></button>
 
@@ -402,7 +413,7 @@ export class Grid {
           <div class="detail-date-inline">${formattedDate}</div>
           ${primaryText ? `<div class="detail-description">${primaryText}</div>` : ''}
           <div class="detail-group">${obj.groupLocation || ''}</div>
-          <ul class="detail-tags tags">${(obj.connectingTags || []).map(t => `<li>${t}</li>`).join('')}</ul>
+          <ul class="detail-tags tags">${detailConnectingTags.map(t => `<li>${t}</li>`).join('')}</ul>
           <a class="detail-link" href="#" target="_blank" rel="noopener">
             Discover
             <svg class="detail-link-icon"
