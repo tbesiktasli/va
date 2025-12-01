@@ -2365,6 +2365,11 @@ ul.tag-group-switch {
   justify-content: start;
 }
 
+.overlay-footer a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 /* END OVERLAY MENU */
 
 
@@ -2831,6 +2836,11 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   margin-bottom: 20px !important;
 }
 
+.subpage-author a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 /* List layout: arrow on left, text on right */
 .further-reading-list {
   list-style: none;
@@ -2958,4 +2968,10 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   font-size: 0.9em;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+#section-notes, #section-references {
+  margin-top: 50px;
+  padding-top: 50px;
+  border-top: 1px solid var(--main-font-color);
 }
