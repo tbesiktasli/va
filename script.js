@@ -1456,6 +1456,36 @@ function openAuthorSubpageForName(name) {
 // expose for other modules (detail, future links)
 window.openAuthorSubpageForName = openAuthorSubpageForName;
 
+function handleAuthorLinkClick(ev, anchor) {
+  if (!anchor) return;
+
+  if (ev) {
+    ev.preventDefault();
+    ev.stopPropagation?.();
+  }
+
+  const authorName =
+    anchor.dataset.authorName ||
+    (anchor.textContent || '').trim();
+
+  if (authorName && window.openAuthorSubpageForName) {
+    window.openAuthorSubpageForName(authorName);
+  }
+}
+
+function initAuthorBylineLinks() {
+  // Delegate clicks for any author byline inside .subpage-author
+  document.addEventListener('click', (ev) => {
+    const anchor = ev.target.closest('.subpage-author a');
+    if (!anchor) return;
+
+    // If someone else already fully handled this event, don't double-trigger
+    if (ev.defaultPrevented) return;
+
+    handleAuthorLinkClick(ev, anchor);
+  });
+}
+
 function openGroupGalleryFromDetail(gid) {
   if (gid == null || gid === '') return;
   window.closeObjectDetail?.();
@@ -2929,13 +2959,9 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
             researcherEl.onclick = (ev) => {
               const a = ev.target.closest('.researcher-link');
               if (!a) return;
-              ev.preventDefault();
-              ev.stopPropagation();
-
-              const authorName = a.dataset.authorName || a.textContent.trim();
-              window.openAuthorSubpageForName?.(authorName);
+              handleAuthorLinkClick(ev, a);
             };
-          }
+          }        
         } else {
           setRow('researcher', authorStr);
         }
@@ -6630,6 +6656,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initSlideIns();
   initOverlayMenu();
   initSubpageLinkShortcuts();
+  initAuthorBylineLinks();
   // Insert Dark | Light before the burger
   renderThemeToggle(document.querySelector('.header-right'));
   syncThemeToggleUI();
