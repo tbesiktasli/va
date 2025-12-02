@@ -2110,20 +2110,28 @@ function renderContentSidebar(sidebar, data) {
   const notesBody    = sidebar.querySelector('.content-sidebar-notes-body');
   const refsBody     = sidebar.querySelector('.content-sidebar-references-body');
 
-  if (!titleH1 || !contextBody || !notesBody || !refsBody) return;
+  // NEW: row containers so we can hide them
+  const notesRow = sidebar.querySelector('.content-sidebar-notes-row');
+  const refsRow  = sidebar.querySelector('.content-sidebar-references-row');
 
-  if (!data) {
-    titleH1.textContent   = '';
-    contextBody.innerHTML = '';
-    notesBody.innerHTML   = '';
-    refsBody.innerHTML    = '';
-    return;
-  }
+  if (!titleH1 || !contextBody || !notesBody || !refsBody) return;
 
   const rich = (val) =>
     (val != null && typeof toParagraphHtml === 'function')
       ? toParagraphHtml(val)
       : '';
+
+  if (!data) {
+    // Clear and hide notes + references if no data at all
+    titleH1.textContent   = '';
+    contextBody.innerHTML = '';
+    notesBody.innerHTML   = '';
+    refsBody.innerHTML    = '';
+
+    if (notesRow) notesRow.style.display = 'none';
+    if (refsRow)  refsRow.style.display  = 'none';
+    return;
+  }
 
   // 1) Title (normalized in extractAboutSection from the main model's Title field)
   const title = data.title || '';
@@ -2135,8 +2143,6 @@ function renderContentSidebar(sidebar, data) {
   const contentHtml = rich(data.content);
   if (contentHtml) parts.push(contentHtml);
 
-  // Optional: InlineContentImage (you said we can ignore debugging this for now;
-  // leaving the code here does not hurt if the field is empty or misconfigured).
   if (data.inlineContentImage && typeof tryUploadUrl === 'function' && typeof strapiAssetUrl === 'function') {
     const raw = tryUploadUrl(data.inlineContentImage);
     const url = raw ? strapiAssetUrl(raw) : '';
@@ -2154,11 +2160,19 @@ function renderContentSidebar(sidebar, data) {
 
   contextBody.innerHTML = parts.join('\n');
 
-  // 3) Row 2 right: Notes (FootNotes)
-  notesBody.innerHTML = rich(data.footNotes);
+  // 3) Row 2 right: Notes (FootNotes) – hide row if empty
+  const notesHtml = rich(data.footNotes);
+  notesBody.innerHTML = notesHtml || '';
+  if (notesRow) {
+    notesRow.style.display = notesHtml ? '' : 'none';
+  }
 
-  // 4) Row 3 right: References
-  refsBody.innerHTML = rich(data.references);
+  // 4) Row 3 right: References – hide row if empty
+  const refsHtml = rich(data.references);
+  refsBody.innerHTML = refsHtml || '';
+  if (refsRow) {
+    refsRow.style.display = refsHtml ? '' : 'none';
+  }
 }
 
 // Fill the 3 content slide-ins from the current group's meta
