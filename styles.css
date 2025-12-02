@@ -2975,3 +2975,8 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   padding-top: 50px;
   border-top: 1px solid var(--main-font-color);
 }
+
+.text-page .right a {
+  color: inherit;
+  text-decoration: underline;
+}
