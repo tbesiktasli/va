@@ -2102,17 +2102,17 @@ const CONTENT_SIDEBAR_CONFIG = [
   { id: 'viral-atmospheres',          key: 'aboutViralAtmosphere' },
 ];
 
-// Render the "About the fieldsite" sidebar using the 3-row two-col-table layout
-function renderFieldsiteSidebar(sidebar, data) {
-  const titleH1      = sidebar.querySelector('.fieldsite-title');
-  const contextBody  = sidebar.querySelector('.fieldsite-context-body');
-  const notesBody    = sidebar.querySelector('.fieldsite-notes-body');
-  const refsBody     = sidebar.querySelector('.fieldsite-references-body');
+// Render any of the 3 content sidebars (fieldsite, research project, viral atmospheres)
+// using the shared 3-row two-col-table layout.
+function renderContentSidebar(sidebar, data) {
+  const titleH1      = sidebar.querySelector('.content-sidebar-title');
+  const contextBody  = sidebar.querySelector('.content-sidebar-context-body');
+  const notesBody    = sidebar.querySelector('.content-sidebar-notes-body');
+  const refsBody     = sidebar.querySelector('.content-sidebar-references-body');
 
   if (!titleH1 || !contextBody || !notesBody || !refsBody) return;
 
   if (!data) {
-    // Clear if there is no data at all
     titleH1.textContent   = '';
     contextBody.innerHTML = '';
     notesBody.innerHTML   = '';
@@ -2125,60 +2125,40 @@ function renderFieldsiteSidebar(sidebar, data) {
       ? toParagraphHtml(val)
       : '';
 
-  // 1) Title (support Title or title from Strapi)
-  const title = data.Title || data.title || '';
+  // 1) Title (normalized in extractAboutSection from the main model's Title field)
+  const title = data.title || '';
   titleH1.textContent = title || '';
 
-  // 2) Row 1 right: Content → InlineContentImage → Content2
+  // 2) Row 1 right: Content → (optional) InlineContentImage → Content2
   const parts = [];
 
-  const contentHtml = rich(data.Content ?? data.content);
+  const contentHtml = rich(data.content);
   if (contentHtml) parts.push(contentHtml);
 
-  // InlineContentImage (supports Strapi Upload shapes or plain URL)
-  const inlineMedia =
-    data.InlineContentImage ||
-    data.inlineContentImage ||
-    data.inline_image ||
-    data.inline_content_image ||   // <-- NEW: snake_case from Strapi
-    data.Inline_image;
-
-  console.log("inline media: " + inlineMedia);
-  console.log("data for about the fieldsite:");
-  console.log(data);
-
-  if (inlineMedia && typeof tryUploadUrl === 'function' && typeof strapiAssetUrl === 'function') {
-    const raw = tryUploadUrl(inlineMedia);
+  // Optional: InlineContentImage (you said we can ignore debugging this for now;
+  // leaving the code here does not hurt if the field is empty or misconfigured).
+  if (data.inlineContentImage && typeof tryUploadUrl === 'function' && typeof strapiAssetUrl === 'function') {
+    const raw = tryUploadUrl(data.inlineContentImage);
     const url = raw ? strapiAssetUrl(raw) : '';
     if (url) {
       parts.push(
-        `<figure class="detail-inline-image fieldsite-inline-image">
+        `<figure class="detail-inline-image content-inline-image">
            <img src="${url}" alt="">
          </figure>`
       );
     }
   }
 
-  const content2Html = rich(data.Content2 ?? data.content2);
+  const content2Html = rich(data.content2);
   if (content2Html) parts.push(content2Html);
 
   contextBody.innerHTML = parts.join('\n');
 
   // 3) Row 2 right: Notes (FootNotes)
-  const footNotesRaw =
-    data.FootNotes ??
-    data.footNotes ??
-    data.footnotes ??
-    data.foot_notes;
-  notesBody.innerHTML = rich(footNotesRaw);
+  notesBody.innerHTML = rich(data.footNotes);
 
   // 4) Row 3 right: References
-  const referencesRaw =
-    data.References ??
-    data.references ??
-    data.Reference ??
-    data.reference;
-  refsBody.innerHTML = rich(referencesRaw);
+  refsBody.innerHTML = rich(data.references);
 }
 
 // Fill the 3 content slide-ins from the current group's meta
@@ -2194,31 +2174,27 @@ function updateContentSidebarsForGroup(groupId) {
 
     const data = meta[key];
 
-    // NEW: dedicated layout for "About the fieldsite"
-    if (id === 'about-the-fieldsite') {
-      renderFieldsiteSidebar(sidebar, data);
+    // NEW: if this sidebar uses the new 3-row layout, use the shared renderer
+    if (sidebar.querySelector('.content-sidebar-title')) {
+      renderContentSidebar(sidebar, data);
       return;
     }
 
-    // Existing generic behavior for the other content slide-ins
+    // Fallback: legacy simple layout (only used if a sidebar still has .text-page-body)
     const titleEl = sidebar.querySelector('.text-page h2');
     const bodyEl  = sidebar.querySelector('.text-page-body');
 
     if (!titleEl || !bodyEl) return;
 
-    // Only override if Strapi actually gave us something
     if (data && (data.title || data.content)) {
       if (data.title) {
         titleEl.textContent = data.title;
       }
 
-      // Content can be plain text or Strapi Rich Text (Blocks).
-      // Normalize it through the existing helper.
       if (data.content != null && typeof toParagraphHtml === 'function') {
         const html = toParagraphHtml(data.content);
         bodyEl.innerHTML = html || '';
       } else if (typeof data.content === 'string') {
-        // Fallback: plain string, no HTML interpretation
         bodyEl.textContent = data.content;
       } else {
         bodyEl.innerHTML = '';
