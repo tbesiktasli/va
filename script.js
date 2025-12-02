@@ -981,7 +981,13 @@ async function strapiFetchAll(path, baseParams = {}) {
 // ==============================
 async function loadStrapiAllGroupsAndObjects() {
   // 1) Groups
-  const groups = await strapiFetchAll('groups', { populate: '*' });
+  const groups = await strapiFetchAll('groups', {
+    // NEW: deep-populate the three sidebar relations so media/relations appear
+    'populate[about_the_fieldsite][populate]': '*',
+    'populate[about_the_research_project][populate]': '*',
+    'populate[about_viral_atmosphere][populate]': '*',
+  });
+  
   slog('groups.count', groups.length);
   slog('groups.sample', groups.slice(0, 5).map(g => ({
     id: g.id,
@@ -1578,8 +1584,13 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
   
     const a = getAttrs(list[0]) || {};
 
-    console.log("rel list: ");
-    console.log(a);
+    console.log("rel list (keys):", Object.keys(a));
+    console.log("Inline candidates:",
+      a.InlineContentImage,
+      a.inlineContentImage,
+      a.inline_content_image,
+      a.inline_image
+    );
   
     // Canonical field names we expect on the sidebar models
     const title   = a.Title   || a.title   || '';
