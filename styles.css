@@ -2697,22 +2697,30 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 }
 
 /* Stack rows vertically */
-.text-subpage .two-col-table {
+.text-page .two-col-table {
   display: grid;
   grid-template-columns: 1fr; /* one column = rows under each other */
   row-gap: 24px;
   margin-top: 100px;
 }
 
+.slide-in .text-page .two-col-table {
+  margin-top: 50px;
+}
+
+.slide-in .text-page h1 {
+  font-size: 2em;
+}
+
 /* Each row: two columns side by side */
-.text-subpage .two-col-row {
+.text-page .two-col-row {
   display: grid;
   grid-template-columns: 25% 60%;
   column-gap: 15%;   /* remaining 15% becomes the gutter */
   align-items: start;
 }
 
-.text-subpage .two-col-row .left h3 {
+.text-page .two-col-row .left h3 {
   font-family: "Albert Sans", sans-serif;
   font-weight: 500;
   font-size: 0.9em;
@@ -2721,13 +2729,13 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   text-transform: uppercase;
 }
 
-.text-subpage .two-col-row .right p {
+.text-page .two-col-row .right p {
   font-family: "Albert Sans", sans-serif;
   font-weight: 400;
   font-size: 0.9em;
   margin: 0 0 12px;
 }
-.text-subpage .two-col-row .right p:last-child { margin-bottom: 0; }
+.text-page .two-col-row .right p:last-child { margin-bottom: 0; }
 
 /* ================= Our Team / Authors subpage ================= */
 
