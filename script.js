@@ -22,6 +22,11 @@ if (IS_SAFARI) {
   document.documentElement.classList.add('is-not-safari');
 }
 
+// Enable “vertical wheel → horizontal pan” inside the horizontal group gallery
+const ENABLE_GALLERY_WHEEL_HORIZONTAL_SCROLL = true;
+// Direction: -1 = scroll down moves right, +1 = scroll down moves left
+const GALLERY_WHEEL_HORIZONTAL_DIRECTION = +1;
+
 // ===== VIEW STATE / HISTORY =====
 const VIEW = {
   PREPAGE: 'prepage',
@@ -2361,9 +2366,14 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
     // If user hits BACK after we pushed #research, close the page
     window.addEventListener('popstate', () => {
-      if (!history.state || !history.state.research) {
+      const isResearchActive = pageEl?.classList.contains('active');
+      const stillOnResearch  = !!history.state?.research;
+
+      // Only when we were actually on the research page and left its state
+      if (isResearchActive && !stillOnResearch) {
         pageEl?.classList.remove('active');
         showGrid();
+        window.__dispatchViewChange?.();
       }
     });
   })();
@@ -2522,6 +2532,11 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     const groupGalleryEl = document.getElementById('group-gallery');
     const detailEl       = document.getElementById('detail-content');
 
+    function isInDetailView() {
+      return document.body.classList.contains('in-detail-page') ||
+             !!detailEl?.classList.contains('active');
+    }
+  
     function resetDetailScroll() {
       if (!detailEl) return;
 
@@ -3502,7 +3517,8 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     };
 
     window.closeObjectDetail = function ({ viaPopstate = false } = {}) {
-      if (!detailEl?.classList.contains('active')) return;
+      console.log("entered back button of object detail")
+      if (!isInDetailView()) return;
 
       try { __detailWS_RO?.disconnect(); } catch {}
       try { __detailWS?.destroy(); } catch {}
@@ -3535,6 +3551,11 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
       const { from, gid } = window.__detailCtx || {};
 
+      // Determine where we landed after this close (for back/forward navigation).
+      const currentView = history.state?.view;
+      const landedInSubpage =
+        viaPopstate && currentView === VIEW.SUBPAGE;
+   
       if (from === 'gallery') {
         // Return to the same gallery without flicker
         if (groupGalleryEl) {
@@ -3543,7 +3564,17 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
           window.__galleryIO__?.onOpen?.();
         }
         if (gridShellEl) gridShellEl.style.display = 'none';
+        console.log('[detail] back → gallery');
+      } else if (landedInSubpage) {
+        // We navigated back to a text subpage (e.g. Introduction or another info page).
+        // applyViewFromState/openTextSubpage has already:
+        //   - activated the correct text subpage, and
+        //   - hidden the grid shell.
+        // So we intentionally do NOT touch gridShellEl here,
+        // to avoid bringing the grid back on top of the text page.
+        console.log('[detail] back → text subpage, keep grid hidden');
       } else {
+        console.log('[detail] back → grid');
         // Return to the grid (clustered/ungrouped card stays as it was)
         if (gridShellEl) gridShellEl.style.display = '';
         // Re-check view + tags after the grid shell is visible
@@ -3552,10 +3583,10 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
           window.renderSelectionBar?.();
         });
       }
-
+   
       refreshSlideInsVisibility();
-      console.log('[detail] closed', { viaPopstate, from, gid });
-    };
+      console.log('[detail] closed', { viaPopstate, from, gid, currentView, landedInSubpage });
+    };   
 
     // Back button: if detail is active, intercept before gallery handler
     document.addEventListener('click', (e) => {
@@ -3577,11 +3608,11 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
     // Popstate: close detail if we navigated away from its state
     window.addEventListener('popstate', () => {
-      const active = detailEl?.classList.contains('active');
+      const wasInDetail = isInDetailView();
       const stillInDetail =
         !!history.state?.detail || location.hash === '#detail';
 
-      if (active && !stillInDetail) {
+      if (wasInDetail && !stillInDetail) {
         window.closeObjectDetail({ viaPopstate: true });
       }
     });
@@ -4439,6 +4470,63 @@ window.renderAdhocGallery = function(objs = []) {
     const x = target.offsetLeft - scroller.offsetLeft;
     scroller.scrollTo({ left: x, top: 0, behavior: 'smooth' });
   });
+})();
+
+// --- Wheel → horizontal scroll in group/adhoc gallery ---
+(function bindGalleryWheelHorizontalScroll() {
+  if (!ENABLE_GALLERY_WHEEL_HORIZONTAL_SCROLL) return;
+
+  const gg = document.getElementById('group-gallery');
+  if (!gg || gg._wheelHorizBound) return;
+  gg._wheelHorizBound = true;
+
+  gg.addEventListener('wheel', (e) => {
+    // If someone else already handled this event, do nothing
+    if (e.defaultPrevented) return;
+
+    // Keep OS/page zoom shortcuts working
+    if (e.ctrlKey || e.metaKey) return;
+
+    // Respect nested scrollable areas (other data-allow-scroll / .allow-scroll)
+    const nestedScroller = e.target?.closest?.('[data-allow-scroll], .allow-scroll');
+    if (nestedScroller && nestedScroller !== gg) {
+      return; // let the nested scroller handle the wheel normally
+    }
+
+    const body = document.body;
+
+    // Only when the gallery is actually active (real group or ad-hoc gallery)
+    const galleryActive =
+      gg.classList.contains('active') &&
+      (body.classList.contains('in-group-gallery') ||
+       body.classList.contains('in-adhoc-gallery'));
+
+    if (!galleryActive) return;
+
+    const maxScrollLeft = gg.scrollWidth - gg.clientWidth;
+    if (maxScrollLeft <= 0) return; // nothing to scroll horizontally
+
+    const { deltaX, deltaY } = e;
+
+    // If the gesture is already mostly horizontal, let the browser handle it
+    if (Math.abs(deltaX) > Math.abs(deltaY)) {
+      return;
+    }
+
+    if (!deltaY) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Map vertical wheel to horizontal scroll using the configured direction
+    const horizontalDelta = deltaY * GALLERY_WHEEL_HORIZONTAL_DIRECTION;
+
+    const nextLeft = Math.max(
+      0,
+      Math.min(gg.scrollLeft + horizontalDelta, maxScrollLeft)
+    );
+    gg.scrollLeft = nextLeft;
+  }, { passive: false });
 })();
 
 // === Gallery back-button + history integration ===
@@ -6584,6 +6672,13 @@ function initTeamSubpage(root) {
   });
 }
 
+function hideAllTextSubpages() {
+  document.querySelectorAll('.text-subpage').forEach((s) => {
+    s.hidden = true;
+    s.classList.remove('active');
+  });
+}
+
 // Show a text sub-page (by id), hide others, and set header-left
 function openTextSubpage(sectionId, headerText, options = {}) {
   // 0) Hide grid + any other main views (gallery/detail/research)
@@ -6626,7 +6721,6 @@ function openTextSubpage(sectionId, headerText, options = {}) {
     );
   }
 }
-window.openTextSubpage = openTextSubpage;
 
 window.openTextSubpage = openTextSubpage;
 
@@ -6648,6 +6742,46 @@ function initSubpageLinkShortcuts() {
 
     event.preventDefault();
     openTextSubpage(sectionId, headerText);
+  });
+}
+
+function initIntroObjectLinks() {
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest('a.intro-object-link[data-object-id]');
+    if (!link) return;
+
+    const rawId = (link.dataset.objectId || link.getAttribute('data-object-id') || '').trim();
+    if (!rawId) return;
+
+    event.preventDefault();
+    event.stopPropagation?.();
+
+    // Resolve to the actual app-level object ID used in gridObject.objects
+    const allObjects = window.gridObject?.objects || window.objects || [];
+    let objectId = rawId;
+
+    // If there is no object with this exact id, but there *is* one with "sobj_<rawId>",
+    // assume rawId is a Strapi entry id and use the prefixed one.
+    if (!allObjects.some(o => String(o.id) === String(objectId))) {
+      const prefixed = `sobj_${rawId}`;
+      if (allObjects.some(o => String(o.id) === String(prefixed))) {
+        objectId = prefixed;
+      }
+    }
+
+    if (typeof window.openObjectDetail === 'function') {
+      // Close any active text subpage (e.g. Introduction) before jumping to detail
+      if (typeof hideAllTextSubpages === 'function') {
+        hideAllTextSubpages();
+      }
+
+      window.openObjectDetail({
+        objectId,
+        from: 'intro'
+      });
+    } else {
+      console.warn('[intro-links] openObjectDetail is not available yet');
+    }
   });
 }
 
@@ -6694,6 +6828,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initSlideIns();
   initOverlayMenu();
   initSubpageLinkShortcuts();
+  initIntroObjectLinks();
   initArrowListScrolling();   // ← add this line
   initAuthorBylineLinks();
   // Insert Dark | Light before the burger
