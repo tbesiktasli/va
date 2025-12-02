@@ -2959,7 +2959,18 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
         }
 
         // Researcher ← Author relation's Name(s) as clickable link(s)
-        const authorStr = obj.author || '';
+        let authorStr = obj.author || '';
+
+        // QUICK ONE-OFF: add a second author for a specific object
+        // Replace '123' with your actual object id from Strapi
+        // and 'Second Author Name' with the real name you want to add.
+        if (String(obj.id) === 'sobj_3951') {
+          const extraAuthor = 'Julia Hornberger';
+          authorStr = authorStr
+            ? `${authorStr}, ${extraAuthor}`
+            : extraAuthor;
+        }
+
         const names = authorStr.split(',').map(s => s.trim()).filter(Boolean);
 
         if (names.length) {
