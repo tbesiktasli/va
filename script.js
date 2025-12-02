@@ -1566,21 +1566,71 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
       aboutViralAtmosphere:  extractAboutSection(aboutViralRel),
     };
   });
+
   slog('normalize.groups', Object.keys(groupMeta).length);
 
-  // Helper to normalize a single “About …” relation (Title + Content)
   function extractAboutSection(rel) {
+    console.log("rel: ")
+    console.log(rel)
     if (!rel) return null;
     const list = unwrapRelList(rel);
     if (!list.length) return null;
-
+  
     const a = getAttrs(list[0]) || {};
+
+    console.log("rel list: ");
+    console.log(a);
+  
+    // Canonical field names we expect on the sidebar models
     const title   = a.Title   || a.title   || '';
     const content = a.Content || a.content || '';
-
-    if (!title && !content) return null;
-    return { title, content };
-  }
+  
+    // NEW fields for richer layout
+    const content2 = a.Content2 || a.content2 || a.Content_2 || a['Content 2'] || '';
+    const footNotes =
+      a.FootNotes ||
+      a.footNotes ||
+      a.footnotes ||
+      a.foot_notes ||
+      '';
+    const references =
+      a.References ||
+      a.references ||
+      a.Reference ||
+      a.reference ||
+      '';
+    const inlineContentImage =
+      a.InlineContentImage ||
+      a.inlineContentImage ||
+      a.inline_image ||
+      a.inline_content_image ||   // <-- NEW: snake_case API field
+      a.Inline_image ||
+      a.Image ||
+      a.image ||
+      null;
+  
+    // If everything is empty, treat this as "no section"
+    if (
+      !title &&
+      !content &&
+      !content2 &&
+      !footNotes &&
+      !references &&
+      !inlineContentImage
+    ) {
+      return null;
+    }
+  
+    // Shape stored into groupMeta[appGroupId].aboutFieldsite / aboutResearchProject / aboutViralAtmosphere
+    return {
+      title,
+      content,
+      content2,
+      footNotes,
+      references,
+      inlineContentImage,
+    };
+  }  
 
   
   // helpers
@@ -2052,6 +2102,85 @@ const CONTENT_SIDEBAR_CONFIG = [
   { id: 'viral-atmospheres',          key: 'aboutViralAtmosphere' },
 ];
 
+// Render the "About the fieldsite" sidebar using the 3-row two-col-table layout
+function renderFieldsiteSidebar(sidebar, data) {
+  const titleH1      = sidebar.querySelector('.fieldsite-title');
+  const contextBody  = sidebar.querySelector('.fieldsite-context-body');
+  const notesBody    = sidebar.querySelector('.fieldsite-notes-body');
+  const refsBody     = sidebar.querySelector('.fieldsite-references-body');
+
+  if (!titleH1 || !contextBody || !notesBody || !refsBody) return;
+
+  if (!data) {
+    // Clear if there is no data at all
+    titleH1.textContent   = '';
+    contextBody.innerHTML = '';
+    notesBody.innerHTML   = '';
+    refsBody.innerHTML    = '';
+    return;
+  }
+
+  const rich = (val) =>
+    (val != null && typeof toParagraphHtml === 'function')
+      ? toParagraphHtml(val)
+      : '';
+
+  // 1) Title (support Title or title from Strapi)
+  const title = data.Title || data.title || '';
+  titleH1.textContent = title || '';
+
+  // 2) Row 1 right: Content → InlineContentImage → Content2
+  const parts = [];
+
+  const contentHtml = rich(data.Content ?? data.content);
+  if (contentHtml) parts.push(contentHtml);
+
+  // InlineContentImage (supports Strapi Upload shapes or plain URL)
+  const inlineMedia =
+    data.InlineContentImage ||
+    data.inlineContentImage ||
+    data.inline_image ||
+    data.inline_content_image ||   // <-- NEW: snake_case from Strapi
+    data.Inline_image;
+
+  console.log("inline media: " + inlineMedia);
+  console.log("data for about the fieldsite:");
+  console.log(data);
+
+  if (inlineMedia && typeof tryUploadUrl === 'function' && typeof strapiAssetUrl === 'function') {
+    const raw = tryUploadUrl(inlineMedia);
+    const url = raw ? strapiAssetUrl(raw) : '';
+    if (url) {
+      parts.push(
+        `<figure class="detail-inline-image fieldsite-inline-image">
+           <img src="${url}" alt="">
+         </figure>`
+      );
+    }
+  }
+
+  const content2Html = rich(data.Content2 ?? data.content2);
+  if (content2Html) parts.push(content2Html);
+
+  contextBody.innerHTML = parts.join('\n');
+
+  // 3) Row 2 right: Notes (FootNotes)
+  const footNotesRaw =
+    data.FootNotes ??
+    data.footNotes ??
+    data.footnotes ??
+    data.foot_notes;
+  notesBody.innerHTML = rich(footNotesRaw);
+
+  // 4) Row 3 right: References
+  const referencesRaw =
+    data.References ??
+    data.references ??
+    data.Reference ??
+    data.reference;
+  refsBody.innerHTML = rich(referencesRaw);
+}
+
 // Fill the 3 content slide-ins from the current group's meta
 function updateContentSidebarsForGroup(groupId) {
   if (!groupId || !window.groupMetaById) return;
@@ -2063,7 +2192,15 @@ function updateContentSidebarsForGroup(groupId) {
     const sidebar = document.getElementById(id);
     if (!sidebar) return;
 
-    const data    = meta[key];
+    const data = meta[key];
+
+    // NEW: dedicated layout for "About the fieldsite"
+    if (id === 'about-the-fieldsite') {
+      renderFieldsiteSidebar(sidebar, data);
+      return;
+    }
+
+    // Existing generic behavior for the other content slide-ins
     const titleEl = sidebar.querySelector('.text-page h2');
     const bodyEl  = sidebar.querySelector('.text-page-body');
 
