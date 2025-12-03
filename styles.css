@@ -1982,7 +1982,7 @@ and pin the expanded panel to the right edge. */
 /* When open, secondary takes its computed width */
 #slide-ins .slide-in[data-mode="menu"].secondary-open .secondary-pane {
   width: var(--secondary-w);
-  padding: 25px 30px 16px 30px;
+  padding: 25px 30px 0px 30px;
   /* allow long content to scroll */
   height: 100%;
   max-height: 100%;
@@ -2016,6 +2016,22 @@ and pin the expanded panel to the right edge. */
   margin-bottom: 20px;
 }
 .secondary-pane p { margin: 0 0 12px; line-height: 1.6; font-size: .9rem; }
+
+/* Content + sticky footer inside secondary pane */
+.secondary-pane-content {
+  padding-bottom: 16px; /* small buffer above the footer */
+}
+
+.secondary-pane-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-start;
+  padding-top: 12px;
+  padding-bottom: 12px;
+  background: var(--main-bg-color);
+}
+
 .secondary-pane .back {
   display: inline-flex; 
   align-items: center; gap: .4rem;
@@ -2987,4 +3003,11 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 .text-page .right a {
   color: inherit;
   text-decoration: underline;
+}
+
+.related-theme-item {
+  margin-bottom: 50px;
+}
+.related-theme-item:last-child {
+  margin-bottom: 0;
 }
