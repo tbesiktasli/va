@@ -1808,8 +1808,9 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
     // ---- author (relation → Author.Name)
     const authorNames = relNamesFromAuthor(a.author || a.Author);
     const author = authorNames.join(', ');
-    // ---- themes (relation → { name, description })
+    // ---- themes (relation → { id, name, description })
     const themes = unwrapRelList(a.themes || a.Themes).map(v => ({
+      id: v.id ?? v.ID ?? v.Id ?? null,
       name: (v.Name || v.name || '').toString().trim(),
       description: (v.Description || v.description || '').toString().trim(),
     }));
@@ -2238,6 +2239,7 @@ function refreshSlideInsVisibility() {
 
   // Detect ad-hoc gallery via history.state or a body class
   const isAdhoc = !!history.state?.adhoc || document.body.classList.contains('in-adhoc-gallery');
+  const isThemeGallery = document.body.classList.contains('in-theme-gallery');
 
   // If we are in a detail view, check how many objects this group's nav has
   // We only want content sidebars when there is more than one object in the group
@@ -2255,16 +2257,15 @@ function refreshSlideInsVisibility() {
 
   const shouldShowMenu =
     !textActive &&
+    !isThemeGallery &&
     (baseAllowedStates || isAdhoc) &&
     (!galleryActive || isAdhoc) &&
     !detailActive;
 
-
   // 2) CONTENT slide-ins (the 3 new ones)
-  // Show on detail or on non-adhoc group gallery.
-  // On a detail page, hide them if the current group only has one object.
   const shouldShowContent =
-    (detailActive && detailGroupHasMultiple) || (galleryActive && !isAdhoc);
+    !isThemeGallery &&
+    ((detailActive && detailGroupHasMultiple) || (galleryActive && !isAdhoc));
 
   let anyAllowed = false;
 
@@ -2565,6 +2566,81 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     console.log('[gallery] opened (adhoc)', { count: objs.length, titleLines });
   };
 
+  // Open gallery for a single theme (objects linked to that theme)
+  window.openThemeGallery = function(themeOrId, options = {}) {
+    if (!groupGalleryEl) return;
+
+    // Resolve the theme object
+    let theme = themeOrId;
+    if (!theme || typeof theme !== 'object') {
+      if (typeof window.findThemeById === 'function') {
+        theme = window.findThemeById(themeOrId);
+      }
+    }
+    if (!theme) {
+      console.warn('[theme-gallery] no theme found for', themeOrId);
+      return;
+    }
+
+    // Get objects for this theme (allow override via options.objects)
+    let objs = options.objects;
+    if (!Array.isArray(objs) && typeof window.objectsMatchingTheme === 'function') {
+      objs = window.objectsMatchingTheme(theme);
+    }
+    objs = Array.isArray(objs) ? objs : [];
+
+    // Hide the grid shell, show gallery
+    if (gridShellEl) gridShellEl.style.display = 'none';
+    groupGalleryEl.classList.add('active');
+
+    resetGalleryScrollPositions();
+
+    // Title: theme name (no subtitle)
+    const tEl = document.querySelector('#group-gallery .title-box h2');
+    const sEl = document.querySelector('#group-gallery .title-box h3');
+    if (tEl) tEl.textContent = theme.title || theme.name || '';
+    if (sEl) sEl.textContent = '';
+
+    // Fresh content
+    const box = groupGalleryEl.querySelector('.gallery-box');
+    if (box) box.innerHTML = '';
+
+    // Reuse same renderer as for the tag-based ad-hoc gallery
+    if (typeof window.renderAdhocGallery === 'function') {
+      window.renderAdhocGallery(objs);
+    }
+
+    // Attach observers and push a gallery history state
+    window.__galleryIO__?.onOpen?.();
+    window.__galleryVideos__?.onOpen?.();
+    window.__galleryImages__?.onOpen?.();
+    try {
+      if (!history.state || !history.state.gallery) {
+        history.pushState(
+          { gallery: true, themeId: String(theme.id ?? ''), themeGallery: true },
+          '',
+          '#group-gallery'
+        );
+      }
+    } catch {}
+
+    // Mark body so selection bar + slide-ins can adapt
+    document.body.classList.add('in-group-gallery', 'in-theme-gallery');
+
+    // Sync header / other view-dependent UI
+    window.__dispatchViewChange?.();
+    if (typeof window.renderSelectionBar === 'function') {
+      window.renderSelectionBar();
+    }
+
+    refreshSlideInsVisibility();
+
+    console.log('[gallery] opened (theme)', {
+      themeId: theme.id,
+      count: objs.length
+    });
+  };
+
   // Refresh the current ad-hoc gallery from the *current* tag selection
   window.refreshAdhocGalleryFromTags = function(tagsMaybe) {
     const gg = document.getElementById('group-gallery');
@@ -2633,7 +2709,12 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
     if (gridShellEl) gridShellEl.style.display = '';
   
     // Remove all gallery-mode markers in one go
-    document.body.classList.remove('in-group-gallery', 'in-adhoc-gallery', 'in-gallery');
+    document.body.classList.remove(
+      'in-group-gallery',
+      'in-adhoc-gallery',
+      'in-gallery',
+      'in-theme-gallery'
+    );
     delete document.body.dataset.currentGroupId;
   
     // If we are closing WITHOUT browser back, clear gallery/adhoc history flags
@@ -3307,17 +3388,58 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       const host = document.getElementById('related-themes');
       if (!host) return;
     
-      const esc = s => String(s ?? '').replace(/&/g,'&amp;')
-                                      .replace(/</g,'&lt;')
-                                      .replace(/>/g,'&gt;');
+      const esc = s => String(s ?? '').replace(/&/g, '&amp;')
+                                      .replace(/</g, '&lt;')
+                                      .replace(/>/g, '&gt;');
+    
+      const escAttr = s => String(s ?? '').replace(/"/g, '&quot;');
     
       const list = Array.isArray(obj?.themes) ? obj.themes : [];
+    
       host.innerHTML = list.map(t => {
-        const name = esc(t.name);
-        const desc = esc(t.description);
-        return `${name ? `<h4>${name}</h4>` : ''}${desc ? `<p>${desc}</p>` : ''}`;
+        const rawName = t.name ?? '';
+        const name    = esc(rawName);
+        const desc    = esc(t.description);
+        const idAttr  = escAttr(t.id ?? t.Id ?? t.ID ?? '');
+        const nameAttr = escAttr(rawName);
+    
+        if (!name && !desc) return '';
+    
+        return `
+          <div class="related-theme-item">
+            ${name ? `<h4>${name}</h4>` : ''}
+            ${desc ? `<p>${desc}</p>` : ''}
+            <a href="#"
+               class="button related-theme-explore"
+               data-theme-id="${idAttr}"
+               data-theme-name="${nameAttr}">
+              <span class="text">Explore Theme</span>
+              <span class="icon">&rarr;</span>
+            </a>
+          </div>
+        `;
       }).join('');
-    }   
+    
+      // One delegated click handler per host
+      if (!host._themeExploreBound) {
+        host._themeExploreBound = true;
+    
+        host.addEventListener('click', (e) => {
+          const btn = e.target.closest('.related-theme-explore');
+          if (!btn) return;
+          e.preventDefault();
+    
+          const theme = {
+            id:   btn.dataset.themeId || null,
+            name: btn.dataset.themeName || ''
+          };
+    
+          if (typeof window.openThemeGallery === 'function') {
+            window.openThemeGallery(theme);
+          }
+        });
+      }
+    }    
 
     // Helper: get all objects in a group (single source of truth)
     function getGroupObjects(groupId) {
@@ -6103,7 +6225,7 @@ function syncDetailTagHighlights() {
   });
 }
 
-function openMenuSecondary(slideInSelector, { title, paragraphs }) {
+function openMenuSecondary(slideInSelector, { title, paragraphs, showSelectButton = false } = {}) {
   const host  = document.querySelector(slideInSelector);
   const panel = document.querySelector(`${slideInSelector} .secondary-pane`);
   if (!host || !panel) return;
@@ -6112,10 +6234,53 @@ function openMenuSecondary(slideInSelector, { title, paragraphs }) {
   host.classList.add('secondary-open');  // widen to include secondary
 
   panel.setAttribute('aria-hidden', 'false');
-  panel.innerHTML = `
-    <h3>${title}</h3>
-    ${paragraphs.map(p => `<p>${p}</p>`).join('')}
+
+  const contentHtml = `
+    <div class="secondary-pane-content">
+      <h3>${title}</h3>
+      ${paragraphs.map(p => `<p>${p}</p>`).join('')}
+    </div>
   `;
+
+  const footerHtml = showSelectButton ? `
+    <div class="secondary-pane-footer">
+      <a href="#" class="button theme-select-button">
+        <span class="text">Select</span>
+        <span class="icon">&rarr;</span>
+      </a>
+    </div>
+  ` : '';
+
+  panel.innerHTML = contentHtml + footerHtml;
+
+  // Theme "Select" → open theme gallery for active theme row
+  if (showSelectButton) {
+    const btn = panel.querySelector('.theme-select-button');
+    if (btn) {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+
+        const host = document.getElementById('themes-section');
+        const activeLi = host?.querySelector('.theme-item.active');
+        const tid = activeLi?.dataset.tid;
+        if (!tid) return;
+
+        const theme = (typeof window.findThemeById === 'function')
+          ? window.findThemeById(tid)
+          : null;
+        if (!theme) return;
+
+        // Optionally collapse Discover sidebar before entering gallery
+        if (typeof window.collapseDiscoverSidebar === 'function') {
+          window.collapseDiscoverSidebar();
+        }
+
+        if (typeof window.openThemeGallery === 'function') {
+          window.openThemeGallery(theme);
+        }
+      }, { once: true });
+    }
+  }
 }
 
 function closeMenuSecondary(slideInSelector) {
@@ -6384,13 +6549,29 @@ function initSlideInAccordion(slideInSelector, opts = {}) {
   root._accordion = { openSection, closeSection, toggleSection };
 }
 
+function getThemesData() {
+  // Prefer Strapi data if loaded, otherwise fall back to hardcoded THEMES
+  return (window.__themesFromStrapi && window.__themesFromStrapi.length)
+    ? window.__themesFromStrapi
+    : THEMES;
+}
+
+// Helper: find a single theme by id (string/number)
+function findThemeById(themeId) {
+  if (!themeId) return null;
+  const list = getThemesData();
+  const wanted = String(themeId);
+  return list.find(t => String(t.id) === wanted) || null;
+}
+
+window.getThemesData = getThemesData;   // optional, useful for reuse
+window.findThemeById = findThemeById;   // used by theme gallery + sidebar
+
 function renderThemesUI() {
   const host = document.getElementById('themes-section');
   if (!host) return;
 
-  const THEMES_DATA = (window.__themesFromStrapi && window.__themesFromStrapi.length)
-    ? window.__themesFromStrapi
-    : THEMES; // fallback to dummy if Strapi empty/unavailable
+  const THEMES_DATA = getThemesData();
 
   host.innerHTML = `
     <ul class="themes-list">
@@ -6405,25 +6586,36 @@ function renderThemesUI() {
     </ul>
   `;
 
-  // Click → mark active and open secondary content
-  host.addEventListener('click', (e) => {
-    const btn = e.target.closest('.theme-link');
-    if (!btn) return;
+  // Bind click handler only once per host
+  if (!host._themesClickBound) {
+    host._themesClickBound = true;
 
-    const li = btn.closest('.theme-item');
-    const tid = li.dataset.tid;
-    const theme = THEMES_DATA.find(x => x.id === tid);
-    if (!theme) return;
+    host.addEventListener('click', (e) => {
+      const btn = e.target.closest('.theme-link');
+      if (!btn) return;
 
-    // switch active state to this row
-    host.querySelectorAll('.theme-item.active').forEach(n => n.classList.remove('active'));
-    li.classList.add('active');
+      const li  = btn.closest('.theme-item');
+      const tid = li?.dataset.tid;
+      if (!tid) return;
 
-    openMenuSecondary('#discover-connections', {
-      title: theme.title,
-      paragraphs: theme.paragraphs
+      const theme = (typeof window.findThemeById === 'function')
+        ? window.findThemeById(tid)
+        : null;
+      if (!theme) return;
+
+      // Switch active row
+      host.querySelectorAll('.theme-item.active')
+        .forEach(n => n.classList.remove('active'));
+      li.classList.add('active');
+
+      // Open secondary pane with theme description + Select button
+      openMenuSecondary('#discover-connections', {
+        title: theme.title,
+        paragraphs: theme.paragraphs,
+        showSelectButton: true
+      });
     });
-  });
+  }
 }
 
 function clearThemesActiveState() {
@@ -7332,11 +7524,44 @@ function objectsMatchingCurrentFilter() {
   });
 }
 
+function objectsMatchingTheme(themeOrId) {
+  const all = window.gridObject?.objects || [];
+  if (!themeOrId) return all;
+
+  let theme = themeOrId;
+  if (typeof theme !== 'object') {
+    if (typeof window.findThemeById === 'function') {
+      theme = window.findThemeById(themeOrId);
+    } else {
+      return all;
+    }
+  }
+
+  const wantedId = theme.id != null ? String(theme.id) : null;
+  const wantedName = (theme.title || theme.name || '')
+    .toString()
+    .trim()
+    .toLowerCase();
+
+  return all.filter(o => {
+    const list = Array.isArray(o.themes) ? o.themes : [];
+    return list.some(t => {
+      const tid   = t.id != null ? String(t.id) : null;
+      const tName = (t.name || '').toString().trim().toLowerCase();
+      return (wantedId && tid === wantedId) ||
+             (wantedName && tName === wantedName);
+    });
+  });
+}
+
+window.objectsMatchingTheme = objectsMatchingTheme;
+
 // ==== Header-left dynamic copy (centralised) ====
 const HEADER_COPY = {
   home: 'Home',
   connections: 'Make new connections',
-  research: (loc) => `Research project in ${loc || '—'}`
+  research: (loc) => `Research project in ${loc || '—'}`,
+  themes: 'Explore by themes'
 };
 
 // Expose the setter in case you want to call it directly
@@ -7346,11 +7571,24 @@ function setHeaderLeft(mode, ctx = {}) {
 
   let text = '';
   switch (mode) {
-    case 'home':         text = HEADER_COPY.home; break;
-    case 'connections':  text = HEADER_COPY.connections; break;
-    case 'research':     text = HEADER_COPY.research(ctx.location); break;
-    case 'custom':       text = ctx.text || ''; break;   // <-- add this
-    default:             text = ''; break;
+    case 'home':
+      text = HEADER_COPY.home;
+      break;
+    case 'connections':
+      text = HEADER_COPY.connections;
+      break;
+    case 'research':
+      text = HEADER_COPY.research(ctx.location);
+      break;
+    case 'themes':
+      text = HEADER_COPY.themes;
+      break;
+    case 'custom':
+      text = ctx.text || '';
+      break;
+    default:
+      text = '';
+      break;
   }
 
   HeaderTyper.type(el, text, {
@@ -7377,14 +7615,17 @@ function refreshHeaderLeftFromState() {
   }
 
   // Object detail (full page) or Group Gallery → "Research project in <location>"
+  // Theme gallery → "Explore by themes"
+  if (body.classList.contains('in-theme-gallery')) {
+    return setHeaderLeft('themes');
+  }
+
+  // Group Gallery → "Research project in <location>"
   if (body.classList.contains('in-group-gallery')) {
     const gid = body.dataset.currentGroupId;
-    // GROUP_LABELS[gid] is already built from your group metadata
-    // see where you computed it from groupMetaById[...] .location
-    // (GROUP_LABELS creation is in your script already). :contentReference[oaicite:0]{index=0}
     const loc = gid
-    ? (window.groupMetaById?.[gid]?.location || window.GROUP_LABELS?.[gid] || '')
-    : '';
+      ? (window.groupMetaById?.[gid]?.location || window.GROUP_LABELS?.[gid] || '')
+      : '';
     return setHeaderLeft('research', { location: loc });
   }
 
