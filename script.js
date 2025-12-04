@@ -6834,8 +6834,8 @@ function initOverlayMenu() {
 
   // 1) Submenu entries
   const subItemsMap = {
-    // Viral Atmospheres has two subpages: About (placeholder) and Introduction
-    viralatmospheres: ['About', 'Introduction'],
+    // Viral Atmospheres has three subpages: About (placeholder), Introduction, Archive’s Architecture
+    viralatmospheres: ['About', 'Introduction', 'The Archive’s Architecture'],
 
     // Research Projects and Team have no submenu items
     projects: [],
@@ -6848,6 +6848,7 @@ function initOverlayMenu() {
     // Viral Atmospheres → About + Introduction pages
     'About':        { id: 'subpage-about',        header: 'About' },
     'Introduction': { id: 'subpage-introduction', header: 'Introduction' },
+    'The Archive’s Architecture': { id: 'subpage-archive-architecture',  header: 'The Archive’s Architecture' },
 
     // Other existing text pages
     'References':   { id: 'subpage-references',   header: 'References' },
