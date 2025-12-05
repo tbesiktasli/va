@@ -2329,6 +2329,7 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
   const gridShellEl = document.getElementById('grid-shell');
   const groupGalleryEl = document.getElementById('group-gallery');
   const backBtnEl = document.getElementById('content-back-button');
+  const detailEl = document.getElementById('detail-content'); // NEW
 
   // Keep group gallery scroll (the .scroll-container-horizontal) easy to reset from anywhere
   function resetGalleryScrollPositions() {
@@ -2582,6 +2583,14 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       return;
     }
 
+    // Determine where we are coming from: detail page vs grid
+    const detailEl = document.getElementById('detail-content');
+    const cameFromDetail =
+      document.body.classList.contains('in-detail-page') ||
+      !!detailEl?.classList.contains('active');
+
+    document.body.dataset.themeGalleryOrigin = cameFromDetail ? 'detail' : 'grid';
+
     // Get objects for this theme (allow override via options.objects)
     let objs = options.objects;
     if (!Array.isArray(objs) && typeof window.objectsMatchingTheme === 'function') {
@@ -2716,6 +2725,23 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       'in-theme-gallery'
     );
     delete document.body.dataset.currentGroupId;
+
+    // NEW: if this gallery was opened from a detail page,
+    // keep us in detail and make sure the grid stays hidden.
+    const origin = document.body.dataset.themeGalleryOrigin || null;
+    delete document.body.dataset.themeGalleryOrigin;
+
+    if (origin === 'detail') {
+      // Ensure grid shell is NOT shown
+      if (gridShellEl) {
+        gridShellEl.style.display = 'none';
+      }
+      // Ensure detail page stays fully active
+      if (detailEl) {
+        detailEl.classList.add('active');
+      }
+      document.body.classList.add('in-detail-page');
+    }
   
     // If we are closing WITHOUT browser back, clear gallery/adhoc history flags
     if (!viaPopstate && history.state?.gallery) {
@@ -3864,8 +3890,11 @@ window.collapseDiscoverSidebar = collapseDiscoverSidebar;
       const back = e.target.closest('#content-back-button');
       if (!back) return;
 
-      const isDetailActive = detailEl?.classList.contains('active');
-      if (!isDetailActive) return;
+      const isDetailActive  = detailEl?.classList.contains('active');
+      const isGalleryActive = groupGalleryEl?.classList.contains('active');
+
+      // If a gallery is currently visible, let the gallery handler own this button.
+      if (!isDetailActive || isGalleryActive) return;
 
       e.preventDefault();
       e.stopImmediatePropagation();
