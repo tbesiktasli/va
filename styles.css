@@ -3011,6 +3011,16 @@ body.menu-open .header-right .header-close { display: inline-grid; }
     body {
       /* TODO: shared mobile adjustments (font-size, scroll behavior, etc.) */
     }
+
+    /* Header: hide left text and theme toggle on mobile */
+    .header-left {
+      visibility: hidden;   /* not visible, but still occupies space */
+      pointer-events: none; /* no focus / clicks */
+    }
+
+    .header-right .theme-toggle {
+      display: none;
+    }
   
     /* 1. Splash / Prepage (intro screen) */
     #prepage {
