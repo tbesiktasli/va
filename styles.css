@@ -3104,6 +3104,66 @@ body.menu-open .header-right .header-close { display: inline-grid; }
       gap: 8px;
       font-size: 0.8em;              /* slightly smaller */
     }
+
+    /* 5. Long-form text pages / subpages (mobile) */
+
+    /* Main content area: less padding, no wasted side space */
+    .text-subpage .text-page {
+      padding: 40px 16px 24px 16px;   /* was 80px top, 200px sides on desktop */
+      box-sizing: border-box;
+      width: 100%;
+      max-width: 720px;               /* keeps lines readable on small landscape */
+      margin: 0 auto;
+    }
+
+    /* Main heading (page title) smaller + tighter */
+    .text-subpage h1 {
+      font-size: 1.9em;               /* was 2.5em */
+      line-height: 1.15;
+      margin: 0 0 18px;
+    }
+
+    /* Small label above title (“Introduction”, etc.) */
+    .text-subpage h2 {
+      font-size: 0.8em;               /* was 0.9em */
+      margin: 0 0 12px;
+      /* keep existing uppercase + letter-spacing from desktop */
+    }
+
+    /* Body text: slightly smaller with less vertical gaps */
+    .text-subpage p {
+      font-size: 1.05em;              /* was 1.2em */
+      margin: 0 0 14px;
+      padding: 0;
+    }
+
+    /* Arrow list navigation at top: less big vertical gaps */
+    .text-subpage ul.arrow-list {
+      margin: 24px 0 0;               /* was 50px top margin */
+      padding: 0;
+    }
+
+    .text-subpage ul.arrow-list li {
+      margin-bottom: 16px;            /* was 25px */
+      font-size: 1.05em;              /* align with body text */
+    }
+
+    /* Two-column sections inside subpages (“The Power of Feelings” etc.) */
+    .text-subpage .two-col-table {
+      margin-top: 32px;               /* was 50/100px, depending on rule */
+      row-gap: 16px;
+    }
+
+    /* Stack left/right columns in two-col rows on mobile */
+    .text-subpage .two-col-row {
+      grid-template-columns: 1fr;   /* one column instead of 25% / 60% */
+      column-gap: 0;
+      row-gap: 8px;                 /* space between left and right blocks */
+    }
+
+    .text-subpage .two-col-row .right {
+      margin-top: 4px;              /* small visual separation from the label */
+    }
   
     /* 2. Main workspace (map / grid) */
     #workspace {
