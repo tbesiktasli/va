@@ -3176,9 +3176,94 @@ body.menu-open .header-right .header-close { display: inline-grid; }
       /* TODO: zoom / panning constraints specific to phones */
     }
   
-    /* 3. Group gallery view */
-    #group-gallery {
-      /* TODO: card sizing, scroll behavior, controls for gallery on mobile */
+    #group-gallery .title-box h2 {
+      font-size: 2.4em;     /* down from 5em */
+      line-height: 1.15;
+    }
+    
+    #group-gallery .title-box h3 {
+      font-size: 1.2em;     /* down from 1.9em */
+      line-height: 1.4;
+      margin-top: 16px;     /* less vertical gap */
+    }
+
+    /* 4. Object detail page (#detail-content) – mobile */
+
+    /* Header: remove wide layout and right-only padding */
+    #detail-content .content-header {
+      padding: 12px 16px 8px 16px;   /* was: 20px 50px 20px 0 */
+      box-sizing: border-box;
+    }
+
+    /* Main title on detail page: smaller & tighter */
+    #detail-content .vertical-content h1 {
+      font-size: 2em;                /* was: 3em */
+      line-height: 1.2;
+      margin-bottom: 0.75rem;
+    }
+
+    /* Reduce the big horizontal paddings inside the detail content */
+    #detail-content .vertical-content {
+      padding-left: 16px;
+      padding-right: 16px;
+      --vc-pad-left: 16px;           /* keep arrow rail aligned with new padding */
+      --vc-pad-right: 16px;
+      box-sizing: border-box;
+    }
+
+    /* Paragraphs and section headings: no extra side padding on mobile */
+    #detail-content .vertical-content p,
+    #detail-content .vertical-content .right h3 {
+      padding-left: 0;               /* was: 0 100px in desktop */
+      padding-right: 0;
+    }
+
+    #detail-content .vertical-content .detail-nav-arrow.prev {
+      left: -22px;
+    }
+
+    #detail-content .vertical-content .detail-nav-arrow.next {
+      right: -22px;
+    }
+
+    .section-content .right .topics, .section-content .right .flex-table {
+      padding: 0 100px 0 0;
+    }
+
+    .detail-description-block {
+      padding: 0 100px 0 0;
+      margin-bottom: 0px;
+    }
+
+    /* Right column content: no extra big margins/paddings */
+    #detail-content .vertical-content .right {
+      padding-left: 0;               /* was: 50px left, 120px right */
+      padding-right: 0;
+      margin-top: 16px;
+      margin-bottom: 0px;
+    }
+
+    /* Stack multi-column sections (left/right) vertically */
+    #detail-content .content-section.multi-column .section-content {
+      flex-direction: column;        /* was: row (default flex) */
+    }
+
+    #detail-content .content-section .left {
+      height: auto;
+    }
+
+    /* Both sides take full width on mobile */
+    #detail-content .content-section .left,
+    #detail-content .content-section .right {
+      width: 100%;                   /* was: 50% */
+      max-width: 100%;               /* was: max-width: 50% on .right */
+    }
+
+    /* Right column: no internal scroll area on mobile */
+    #detail-content .content-section .right {
+      height: auto;                  /* avoid fixed scroll area */
+      overflow: visible;             /* content scrolls with page */
+      padding-top: 12px;             /* small gap from left block */
     }
   
     /* 4. Slide-in sidebars (Discover, About, etc.) */
