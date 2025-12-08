@@ -86,9 +86,16 @@ export class Grid {
       this.display = {
         // change this default to make everything appear larger/smaller at start
         baseZoom: 1, // e.g. 1.25 for bigger, 0.85 for smaller
+      
+        // NEW: hard limits for how far you can zoom in/out
+        // (tweak these numbers if you want a wider/narrower zoom range)
+        minZoom: 0.25,
+        maxZoom: 4,
+      
         objectScale: 0.8, // NEW: starting size for all objects (1 = keep original)
         detailConnectingTagLimit: null,
       };
+      
       this.objects = objects;
       // NEW: pre-scale object widths/heights so initial zoom can remain 1
       const s = (this.display?.objectScale ?? 1);
@@ -318,24 +325,46 @@ export class Grid {
       }
     }    
     
-    clampCameraToBounds(animate = true) {
+    clampCameraToBounds(animate = true, reason = 'generic') {
       const zoom = this.zoomLevel || 1;
       const w = parseFloat(this.htmlGridElement.style.width)  || (this.gridDimension.width  * zoom);
       const h = parseFloat(this.htmlGridElement.style.height) || (this.gridDimension.height * zoom);
-    
+
+      const vw = this._vw();
+      const vh = this._vh();
+
       // legal range (no slack)
-      const minX = Math.min(0, this._vw() - w);
-      const minY = Math.min(0, this._vh() - h);
-    
+      const minX = Math.min(0, vw - w);
+      const minY = Math.min(0, vh - h);
+
       const curLeft = parseFloat(this.htmlGridElement.style.left) || 0;
       const curTop  = parseFloat(this.htmlGridElement.style.top)  || 0;
-    
+
       const targetX = Math.max(minX, Math.min(0, curLeft));
       const targetY = Math.max(minY, Math.min(0, curTop));
-    
+
+      const prevSlack = this._pan?.slack;
+
+      // Optional debug logging (set window.DEBUG_GRID_CLAMP = false to turn this off)
+      const debugClamp =
+        (typeof window !== 'undefined') &&
+        window.DEBUG_GRID_CLAMP !== false &&
+        typeof console !== 'undefined' &&
+        typeof console.groupCollapsed === 'function';
+
+      if (debugClamp) {
+        console.groupCollapsed('[grid clamp]', reason);
+        console.log('zoom', zoom, 'animate', animate);
+        console.log('gridDimension', this.gridDimension);
+        console.log('css size', { w, h }, 'viewport', { vw, vh });
+        console.log('bounds', { minX, minY }, 'current', { curLeft, curTop }, 'target', { targetX, targetY });
+        console.log('panSlackBefore', prevSlack);
+        console.groupEnd();
+      }
+
       // kill overscroll allowance so we glide back inside
       if (this._pan) this._pan.slack = 0;
-    
+
       if (this._pan && animate) {
         this._pan.targetX = targetX;
         this._pan.targetY = targetY;
@@ -1424,7 +1453,7 @@ export class Grid {
       const anchorWorldY = (this._vh()/2 - prevTop) / zoom;
       // After rebasing world coords by (offsetX, offsetY), keep the same world point at center:
       this.centerViewportOnWorldPoint(anchorWorldX + offsetX, anchorWorldY + offsetY, /*animate*/ false);
-      this.clampCameraToBounds(false);
+      this.clampCameraToBounds(false, 'anchor-drag');
       this._syncPanStateFromDom();
     }
 
@@ -1445,6 +1474,37 @@ export class Grid {
           el.style.transform = `translate(${tx * z}px, ${ty * z}px)`;
         }
       }
+    }
+
+    // Wait for the next transform animation on any tile to finish,
+    // then run `callback`. Falls back to a timeout if there is no transition.
+    _waitForObjectTransformsToSettle(callback, fallbackMs = 520) {
+      if (!this.htmlGridElement) {
+        callback();
+        return;
+      }
+
+      const gridEl = this.htmlGridElement;
+      let done = false;
+      let timer = null;
+
+      const finish = () => {
+        if (done) return;
+        done = true;
+        if (timer) clearTimeout(timer);
+        gridEl.removeEventListener('transitionend', onEnd, true);
+        callback();
+      };
+
+      const onEnd = (ev) => {
+        // Only react to transform transitions on grid objects
+        if (ev.propertyName !== 'transform') return;
+        if (!ev.target?.classList?.contains('object')) return;
+        finish();
+      };
+
+      gridEl.addEventListener('transitionend', onEnd, true);
+      timer = setTimeout(finish, fallbackMs);
     }
 
       // Refit all text tiles currently in the DOM
@@ -1490,7 +1550,7 @@ export class Grid {
       const cx = (b.minX + b.maxX) / 2;
       const cy = (b.minY + b.maxY) / 2;
       this.centerViewportOnWorldPoint(cx, cy, animate);
-      this.clampCameraToBounds(false);
+      this.clampCameraToBounds(false, 'fitViewportToBounds');
       this._syncPanStateFromDom?.();
     }
 
@@ -1509,7 +1569,7 @@ export class Grid {
         const cx = (b.minX + b.maxX) / 2;
         const cy = (b.minY + b.maxY) / 2;
         this.centerViewportOnWorldPoint(cx, cy, animate);
-        this.clampCameraToBounds(false);
+        this.clampCameraToBounds(false, 'setZoomAbsolute');
         this._syncPanStateFromDom?.();
       }
     }
@@ -1528,55 +1588,76 @@ export class Grid {
     }
 
     zoom(factor) {
-        // this.zoomLevel *= factor;
-
-        // Temporarily disable transform animation while we change transforms for zoom
-        document.body.classList.add('zooming');
-        this.zoomLevel *= factor;
-      
-        // Resize grid container
-        const newWidth = this.gridDimension.width * this.zoomLevel;
-        const newHeight = this.gridDimension.height * this.zoomLevel;
-        this.htmlGridElement.style.width = `${newWidth}px`;
-        this.htmlGridElement.style.height = `${newHeight}px`;
-      
-        // Resize and reposition objects
-        for (const obj of this.objects) {
-          const el = document.getElementById(obj.id);
-      
-          const scaledWidth = obj.width * this.zoomLevel;
-          const scaledHeight = obj.height * this.zoomLevel;
-          const scaledLeft = obj.grid_x * this.zoomLevel;
-          const scaledTop = obj.grid_y * this.zoomLevel;
-      
-          el.style.width = `${scaledWidth}px`;
-          el.style.height = `${scaledHeight}px`;
-          el.style.left = `${scaledLeft}px`;
-          el.style.top = `${scaledTop}px`;
-
-          if (obj.type === 'text') {
-            fitTextToContainer(el);
-          }
+      // Temporarily disable transform animation while we change transforms for zoom
+      document.body.classList.add('zooming');
+    
+      // --- NEW: respect configurable min/max zoom ---
+      const cfg   = this.display || {};
+      const minZ  = cfg.minZoom ?? 0.25;
+      const maxZ  = cfg.maxZoom ?? 4;
+      const prev  = this.zoomLevel || 1;
+    
+      // Proposed new zoom, clamped to [minZ, maxZ]
+      let next = prev * factor;
+      next = Math.max(minZ, Math.min(maxZ, next));
+    
+      // If clamping means "no effective change", bail early
+      const appliedFactor = next / prev;
+      if (Math.abs(appliedFactor - 1) < 1e-6) {
+        document.body.classList.remove('zooming');
+        return;
+      }
+    
+      this.zoomLevel = next;
+    
+      // Resize grid container based on the NEW zoom
+      const newWidth  = this.gridDimension.width  * this.zoomLevel;
+      const newHeight = this.gridDimension.height * this.zoomLevel;
+      this.htmlGridElement.style.width  = `${newWidth}px`;
+      this.htmlGridElement.style.height = `${newHeight}px`;
+    
+      // Resize and reposition objects in screen space
+      for (const obj of this.objects) {
+        const el = document.getElementById(obj.id);
+        if (!el) continue;
+    
+        const scaledWidth  = obj.width  * this.zoomLevel;
+        const scaledHeight = obj.height * this.zoomLevel;
+        const scaledLeft   = obj.grid_x * this.zoomLevel;
+        const scaledTop    = obj.grid_y * this.zoomLevel;
+    
+        el.style.width  = `${scaledWidth}px`;
+        el.style.height = `${scaledHeight}px`;
+        el.style.left   = `${scaledLeft}px`;
+        el.style.top    = `${scaledTop}px`;
+    
+        if (obj.type === 'text') {
+          fitTextToContainer(el);
         }
-
-        // Recompute transforms from world deltas × current zoom
-        this._applyTransformsForCurrentState();
-
-        // Re-enable transform animations on the next frame so future state switches animate
+      }
+    
+      // Recompute transforms from world deltas × current zoom
+      this._applyTransformsForCurrentState();
+    
+      // --- NEW: keep the camera in legal bounds at this zoom ---
+      // (no animation here; we just correct the position immediately)
+      this.clampCameraToBounds(false, 'zoom');
+    
+      // Re-enable transform animations on the next frame so future state switches animate
+      requestAnimationFrame(() => {
+        document.body.classList.remove('zooming');
+    
+        // One more pass next frame so layout has fully settled
         requestAnimationFrame(() => {
-          document.body.classList.remove('zooming');
-
-          // NEW: one more pass next frame so layout has fully settled
-          requestAnimationFrame(() => {
-            for (const obj of this.objects) {
-              if (obj.type === 'text') {
-                const el = document.getElementById(obj.id);
-                if (el) fitTextToContainer(el);
-              }
+          for (const obj of this.objects) {
+            if (obj.type === 'text') {
+              const el = document.getElementById(obj.id);
+              if (el) fitTextToContainer(el);
             }
-          });
+          }
         });
-    }
+      });
+    }    
 
     zoomIn() {
         this.zoom(1.1);
@@ -1603,9 +1684,9 @@ export class Grid {
       this.currentState = 'grouped';
       this._applyTransformsForCurrentState?.();   // → this triggers the CSS transition
     
-      // ✅ give the transition time to run (same as cluster: ~520ms)
-      setTimeout(() => {
-        // if user already left grouped, don't bake
+      const z = this.zoomLevel || 1;
+
+      this._waitForObjectTransformsToSettle(() => {
         if (this.currentState !== 'grouped') return;
 
         // 1) turn transitions OFF for all objects
@@ -1626,8 +1707,8 @@ export class Grid {
 
           const el = document.getElementById(o.id);
           if (!el) continue;
-          el.style.left = o.grid_x + 'px';
-          el.style.top  = o.grid_y + 'px';
+          el.style.left = `${o.grid_x * z}px`;
+          el.style.top  = `${o.grid_y * z}px`;
           el.style.transform = ''; // now this will NOT animate
         }
 
@@ -1639,7 +1720,7 @@ export class Grid {
             el.style.transition = '';
           }
         });
-      }, 520);
+      });
 
     }      
 
@@ -1678,8 +1759,8 @@ export class Grid {
           object.grid_x = object.group_x;
           object.grid_y = object.group_y;
     
-          el.style.left = object.grid_x + 'px';
-          el.style.top  = object.grid_y + 'px';
+          el.style.left = `${object.grid_x * z}px`;
+          el.style.top  = `${object.grid_y * z}px`;
     
           // now we can drop the transform without any animation
           el.style.transform = '';
@@ -1946,15 +2027,25 @@ export class Grid {
           });
         }
 
-        // 8) Done
-        this.currentState = 'clustered';
-        this.fitToView('clustered', postFitPad);
-        this._syncPanStateFromDom?.();
+        const z = this.zoomLevel || 1;
 
-        // 🟡 bake clustered positions one frame later
-        requestAnimationFrame(() => {
+        // When cluster animation has completed, mark view as clustered
+        if (this.currentState === 'pre-cluster') {
+          this.currentState = 'clustered';
+        }
+
+        this._waitForObjectTransformsToSettle(() => {
           // if user already switched view, don't overwrite
           if (this.currentState !== 'clustered') return;
+
+          // 1) turn transitions OFF for all objects while we bake
+          for (const obj of this.objects) {
+            const el = document.getElementById(obj.id);
+            if (!el) continue;
+            el.style.transition = 'none';
+          }
+
+          // 2) bake clustered positions with transitions OFF
           for (const obj of this.objects) {
             // keep ungrouped backup
             if (obj._ungroupedX == null) {
@@ -1964,14 +2055,25 @@ export class Grid {
             const cx = obj.cluster_x ?? obj.group_x;
             const cy = obj.cluster_y ?? obj.group_y;
             if (cx == null || cy == null) continue;
+
             obj.grid_x = cx;
             obj.grid_y = cy;
+
             const el = document.getElementById(obj.id);
             if (!el) continue;
-            el.style.left = obj.grid_x + 'px';
-            el.style.top  = obj.grid_y + 'px';
-            el.style.transform = '';
+            el.style.left = `${obj.grid_x * z}px`;
+            el.style.top  = `${obj.grid_y * z}px`;
+            el.style.transform = '';  // no animation because transition is 'none'
           }
+
+          // 3) restore transitions on next frame
+          requestAnimationFrame(() => {
+            for (const obj of this.objects) {
+              const el = document.getElementById(obj.id);
+              if (!el) continue;
+              el.style.transition = ''; // back to stylesheet value
+            }
+          });
         });
       }, 520);
     }    
@@ -2003,13 +2105,15 @@ export class Grid {
     
       // ⛔️ REMOVED: this.fitToView('ungrouped', 160);
     
-      setTimeout(() => {
+      this._waitForObjectTransformsToSettle(() => {
+        const zNow = this.zoomLevel || 1;
+
         // 1) turn transitions off while we bake
         for (const obj of this.objects) {
           const el = document.getElementById(obj.id);
           if (el) el.style.transition = 'none';
         }
-    
+
         // 2) restore/bake the ungrouped positions into the main coords
         for (const obj of this.objects) {
           if (obj._ungroupedX != null) {
@@ -2017,16 +2121,16 @@ export class Grid {
             obj.grid_y = obj._ungroupedY;
             const el = document.getElementById(obj.id);
             if (el) {
-              el.style.left = obj.grid_x + 'px';
-              el.style.top  = obj.grid_y + 'px';
+              el.style.left = `${obj.grid_x * zNow}px`;
+              el.style.top  = `${obj.grid_y * zNow}px`;
               el.style.transform = '';
             }
           }
         }
-    
+
         // 3) ✅ NOW resize the grid to the *actual* ungrouped box
         this.fitToView('ungrouped', 160);
-    
+
         // 4) if we’re coming from clustered/pre-cluster, restore compact centers
         if ((prev === 'clustered' || prev === 'pre-cluster') && this.baseGroupCenters) {
           if (this._clusterTimer) { clearTimeout(this._clusterTimer); this._clusterTimer = null; }
@@ -2037,7 +2141,7 @@ export class Grid {
           }
           this.applyGroupedScatter?.(this.GROUPED_SPREAD, this.GROUPED_JITTER);
         }
-    
+
         // 5) restore transitions on next frame
         requestAnimationFrame(() => {
           for (const obj of this.objects) {
@@ -2045,7 +2149,7 @@ export class Grid {
             if (el) el.style.transition = '';
           }
         });
-      }, 520);
+      });
     }     
   
     resetGrid(event) {
