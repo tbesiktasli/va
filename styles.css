@@ -1104,6 +1104,9 @@ body.in-group-gallery:not(.in-adhoc-gallery) #gallery-ungroup {
   transform: translateX(100%);
   transition: transform 0.5s ease;
   z-index: 1400;
+
+  /* Shared slide-in configuration */
+  --handle-w: 40px;          /* width of one sidebar handle */
 }
 
 #slide-ins.visible {
@@ -1147,7 +1150,7 @@ expand to the remaining space so handles stay visible,
 and pin the expanded panel to the right edge. */
 #slide-ins .slide-in:not([data-mode="menu"]).expanded {
   flex: 1 1 auto;    /* take leftover width, not full strip */
-  max-width: 100dvw;          /* grow up to viewport */
+  max-width: calc(100dvw - 2 * var(--handle-w));  /* leave room for other handles */
 }
 
 /* Expanded size uses the computed width cap */
@@ -1900,7 +1903,6 @@ and pin the expanded panel to the right edge. */
   max-width: var(--handle-w);              /* collapsed */
   transition: max-width .4s ease;
   overflow: hidden;
-  --handle-w: 40px;
   --slidein-target: 550px;
   --slidein-min: 320px;
   --slidein-edge-gap: 24px;
