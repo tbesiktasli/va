@@ -1101,6 +1101,7 @@ body.in-group-gallery:not(.in-adhoc-gallery) #gallery-ungroup {
   right: 0;
   display: flex;
   flex-direction: row;
+  justify-content: flex-end;   /* NEW: keep slide-ins packed to the right */
   transform: translateX(100%);
   transition: transform 0.5s ease;
   z-index: 1400;
