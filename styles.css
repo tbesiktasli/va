@@ -3168,6 +3168,46 @@ body.menu-open .header-right .header-close { display: inline-grid; }
     .text-subpage .two-col-row .right {
       margin-top: 4px;              /* small visual separation from the label */
     }
+
+    /* 5b. Content sidebars (About the fieldsite / About the research project / Viral Atmospheres) */
+    .slide-in[data-mode="content"] .text-page {
+      padding: 24px 16px 16px 16px;  /* less padding than desktop */
+      box-sizing: border-box;
+      width: 100%;
+      max-width: 720px;              /* keep line length reasonable */
+      margin: 0 auto;
+    }
+
+    .slide-in[data-mode="content"] .two-col-table {
+      margin-top: 24px;              /* was 50px from desktop rule */
+      row-gap: 16px;
+    }
+
+    /* Stack the left (label) and right (content) blocks vertically */
+    .slide-in[data-mode="content"] .two-col-row {
+      grid-template-columns: 1fr;    /* one column on mobile */
+      column-gap: 0;
+      row-gap: 8px;
+    }
+
+    .slide-in[data-mode="content"] .two-col-row .right {
+      margin-top: 4px;               /* small gap after the label column */
+    }
+
+    /* Slightly smaller title in sidebars on mobile */
+    .slide-in[data-mode="content"] .text-page h1 {
+      font-size: 1.6em;              /* was 2em */
+      line-height: 1.2;
+      margin: 0 0 14px;
+    }
+
+    /* Make the dynamic Strapi bodies a bit more compact */
+    .slide-in[data-mode="content"] .content-sidebar-context-body,
+    .slide-in[data-mode="content"] .content-sidebar-notes-body,
+    .slide-in[data-mode="content"] .content-sidebar-references-body {
+      font-size: 0.95em;
+      line-height: 1.45;
+    }
   
     /* 2. Main workspace (map / grid) */
     #workspace {
@@ -3213,6 +3253,11 @@ body.menu-open .header-right .header-close { display: inline-grid; }
       --vc-pad-left: 16px;           /* keep arrow rail aligned with new padding */
       --vc-pad-right: 16px;
       box-sizing: border-box;
+    }
+
+    #slide-ins .vertical-content {
+      padding-left: 16px;
+      padding-right: 16px;
     }
 
     /* Paragraphs and section headings: no extra side padding on mobile */
@@ -3268,20 +3313,6 @@ body.menu-open .header-right .header-close { display: inline-grid; }
       height: auto;                  /* avoid fixed scroll area */
       overflow: visible;             /* content scrolls with page */
       padding-top: 12px;             /* small gap from left block */
-    }
-  
-    /* 4. Slide-in sidebars (Discover, About, etc.) */
-    #slide-ins {
-      /* TODO: how sidebars dock on mobile (full-width, bottom sheet, etc.) */
-    }
-    .slide-in[data-mode="menu"],
-    .slide-in[data-mode="content"] {
-      /* TODO: width, position, open/close animation for phone layout */
-    }
-  
-    /* 5. Long-form text pages / subpages */
-    .text-subpage {
-      /* TODO: mobile typography, margins, and max width for reading */
     }
   
     /* 6. Bottom selection bar */
