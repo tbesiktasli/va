@@ -187,23 +187,6 @@
     max-width: 260px;
     line-height: 1.4;
   }
-  
-  @media (max-width: 768px) {
-    .prepage-actions {
-      flex-direction: column;
-      align-items: center;
-    }
-  
-    /* On mobile: hide both buttons */
-    .prepage-actions .button {
-      display: none;
-    }
-  
-    /* On mobile: show the "Coming soon to mobile" text */
-    .prepage-actions .prepage-mobile-message {
-      display: block;
-    }
-  }  
 
   /* Bottom row: left text pinned left, logos centered independent */
   .prepage-bottom {
@@ -733,7 +716,7 @@
 }
 
 #fab-top-left { top: var(--fab-edge-gap); }
-#fab-bottom-left { display: none; bottom: var(--fab-edge-gap); }
+#fab-bottom-left { display: flex; bottom: var(--fab-edge-gap); }
 
 /* Circular buttons */
 .fab {
@@ -3011,3 +2994,106 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 .related-theme-item:last-child {
   margin-bottom: 0;
 }
+
+
+/* MOBILE */
+
+/* ===========================================================
+   Mobile layout: main view blueprint
+   All main screens get their mobile overrides here.
+   Target: phones / small tablets up to 768px
+   =========================================================== */
+
+   @media (max-width: 768px) {
+
+    /* 0. Global / shared tweaks */
+    html,
+    body {
+      /* TODO: shared mobile adjustments (font-size, scroll behavior, etc.) */
+    }
+  
+    /* 1. Splash / Prepage (intro screen) */
+    #prepage {
+      /* TODO: mobile layout for full-screen splash */
+    }
+    .prepage-top {
+      /* TODO: logo row tweaks for small width */
+    }
+    .prepage-center {
+      /* TODO: headline / subline / buttons stacking for mobile */
+    }
+
+    .prepage-actions {
+      flex-direction: column;
+      align-items: center;
+    }
+  
+    /* On mobile: hide both buttons */
+    .prepage-actions .button {
+      display: block;
+    }
+  
+    /* On mobile: show the "Coming soon to mobile" text */
+    .prepage-actions .prepage-mobile-message {
+      display: none;
+    }
+
+    /* PREPAGE bottom row:
+    - collab text and logos stacked
+    - both centered on their own line
+    */
+    .prepage-bottom {
+      grid-template-columns: 1fr;   /* from 3 columns → 1 column */
+      justify-items: center;        /* center all children horizontally */
+      text-align: center;           /* center text inside the text block */
+      row-gap: 8px;                 /* small vertical gap between text and logos */
+    }
+
+    .prepage-collab-text {
+      justify-self: center;         /* override desktop justify-self: start */
+    }
+
+    .prepage-collab-logos {
+      justify-content: center;      /* center logo row inside its line */
+    }
+
+    .prepage-bottom-spacer {
+      display: none;                /* spacer no longer needed on single-column layout */
+    }
+  
+    /* 2. Main workspace (map / grid) */
+    #workspace {
+      /* TODO: how the whole app area should behave on mobile */
+    }
+    #grid-shell {
+      /* TODO: height, padding, maybe disable excess chrome on small screens */
+    }
+    #grid {
+      /* TODO: zoom / panning constraints specific to phones */
+    }
+  
+    /* 3. Group gallery view */
+    #group-gallery {
+      /* TODO: card sizing, scroll behavior, controls for gallery on mobile */
+    }
+  
+    /* 4. Slide-in sidebars (Discover, About, etc.) */
+    #slide-ins {
+      /* TODO: how sidebars dock on mobile (full-width, bottom sheet, etc.) */
+    }
+    .slide-in[data-mode="menu"],
+    .slide-in[data-mode="content"] {
+      /* TODO: width, position, open/close animation for phone layout */
+    }
+  
+    /* 5. Long-form text pages / subpages */
+    .text-subpage {
+      /* TODO: mobile typography, margins, and max width for reading */
+    }
+  
+    /* 6. Bottom selection bar */
+    #selection-bar {
+      /* TODO: height, icon sizes, wrapping behavior for selected tags */
+    }
+  
+  }  
