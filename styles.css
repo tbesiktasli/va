@@ -3227,7 +3227,7 @@ body.menu-open .header-right .header-close { display: inline-grid; }
     }
 
     .section-content .right .topics, .section-content .right .flex-table {
-      padding: 0 100px 0 0;
+      padding: 0;
     }
 
     .detail-description-block {
