@@ -90,6 +90,20 @@ function applyViewFromState(state) {
   }
 
   if (view === VIEW.HOME || view === VIEW.PREPAGE || !view) {
+    // If we are currently on the full-page detail view, let the
+    // detail popstate handler handle this transition so that the
+    // previous grid mode (clustered/ungrouped) is preserved.
+    const detailEl = document.getElementById('detail-content');
+    const inDetail =
+      document.body.classList.contains('in-detail-page') ||
+      !!detailEl?.classList.contains('active');
+
+    if (inDetail) {
+      // Do NOT call goHome() here; closeObjectDetail({ viaPopstate: true })
+      // will run next and will restore the grid state via restoreGridStateFromDetail().
+      return;
+    }
+
     if (typeof goHome === 'function') {
       goHome({ skipHistory: true });
     }
@@ -5585,7 +5599,7 @@ function flyToNearest(dir, tag = null) {
   const before = { x: left, y: top, zoom };
   window.gridObject.centerViewportOnWorldPoint(world.x, world.y, true);
   //window.gridObject.clampCameraToBounds(true);
-  setTimeout(() => window.gridObject.clampCameraToBounds?.(true), 650);
+  setTimeout(() => window.gridObject.clampCameraToBounds?.(true, 'offgrid-after-center'), 650);
   console.debug('[offgrid] camera', { before, after: { left: grid.style.left, top: grid.style.top, zoom } });
 
   // 4) optional: quick visual pulse on the target
@@ -7464,7 +7478,7 @@ function applyHeaderOffset() {
 
   // If the grid is already mounted, make sure the camera is still in legal bounds
   if (window.gridObject?.clampCameraToBounds) {
-    window.gridObject.clampCameraToBounds(true);
+    window.gridObject.clampCameraToBounds(true, 'header-resize');
   }
 }
 
