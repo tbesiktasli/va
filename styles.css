@@ -753,7 +753,8 @@
 }
 
 #fab-top-left { top: var(--fab-edge-gap); }
-#fab-bottom-left { display: flex; bottom: var(--fab-edge-gap); }
+/*#fab-bottom-left { display: flex; bottom: var(--fab-edge-gap); }*/
+#fab-bottom-left { display: none !important; bottom: var(--fab-edge-gap); }
 
 /* Circular buttons */
 .fab {
