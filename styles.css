@@ -3144,14 +3144,6 @@ body.menu-open .header-right .header-close { display: inline-grid; }
       gap: 8px;                      /* was 15px */
       margin-top: 8px;               /* give a bit of space from main menu */
     }
-  
-    /* Footer links: stack and shrink slightly on mobile */
-    .overlay-footer {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 8px;
-      font-size: 0.8em;              /* slightly smaller */
-    }
 
     /* 5. Long-form text pages / subpages (mobile) */
 
@@ -3345,6 +3337,14 @@ body.menu-open .header-right .header-close { display: inline-grid; }
       box-sizing: border-box;
     }
 
+    #detail-content .content-header .location {
+      display: inline-block;       /* needed for width/ellipsis */
+      max-width: 60%;              /* cap width to 80% of header */
+      white-space: nowrap;         /* no wrapping to next line */
+      overflow: hidden;            /* clip overflow */
+      text-overflow: ellipsis;     /* show ... when clipped */
+    }
+
     /* Main title on detail page: smaller & tighter */
     #detail-content .vertical-content h1 {
       font-size: 2em;                /* was: 3em */
@@ -3383,10 +3383,22 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 
     .section-content .right .topics, .section-content .right .flex-table {
       padding: 0;
+      gap: 20px;
+    }
+
+    /* Detail flex-table: on mobile, stack label above value */
+    #detail-content .flex-table .row {
+      flex-direction: column;      /* label above value */
+      align-items: flex-start;     /* left-align both */
+      gap: 0.25rem;                /* small space between label and value */
+    }
+
+    #detail-content .flex-table .label {
+      width: auto;                 /* drop fixed 120px width on mobile */
     }
 
     .detail-description-block {
-      padding: 0 100px 0 0;
+      padding: 0;
       margin-bottom: 0px;
     }
 
