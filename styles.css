@@ -46,6 +46,7 @@
   --icon-slidein-closed: url('img/icons/arrow_counter_10x12px.svg');
   --icon-slidein-open:   url('img/icons/close.svg');
   --icon-detail-close:   url('img/icons/close.svg');
+  --icon-slidein-mobile-open:   url('img/icons/magnifier.svg');
 
   /* Sidebar toggle icon config */
   --section-icon-size: 8px; /* chevron size */
@@ -56,6 +57,7 @@
   --prepage-bg-image: url("img/prescreen-bg.svg"); /* adjust path if needed */
   --prepage-bg-size: 80%;
   --prepage-bg-opacity: 0.05;                      /* tweak to taste */
+  --detail-description-max-height: 6rem; /* max height of inline detail text */
 }
 
 :root[data-theme="dark"] {
@@ -380,7 +382,7 @@
     position: absolute;
     inset: 0;
     display: grid;
-    grid-template-rows: auto 1fr auto auto auto;
+    grid-template-rows: auto auto auto auto auto;
     gap: 12px;
     padding: 40px;
     background-color: var(--main-bright-bg-color);
@@ -399,7 +401,7 @@
 
   /* text objects: bigger title-like text */
   .detail-panel.detail-text-object .detail-description {
-    font-size: 0.8rem;       /* or 1.05rem */
+    font-size: 1.8rem;       /* or 1.05rem */
     line-height: 1.3;
   }
 
@@ -517,7 +519,7 @@
   }
 
   .detail-description {
-    font-size: 0.9rem;
+    font-size: 1.5rem;
     line-height: 1.35;
     /* match left alignment you introduced */
     text-align: center;
@@ -526,11 +528,15 @@
   .detail-panel.portrait .detail-description {
     text-align: left;
   }
+
+  /* Inline detail panel: cap text height and make it scrollable */
+  #grid .detail-panel .detail-description {
+    max-height: var(--detail-description-max-height);
+    overflow-y: auto;
+  }
   
   .detail-media {
-    display: grid;
-    place-items: center;
-    overflow: hidden;
+    text-align: center;
   }
   
   .detail-media img, .detail-media video {
@@ -591,6 +597,29 @@
     padding: 4px 8px;
     background-color: var(--main-bright-bg-color);
   }
+
+  /* Wrapper around the tag list inside inline detail panels */
+  .detail-tags-row {
+    width: 100%;
+  }
+
+  /* Scrollable horizontal variant for tags */
+  .detail-tags-row--scroll {
+    height: 40px;          /* fixed height → tweak as you like */
+    overflow-x: auto;      /* horizontal scroll */
+    overflow-y: hidden;    /* no vertical scroll */
+  }
+
+  /* Inside the scrollable row, keep tags in a single horizontal line */
+  .detail-tags-row--scroll .detail-tags {
+    flex-wrap: nowrap;         /* do not wrap to a second line */
+    justify-content: flex-start;
+  }
+
+  /* (Optional) small visual tweak so tags hug the left even in non-portrait */
+  .detail-panel .detail-tags-row--scroll .detail-tags {
+    justify-content: flex-start;
+  }
   
   .detail-link {
     display: inline-flex;
@@ -618,6 +647,7 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    min-width: 0; /* allow children (like tag rows) to shrink & scroll */
   }
 
   /* Let the media stretch to fill its column (and center its content as before) */
@@ -630,6 +660,13 @@
   /* Keep images/videos contained */
   .detail-panel .detail-media img,
   .detail-panel .detail-media video {
+    max-width: 100%;
+    max-height: 150px;
+    object-fit: contain;
+  }
+
+  .detail-panel.portrait .detail-media img,
+  .detail-panel.portrait .detail-media video {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
@@ -1233,6 +1270,11 @@ and pin the expanded panel to the right edge. */
   box-sizing: border-box;
   padding-bottom: 55px;
 }
+
+.vertical-content #section-notes, .vertical-content #section-references {
+  word-break: break-all;
+}
+
 .vertical-content {
   opacity: 1;
 }
@@ -2130,6 +2172,7 @@ and pin the expanded panel to the right edge. */
   letter-spacing: 0.06em;
   font-family: "Albert Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", "DejaVu Sans", sans-serif;
   box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.12); /* ← added */
+  white-space: nowrap;
 }
 
 /* Slide-in tags: unselectable in AND mode */
@@ -3208,6 +3251,68 @@ body.menu-open .header-right .header-close { display: inline-grid; }
       font-size: 0.95em;
       line-height: 1.45;
     }
+
+    /* 5c. Mobile hide/show handles for sidebars */
+
+    /* When the strip is "collapsed" on mobile, keep it off-screen even if .visible is set */
+    #slide-ins.is-collapsed.visible {
+      transform: translateX(100%);
+    }
+
+    /* Base style for the two mobile toggles: rectangle the size of the fab icons */
+    .slideins-mobile-toggle {
+      position: fixed; /* will be overridden for the collapse link */
+      width: var(--fab-size);
+      height: var(--fab-size);
+      background-color: var(--main-bg-color);
+      border: 1px solid var(--main-outline-color);
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      color: var(--main-font-color);
+      z-index: 1500;
+    }
+
+    /* Respect the [hidden] attribute even though we set display here */
+    .slideins-mobile-toggle[hidden] {
+      display: none;
+    }
+
+    /* Base icon: use the closed sidebar arrow */
+    .slideins-mobile-toggle::before {
+      content: "";
+      width: var(--slidein-icon-size);
+      height: var(--slidein-icon-size);
+      display: block;
+      background-color: currentColor;
+      -webkit-mask: var(--icon-slidein-mobile-open) no-repeat center / contain;
+              mask: var(--icon-slidein-mobile-open) no-repeat center / contain;
+    }
+
+    /* Collapse link: X attached to the left edge of the whole strip */
+    #slide-ins .slideins-mobile-toggle--collapse {
+      position: absolute;
+      left: -39px;              /* slightly outside into the main area */
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 1450;            /* above strip (z-index: 1400), below expand button */
+    }
+
+    /* For collapse, show the "open"/close (X) icon instead of arrow */
+    #slide-ins .slideins-mobile-toggle--collapse::before {
+      -webkit-mask-image: var(--icon-slidein-open);
+              mask-image: var(--icon-slidein-open);
+      transform: none;
+    }
+
+    /* Expand link: floating on the right edge of the viewport */
+    .slideins-mobile-toggle--expand {
+      right: 0;
+      bottom: 20%;
+      transform: translateY(-50%);
+    }
   
     /* 2. Main workspace (map / grid) */
     #workspace {
@@ -3284,6 +3389,19 @@ body.menu-open .header-right .header-close { display: inline-grid; }
       margin-bottom: 0px;
     }
 
+    .content-header {
+      width: auto;
+    }
+
+    #content-tts-button {
+      top: auto;
+      bottom: calc(var(--fab-edge-gap) + 9px);
+    }
+
+    #detail-content .vertical-content {
+      width: auto;
+    }
+
     /* Right column content: no extra big margins/paddings */
     #detail-content .vertical-content .right {
       padding-left: 0;               /* was: 50px left, 120px right */
@@ -3318,6 +3436,11 @@ body.menu-open .header-right .header-close { display: inline-grid; }
     /* 6. Bottom selection bar */
     #selection-bar {
       /* TODO: height, icon sizes, wrapping behavior for selected tags */
+    }
+
+    /* Inline detail on mobile: above FAB, counters, selection bar */
+    #grid .object.is-detail {
+      z-index: 1500; /* > 1200 (FAB) and > 1300 (#selection-bar) */
     }
   
   }  
