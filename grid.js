@@ -157,15 +157,25 @@ export class Grid {
           height: 480,
           // explicit portrait dimensions
           portraitWidth: 560,
-          portraitHeight: 400,
+          portraitHeight: 330,
           margin: 80,
         },
         clustered: {
           width: 480,
           height: 480,
           portraitWidth: 560,
-          portraitHeight: 400,
+          portraitHeight: 330,
           margin: 80,
+        },
+        // Mobile-specific behaviour
+        mobile: {
+          // match your CSS: @media (max-width: 768px)
+          breakpoint: 768,
+          // target fraction of viewport size on the grid
+          viewportFraction: 0.9,
+          // (optional) allow different fractions per axis later:
+          // viewportWidthFraction: 0.9,
+          // viewportHeightFraction: 0.9,
         },
       };
       
@@ -206,6 +216,30 @@ export class Grid {
 
     _vw() { return this.viewportEl?.clientWidth  || window.innerWidth; }
     _vh() { return this.viewportEl?.clientHeight || window.innerHeight; }
+
+    // Adjust a detail panel size for mobile so it fills ~90% of the viewport
+    _applyMobileDetailSizing(width, height) {
+      const cfg = this.detailConfig?.mobile || {};
+      const breakpoint = cfg.breakpoint ?? 768;
+    
+      const vw = this._vw?.() ?? window.innerWidth;
+      const vh = this._vh?.() ?? window.innerHeight;
+    
+      // Not in mobile breakpoint → keep original size
+      if (vw > breakpoint) return { width, height };
+    
+      const fracW = cfg.viewportWidthFraction ?? cfg.viewportFraction ?? 0.9;
+      const fracH = cfg.viewportHeightFraction ?? cfg.viewportFraction ?? 0.9;
+    
+      const zoom = this.zoomLevel || 1;
+    
+      // On mobile we *override* the detail size so that on screen it is
+      // ~90% of the viewport in each direction, independent of the base config.
+      return {
+        width:  (fracW * vw) / zoom,
+        height: (fracH * vh) / zoom,
+      };
+    }    
 
     // Approximate how large a group "pile" is in grouped view
     _groupedPileRadius(groupMembers, scatterStep = 16, padding = 18) {
@@ -440,9 +474,13 @@ export class Grid {
         }
         <div class="detail-info">
           <div class="detail-date-inline">${formattedDate}</div>
-          ${primaryText ? `<div class="detail-description">${primaryText}</div>` : ''}
+            ${primaryText ? `<div class="detail-description" data-allow-scroll>${primaryText}</div>` : ''}
           <div class="detail-group">${obj.groupLocation || ''}</div>
-          <ul class="detail-tags tags">${detailConnectingTags.map(t => `<li>${t}</li>`).join('')}</ul>
+          <div class="detail-tags-row detail-tags-row--scroll" data-allow-scroll>
+            <ul class="detail-tags tags">
+              ${detailConnectingTags.map(t => `<li>${t}</li>`).join('')}
+            </ul>
+          </div>
           <a class="detail-link" href="#" target="_blank" rel="noopener">
             Discover
             <svg class="detail-link-icon"
@@ -455,8 +493,17 @@ export class Grid {
         </div>
       `;
 
-      // portrait layout for portrait media
-      if ((obj.type === 'image' || obj.type === 'video') && ((obj.height || 0) > (obj.width || 0))) {
+      // Only use portrait layout on non-mobile screens for portrait media
+      const mobileCfg  = this.detailConfig?.mobile || {};
+      const breakpoint = mobileCfg.breakpoint ?? 768;
+      const viewportW  = this._vw?.() ?? window.innerWidth;
+      const isMobile   = viewportW <= breakpoint;
+
+      const isPortraitMedia =
+        (obj.type === 'image' || obj.type === 'video') &&
+        ((obj.height || 0) > (obj.width || 0));
+
+      if (!isMobile && isPortraitMedia) {
         panel.classList.add('portrait');
       }
 
@@ -619,6 +666,11 @@ export class Grid {
         H = portraitHeight;
       }
 
+      // Mobile override: expand card to ~90% of viewport on small screens
+      const mobileSize = this._applyMobileDetailSizing(W, H);
+      W = mobileSize.width;
+      H = mobileSize.height;
+
       const targetLeft = ocx - W / 2;
       const targetTop  = ocy - H / 2;
       const dx = targetLeft - obj.grid_x;
@@ -749,6 +801,11 @@ export class Grid {
         width  = portraitWidth;
         height = portraitHeight;
       }
+
+      // Mobile override: expand card to ~90% of viewport on small screens
+      const mobileSize = this._applyMobileDetailSizing(width, height);
+      width  = mobileSize.width;
+      height = mobileSize.height;
     
       // Cluster/group center in world space
       const g = this.groups?.[obj.groupId];
