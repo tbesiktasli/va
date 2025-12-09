@@ -7024,7 +7024,11 @@ function initOverlayMenu() {
     previousFocus = document.activeElement;
     overlay.classList.add('active');
     document.body.classList.add('menu-open');           // <-- mode class for header
-    setActiveMenu('viralatmospheres');
+
+    // Reset menu state: no active main item, no sub-items visible
+    mainItems.forEach((i) => i.classList.remove('active'));
+    if (subMenu) subMenu.innerHTML = '';
+
     headerClose?.focus?.();
   };
   
