@@ -2373,10 +2373,12 @@ ul.tag-group-switch {
   position: relative;
 }
 
+/*
 .menu-item.active::before {
   content: "— ";
   margin-right: 10px;
 }
+*/
 
 .sub-menu {
   flex: 1;
