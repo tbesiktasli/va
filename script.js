@@ -2314,6 +2314,11 @@ function refreshSlideInsVisibility() {
     });
   }
 
+  // Keep the mobile collapse / expand UI in sync whenever visibility changes
+  if (typeof updateMobileSlideInsToggle === 'function') {
+    updateMobileSlideInsToggle();
+  }
+
   if (typeof updateRightCounterOffset === 'function') updateRightCounterOffset();
 }
 
@@ -2335,6 +2340,92 @@ function collapseDiscoverSidebar() {
 
 // (optional) expose for debugging / future reuse
 window.collapseDiscoverSidebar = collapseDiscoverSidebar;
+
+// --- Mobile-only: hide/show the slide-in strip as a group ---
+
+function isMobileViewportForSlideIns() {
+  if (window.matchMedia) {
+    try {
+      return window.matchMedia('(max-width: 768px)').matches;
+    } catch {
+      // ignore
+    }
+  }
+  return window.innerWidth <= 768;
+}
+
+function updateMobileSlideInsToggle() {
+  const slideIns    = document.getElementById('slide-ins');
+  const collapseEl  = document.getElementById('mobile-slideins-collapse');
+  const expandEl    = document.getElementById('mobile-slideins-expand');
+
+  if (!slideIns || !collapseEl || !expandEl) return;
+
+  const isMobile = isMobileViewportForSlideIns();
+
+  // Only show toggles when the strip itself is visible and has at least one allowed child
+  const anyVisibleChild =
+    slideIns.classList.contains('visible') &&
+    !!slideIns.querySelector('.slide-in:not(.is-hidden)');
+
+  if (!isMobile || !anyVisibleChild) {
+    slideIns.classList.remove('is-collapsed');
+    collapseEl.hidden = true;
+    expandEl.hidden   = true;
+    return;
+  }
+
+  const collapsed = slideIns.classList.contains('is-collapsed');
+  collapseEl.hidden = collapsed;
+  expandEl.hidden   = !collapsed;
+}
+
+function initMobileSlideInsToggle() {
+  const slideIns    = document.getElementById('slide-ins');
+  const collapseEl  = document.getElementById('mobile-slideins-collapse');
+  const expandEl    = document.getElementById('mobile-slideins-expand');
+
+  if (!slideIns || !collapseEl || !expandEl) return;
+
+  // Clicking the X: push the whole strip off-screen
+  collapseEl.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!isMobileViewportForSlideIns()) return;
+
+    slideIns.classList.add('is-collapsed');
+
+    // Also collapse all individual panels so layout stays compact
+    if (typeof collapseDiscoverSidebar === 'function') {
+      collapseDiscoverSidebar();
+    }
+
+    updateMobileSlideInsToggle();
+  });
+
+  // Clicking the floating icon: bring the strip back
+  expandEl.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!isMobileViewportForSlideIns()) return;
+
+    slideIns.classList.remove('is-collapsed');
+    updateMobileSlideInsToggle();
+  });
+
+  // Keep in sync with viewport changes
+  const mq = window.matchMedia && window.matchMedia('(max-width: 768px)');
+  if (mq) {
+    if (mq.addEventListener) {
+      mq.addEventListener('change', updateMobileSlideInsToggle);
+    } else if (mq.addListener) {
+      mq.addListener(updateMobileSlideInsToggle);
+    }
+  }
+
+  window.addEventListener('resize', updateMobileSlideInsToggle);
+
+  // Initial sync
+  updateMobileSlideInsToggle();
+}
 
 // === GROUPED MODE: click any object -> open gallery; other modes unaffected ===
 // DEBUG: log clicks on the grid; when grouped, log the object clicked
@@ -8011,6 +8102,7 @@ function initSelectionBar() {
   renderSelectionBar();
 }
 document.addEventListener('DOMContentLoaded', initSelectionBar);
+document.addEventListener('DOMContentLoaded', initMobileSlideInsToggle);
 
 
 document.addEventListener('DOMContentLoaded', () => {
