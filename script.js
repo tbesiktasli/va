@@ -65,8 +65,104 @@ function pushViewState(view, payload = {}, hash) {
 function applyViewFromState(state) {
   const view = state?.view;
 
-  // Let existing (legacy) handlers manage gallery/detail states for now
-  if (state && (state.gallery || state.detail)) {
+  // --- Special case: coming BACK from a text subpage into a detail state ---
+  if (state?.detail) {
+    const detailEl    = document.getElementById('detail-content');
+    const gridShellEl = document.getElementById('grid-shell');
+
+    const inDetail =
+      document.body.classList.contains('in-detail-page') ||
+      !!detailEl?.classList.contains('active');
+
+    // Are we currently on a text subpage?
+    const onTextSubpage = !!document.querySelector('.text-subpage.active');
+
+    // If history says "detail", but the DOM shows a text subpage,
+    // restore the existing detail view instead of doing nothing.
+    if (!inDetail && onTextSubpage && detailEl) {
+      // Hide all text pages
+      if (typeof hideAllTextSubpages === 'function') {
+        hideAllTextSubpages();
+      } else {
+        document.querySelectorAll('.text-subpage').forEach((s) => {
+          s.hidden = true;
+          s.classList.remove('active');
+        });
+      }
+
+      // Re-show the detail view we previously hid
+      detailEl.classList.add('active');
+      document.body.classList.add('in-detail-page');
+      if (gridShellEl) {
+        gridShellEl.style.display = 'none';
+      }
+
+      // Let header + sidebars recompute their state
+      window.__dispatchViewChange?.();
+      if (typeof refreshSlideInsVisibility === 'function') {
+        refreshSlideInsVisibility();
+      }
+    }
+
+    // Hand any other detail transitions (e.g. detail → grid) over
+    // to the existing detail popstate handler.
+    return;
+  }
+
+  // --- Special case: coming BACK from a text subpage into a gallery state ---
+  if (state && state.gallery) {
+    const gridShellEl    = document.getElementById('grid-shell');
+    const groupGalleryEl = document.getElementById('group-gallery');
+
+    const inGallery =
+      document.body.classList.contains('in-group-gallery') ||
+      document.body.classList.contains('in-gallery') ||
+      !!groupGalleryEl?.classList.contains('active');
+
+    // Are we currently on a text subpage?
+    const onTextSubpage = !!document.querySelector('.text-subpage.active');
+
+    // If history says "gallery", but the DOM shows a text subpage,
+    // restore the existing gallery view instead of doing nothing.
+    if (!inGallery && onTextSubpage && groupGalleryEl) {
+      // Hide all text pages
+      if (typeof hideAllTextSubpages === 'function') {
+        hideAllTextSubpages();
+      } else {
+        document.querySelectorAll('.text-subpage').forEach((s) => {
+          s.hidden = true;
+          s.classList.remove('active');
+        });
+      }
+
+      // Re-show the gallery we previously hid
+      groupGalleryEl.classList.add('active');
+
+      // Mark correct gallery mode on <body>
+      if (state.adhoc) {
+        // ad-hoc (tag) gallery
+        document.body.classList.add('in-gallery', 'in-adhoc-gallery');
+        document.body.classList.remove('in-group-gallery');
+      } else {
+        // normal group gallery
+        document.body.classList.add('in-group-gallery');
+        document.body.classList.remove('in-gallery', 'in-adhoc-gallery');
+      }
+
+      // Hide grid when gallery is active
+      if (gridShellEl) {
+        gridShellEl.style.display = 'none';
+      }
+
+      // Let header + sidebars / slide-ins recompute their state
+      window.__dispatchViewChange?.();
+      if (typeof refreshSlideInsVisibility === 'function') {
+        refreshSlideInsVisibility();
+      }
+    }
+
+    // Hand any other gallery transitions (e.g. gallery → grid) over
+    // to the existing gallery popstate handler.
     return;
   }
 
@@ -7167,6 +7263,14 @@ function openTextSubpage(sectionId, headerText, options = {}) {
   document.querySelectorAll('.scroll-container-horizontal.active, .scroll-container-vertical.active')
     .forEach(n => n.classList.remove('active'));
 
+  // When entering a text subpage, we are no longer in any full-page main view
+  document.body.classList.remove(
+    'in-detail-page',
+    'in-group-gallery',
+    'in-gallery',
+    'in-adhoc-gallery'
+  );
+
   // 1) Hide all text sub-pages and clear their state
   document.querySelectorAll('.text-subpage').forEach(s => {
     s.hidden = true;
@@ -7222,6 +7326,42 @@ function initSubpageLinkShortcuts() {
 
     event.preventDefault();
     openTextSubpage(sectionId, headerText);
+  });
+}
+
+/**
+ * Back buttons on text subpages.
+ * - If history.state.view === VIEW.SUBPAGE, use history.back()
+ *   so the user returns to the previous view (grid, research, detail, etc.).
+ * - Otherwise, fall back to goHome().
+ */
+function initSubpageBackButtons() {
+  document.addEventListener('click', (event) => {
+    const back = event.target.closest('.text-subpage-back');
+    if (!back) return;
+
+    const activeSubpage = document.querySelector('.text-subpage.active');
+    if (!activeSubpage) {
+      // Not currently in a text subpage; let other handlers handle it.
+      return;
+    }
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+
+    const state = history.state || {};
+    if (state.view === VIEW.SUBPAGE) {
+      // Use browser history so we return exactly to the previous view
+      try {
+        history.back();
+      } catch (err) {
+        console.warn('[subpage] history.back() failed, falling back to goHome()', err);
+        if (typeof goHome === 'function') goHome();
+      }
+    } else if (typeof goHome === 'function') {
+      // No subpage state: just go back to the home grid
+      goHome();
+    }
   });
 }
 
@@ -7308,6 +7448,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initSlideIns();
   initOverlayMenu();
   initSubpageLinkShortcuts();
+  initSubpageBackButtons();
   initIntroObjectLinks();
   initArrowListScrolling();   // ← add this line
   initAuthorBylineLinks();
