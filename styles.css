@@ -43,10 +43,15 @@
   --burger-bar-radius:    0.65px;  /* corner radius to match thickness/2 */
   --nav-icon-size: 18px;
   --slidein-icon-size: 12px;
-  --icon-slidein-closed: url('img/icons/arrow_counter_10x12px.svg');
-  --icon-slidein-open:   url('img/icons/close.svg');
-  --icon-detail-close:   url('img/icons/close.svg');
-  --icon-slidein-mobile-open:   url('img/icons/magnifier.svg');
+  --icon-slidein-closed:          url('img/icons/arrow_counter_10x12px.svg');
+  --icon-slidein-open:            url('img/icons/close.svg');
+  --icon-detail-close:            url('img/icons/close.svg');
+
+  /* Mobile “open sidebars” icons */
+  --icon-slidein-mobile-open-menu:    url('img/icons/connections.svg'); /* Discover Connections */
+  --icon-slidein-mobile-open-content: url('img/icons/context.svg');     /* 3 sidebars (detail/gallery) */
+  /* Default for the base rule: use the menu icon by default */
+  --icon-slidein-mobile-open:         var(--icon-slidein-mobile-open-menu);
 
   /* Sidebar toggle icon config */
   --section-icon-size: 8px; /* chevron size */
@@ -3313,6 +3318,18 @@ body.menu-open .header-right .header-close { display: inline-grid; }
       bottom: 20%;
       transform: translateY(-50%);
     }
+
+    /* Variant: when the expand button is for Discover Connections (menu sidebar) */
+    .slideins-mobile-toggle--expand.is-menu::before {
+      -webkit-mask-image: var(--icon-slidein-mobile-open-menu);
+              mask-image: var(--icon-slidein-mobile-open-menu);
+    }
+
+    /* Variant: when the expand button is for the group of 3 content sidebars */
+    .slideins-mobile-toggle--expand.is-content::before {
+      -webkit-mask-image: var(--icon-slidein-mobile-open-content);
+              mask-image: var(--icon-slidein-mobile-open-content);
+    }
   
     /* 2. Main workspace (map / grid) */
     #workspace {
@@ -3460,7 +3477,6 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 
     /* Inline detail on mobile: above FAB, counters, selection bar */
     #grid .object.is-detail {
-      z-index: 1500; /* > 1200 (FAB) and > 1300 (#selection-bar) */
     }
   
-  }  
+  }
