@@ -895,23 +895,28 @@ header {
   display: block;
 }
 
-#content-back-button {
+/* Shared styling for back buttons on gallery/detail (#content-back-button)
+   and on text subpages (.text-subpage-back) */
+#content-back-button,
+.text-subpage-back {
   position: absolute;
   top: 12px;
   left: 12px;
   z-index: 1200;
 }
 
-#content-back-button svg {
+#content-back-button svg,
+.text-subpage-back svg {
   width: 26px;
   height: 26px;
 }
 
-/* Optional: if you want the vector-effect tweak, keep only this part */
-#content-back-button svg * {
+/* Optional: vector-effect tweak for all back arrows */
+#content-back-button svg *,
+.text-subpage-back svg * {
   vector-effect: non-scaling-stroke;
   stroke-width: 1;
-}
+}   
 
 /* Text-to-speech FAB on detail page (stacked under back button like #gallery-ungroup) */
 #content-tts-button {
