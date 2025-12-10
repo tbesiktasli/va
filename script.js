@@ -2410,6 +2410,25 @@ function refreshSlideInsVisibility() {
     });
   }
 
+  // Decide which "open" icon the mobile expand button should use
+  const expandEl = document.getElementById('mobile-slideins-expand');
+  if (expandEl) {
+    // reset both variants first
+    expandEl.classList.remove('is-menu', 'is-content');
+
+    // In your current layout, these two should be mutually exclusive,
+    // but we keep the checks explicit for clarity.
+    if (shouldShowMenu && !shouldShowContent) {
+      // Discover Connections (menu sidebar)
+      expandEl.classList.add('is-menu');
+    } else if (shouldShowContent && !shouldShowMenu) {
+      // Group of 3 content sidebars (detail/gallery)
+      expandEl.classList.add('is-content');
+    }
+    // If neither is true (no sidebars), we leave it without a variant class.
+    // The button itself will be hidden by updateMobileSlideInsToggle().
+  }
+
   // Keep the mobile collapse / expand UI in sync whenever visibility changes
   if (typeof updateMobileSlideInsToggle === 'function') {
     updateMobileSlideInsToggle();
