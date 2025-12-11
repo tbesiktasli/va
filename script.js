@@ -2473,12 +2473,12 @@ function updateMobileSlideInsToggle() {
   const slideIns    = document.getElementById('slide-ins');
   const collapseEl  = document.getElementById('mobile-slideins-collapse');
   const expandEl    = document.getElementById('mobile-slideins-expand');
+  const workspaceOverlay = document.getElementById('workspace-overlay');
 
   if (!slideIns || !collapseEl || !expandEl) return;
 
   const isMobile = isMobileViewportForSlideIns();
 
-  // Only show toggles when the strip itself is visible and has at least one allowed child
   const anyVisibleChild =
     slideIns.classList.contains('visible') &&
     !!slideIns.querySelector('.slide-in:not(.is-hidden)');
@@ -2487,12 +2487,23 @@ function updateMobileSlideInsToggle() {
     slideIns.classList.remove('is-collapsed');
     collapseEl.hidden = true;
     expandEl.hidden   = true;
+
+    // Ensure overlay is hidden when slide-ins are not used on mobile
+    if (workspaceOverlay) {
+      workspaceOverlay.classList.remove('is-visible');
+    }
     return;
   }
 
   const collapsed = slideIns.classList.contains('is-collapsed');
   collapseEl.hidden = collapsed;
   expandEl.hidden   = !collapsed;
+
+  // Show overlay only on mobile when the strip is expanded (not collapsed)
+  if (workspaceOverlay) {
+    const shouldShowOverlay = !collapsed;
+    workspaceOverlay.classList.toggle('is-visible', shouldShowOverlay);
+  }
 }
 
 function initMobileSlideInsToggle() {
