@@ -252,6 +252,27 @@
     overflow: hidden;         /* prevent native scroll; panning stays JS-only */
   }
 
+  /* Semi-transparent overlay over the workspace (used on mobile when sidebars are open) */
+  #workspace-overlay {
+    position: fixed;
+    top: var(--header-h);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.65);   /* “half transparent” */
+    z-index: 1300;                     /* above grid + FABs (1200), below sidebars (1400) */
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+
+  #workspace-overlay.is-visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;              /* allow future click-to-close if you want */
+  }
+
   #grid {
     /*border: 1px solid green;*/
     position: absolute;
