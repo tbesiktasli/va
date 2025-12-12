@@ -8338,38 +8338,38 @@ function renderSelectionBar() {
     }
   }
 
-  // Right-side actions (Create new gallery) — NOT in ad-hoc tag gallery
-  const existingActions = bar.querySelector('.sb-actions');
+  // Bottom-row actions (Create gallery) — NOT in ad-hoc tag gallery
+  const bottomRow = bar.querySelector('.sb-bottom');
+  const host = bottomRow || bar;
+
+  let actions = host.querySelector('.sb-actions') || bar.querySelector('.sb-actions');
+  if (!actions) {
+    actions = document.createElement('div');
+    actions.className = 'sb-actions';
+    host.appendChild(actions);
+  }
 
   if (isAdhoc) {
     // In tag gallery, the bar is useful but this button isn't
-    if (existingActions) existingActions.remove();
+    actions.innerHTML = '';
+    actions.hidden = true;
+    if (bottomRow) bottomRow.hidden = true;
   } else {
-    let actions = existingActions;
-    if (!actions) {
-      actions = document.createElement('div');
-      actions.className = 'sb-actions';
-      bar.appendChild(actions);
-    }
+    actions.hidden = false;
+    if (bottomRow) bottomRow.hidden = false;
     actions.innerHTML = '';
 
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'button btn-create-gallery';
-    btn.innerHTML = '<span class="text">Create new gallery</span><span class="icon">→</span>';
+    btn.innerHTML = '<span class="text">Create gallery</span><span class="icon">→</span>';
     btn.addEventListener('click', () => {
       const theme = window.activeThemeFilter || null;
       if (theme && tags.length === 0) {
-        // Theme-based gallery
-        if (typeof window.openThemeGallery === 'function') {
-          window.openThemeGallery(theme);
-        }
+        if (typeof window.openThemeGallery === 'function') window.openThemeGallery(theme);
       } else {
-        // Tag-based gallery (existing behavior)
         const objs = objectsMatchingCurrentFilter();
-        if (typeof window.openTagsGallery === 'function') {
-          window.openTagsGallery(objs, tags);
-        }
+        if (typeof window.openTagsGallery === 'function') window.openTagsGallery(objs, tags);
       }
     });
 
