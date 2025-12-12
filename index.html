@@ -1263,9 +1263,17 @@
       hidden
     ></a>
 
-    <!-- Fixed bottom selection bar (spans to the left edge of closed slide-in) -->
+    <!-- Fixed bottom selection bar (2 rows: tags/theme + action) -->
     <div id="selection-bar" aria-live="polite" aria-label="Selected tags">
-      <ul class="tags" id="selected-tags-list"></ul>
+      <div class="sb-top">
+        <div class="sb-tags-scroll" aria-label="Selected tags list">
+          <ul class="tags" id="selected-tags-list"></ul>
+        </div>
+      </div>
+
+      <div class="sb-bottom">
+        <div class="sb-actions" aria-label="Selection actions"></div>
+      </div>
     </div>
 
   </div>
