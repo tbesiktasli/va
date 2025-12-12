@@ -1194,6 +1194,10 @@ body.in-group-gallery:not(.in-adhoc-gallery) #gallery-ungroup {
   transform: translateX(0);
 }
 
+#slide-ins.is-collapsed.visible {
+  transform: translateX(100%);
+}
+
 .slide-in {
   display: flex;
   flex: 0 0 auto;
@@ -3267,13 +3271,6 @@ body.menu-open .header-right .header-close { display: inline-grid; }
     .slide-in[data-mode="content"] .content-sidebar-references-body {
       font-size: 0.95em;
       line-height: 1.45;
-    }
-
-    /* 5c. Mobile hide/show handles for sidebars */
-
-    /* When the strip is "collapsed" on mobile, keep it off-screen even if .visible is set */
-    #slide-ins.is-collapsed.visible {
-      transform: translateX(100%);
     }
 
     /* Base style for the two mobile toggles: rectangle the size of the fab icons */
