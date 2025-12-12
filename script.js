@@ -2358,6 +2358,10 @@ function refreshSlideInsVisibility() {
     detailGroupHasMultiple = window.__detailNav.order.length > 1;
   }
 
+  // NEW: mark when we are in a single-object detail view
+  const isSingleDetail = detailActive && !detailGroupHasMultiple;
+  document.body.classList.toggle('detail-single-object-group', isSingleDetail);
+
   // Grid states where menu sidebar is normally allowed
   const baseAllowedStates = (state === 'ungrouped' || state === 'clustered' || state === 'pre-cluster');
 
@@ -6504,6 +6508,10 @@ function openMenuSecondary(slideInSelector, { title, paragraphs, showSelectButto
 
   const footerHtml = showSelectButton ? `
     <div class="secondary-pane-footer">
+      <a href="#" class="button theme-back-button">
+        <span class="icon">&larr;</span>
+        <span class="text">Back</span>
+      </a>
       <a href="#" class="button theme-select-button">
         <span class="text">Select</span>
         <span class="icon">&rarr;</span>
@@ -6513,8 +6521,18 @@ function openMenuSecondary(slideInSelector, { title, paragraphs, showSelectButto
 
   panel.innerHTML = contentHtml + footerHtml;
 
-  // Theme "Select" → open theme gallery for active theme row
+  // Theme "Select" / "Back" handlers
   if (showSelectButton) {
+    // Back → close secondary pane, return to themes list
+    const backBtn = panel.querySelector('.theme-back-button');
+    if (backBtn) {
+      backBtn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        closeMenuSecondary(slideInSelector);
+      });
+    }
+
+    // Select → open theme gallery for active theme row
     const btn = panel.querySelector('.theme-select-button');
     if (btn) {
       btn.addEventListener('click', (ev) => {
