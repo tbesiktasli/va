@@ -779,8 +779,8 @@
 }
 
 #fab-top-left { top: var(--fab-edge-gap); }
-/*#fab-bottom-left { display: flex; bottom: var(--fab-edge-gap); }*/
-#fab-bottom-left { display: none !important; bottom: var(--fab-edge-gap); }
+#fab-bottom-left { display: flex; bottom: var(--fab-edge-gap); }
+/*#fab-bottom-left { display: none !important; bottom: var(--fab-edge-gap); }*/
 
 /* Circular buttons */
 .fab {
@@ -1094,6 +1094,17 @@ body.in-group-gallery:not(.in-adhoc-gallery) #gallery-ungroup {
   margin-left: 20px;
 }
 
+/* Back button in theme secondary pane: icon before label */
+.theme-back-button .icon {
+  margin-left: 0;
+  margin-right: 20px;
+}
+
+/* Back button: hidden by default (desktop / tablet) */
+.theme-back-button {
+  display: none;
+}
+
 .project-type {
   font-size: 0.6em;
   letter-spacing: 0.5em;
@@ -1220,12 +1231,6 @@ and pin the expanded panel to the right edge. */
 #slide-ins .slide-in:not([data-mode="menu"]).expanded {
   flex: 1 1 auto;    /* take leftover width, not full strip */
   max-width: 100%;    /* but never wider than #slide-ins itself */
-}
-
-/* Expanded size uses the computed width cap */
-#slide-ins .slide-in[data-mode="menu"].expanded {
-  width: auto;                            /* override any .expanded { width:100% } */
-  max-width: var(--slidein-exp-width);    /* animate this from 40px → target */
 }
 
 #slide-ins .slide-in[data-mode="menu"] .vertical-content,
@@ -1876,12 +1881,6 @@ and pin the expanded panel to the right edge. */
   transform: rotate(180deg);
 }
 
-/* Expanded width = handle + computed content width */
-#slide-ins .slide-in[data-mode="menu"].expanded {
-  width: auto; /* override any 100% leftovers */
-  max-width: calc(var(--handle-w) + var(--slidein-exp-width));
-}
-
 /* Handle column: fixed */
 #slide-ins .slide-in[data-mode="menu"] .slide-in-handle {
   flex: 0 0 var(--handle-w);
@@ -1996,13 +1995,13 @@ and pin the expanded panel to the right edge. */
 }
 
 #slide-ins .slide-in[data-mode="menu"].expanded {
-  /* expanded width with only main panel visible */
-  max-width: calc(var(--handle-w) + var(--main-w));
+  /* expanded width with only main panel visible, never wider than viewport */
+  max-width: min(100dvw, calc(var(--handle-w) + var(--main-w)));
 }
 
-/* When secondary is open, add its width too */
+/* When secondary is open, add its width too, still capped to viewport */
 #slide-ins .slide-in[data-mode="menu"].expanded.secondary-open {
-  max-width: calc(var(--handle-w) + var(--secondary-w) + var(--main-w));
+  max-width: min(100dvw, calc(var(--handle-w) + var(--secondary-w) + var(--main-w)));
 }
 
 /* Handle column fixed */
@@ -2088,21 +2087,10 @@ and pin the expanded panel to the right edge. */
   bottom: 0;
   display: flex;
   justify-content: flex-start;
+  gap: 8px; /* space between Back and Select */
   padding-top: 12px;
   padding-bottom: 12px;
   background: var(--main-bg-color);
-}
-
-.secondary-pane .back {
-  display: inline-flex; 
-  align-items: center; gap: .4rem;
-  padding: 6px 10px; 
-  border: 1px solid var(--main-outline-color); 
-  border-radius: 999px; 
-  background: var(--main-bright-bg-color); 
-  cursor: pointer;
-  margin-bottom: 10px;
-  font-size: .75rem;
 }
 
 /* Themes list */
@@ -3087,12 +3075,6 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 
    @media (max-width: 768px) {
 
-    /* 0. Global / shared tweaks */
-    html,
-    body {
-      /* TODO: shared mobile adjustments (font-size, scroll behavior, etc.) */
-    }
-
     /* Header: hide left text and theme toggle on mobile */
     .header-left {
       visibility: hidden;   /* not visible, but still occupies space */
@@ -3101,17 +3083,6 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 
     .header-right .theme-toggle {
       display: none;
-    }
-  
-    /* 1. Splash / Prepage (intro screen) */
-    #prepage {
-      /* TODO: mobile layout for full-screen splash */
-    }
-    .prepage-top {
-      /* TODO: logo row tweaks for small width */
-    }
-    .prepage-center {
-      /* TODO: headline / subline / buttons stacking for mobile */
     }
 
     .prepage-actions {
@@ -3317,6 +3288,25 @@ body.menu-open .header-right .header-close { display: inline-grid; }
               mask: var(--icon-slidein-mobile-open) no-repeat center / contain;
     }
 
+  /* Discover Connections menu: full-width secondary on mobile
+     when a theme detail is open */
+     #slide-ins .slide-in[data-mode="menu"].expanded.secondary-open {
+      /* Hide the main (list) column completely */
+      --main-w: 0px;
+  
+      /* Let the secondary use all remaining width (viewport minus handle) */
+      --secondary-w: calc(100dvw - var(--handle-w));
+  
+      /* And let this slide-in itself span the full viewport width */
+      max-width: 100dvw;
+    }
+  
+    /* The now-zero-width main column should not keep horizontal padding */
+    #slide-ins .slide-in[data-mode="menu"].expanded.secondary-open .vertical-content {
+      padding-left: 0;
+      padding-right: 0;
+    }
+
     /* Collapse link: X attached to the left edge of the whole strip */
     #slide-ins .slideins-mobile-toggle--collapse {
       position: absolute;
@@ -3350,17 +3340,6 @@ body.menu-open .header-right .header-close { display: inline-grid; }
     .slideins-mobile-toggle--expand.is-content::before {
       -webkit-mask-image: var(--icon-slidein-mobile-open-content);
               mask-image: var(--icon-slidein-mobile-open-content);
-    }
-  
-    /* 2. Main workspace (map / grid) */
-    #workspace {
-      /* TODO: how the whole app area should behave on mobile */
-    }
-    #grid-shell {
-      /* TODO: height, padding, maybe disable excess chrome on small screens */
-    }
-    #grid {
-      /* TODO: zoom / panning constraints specific to phones */
     }
   
     #group-gallery .title-box h2 {
@@ -3490,14 +3469,23 @@ body.menu-open .header-right .header-close { display: inline-grid; }
       overflow: visible;             /* content scrolls with page */
       padding-top: 12px;             /* small gap from left block */
     }
-  
-    /* 6. Bottom selection bar */
-    #selection-bar {
-      /* TODO: height, icon sizes, wrapping behavior for selected tags */
-    }
 
-    /* Inline detail on mobile: above FAB, counters, selection bar */
-    #grid .object.is-detail {
+    /* On mobile, show the Back button in the theme secondary pane */
+    .theme-back-button {
+      display: inline-flex;
+      align-items: center;
     }
   
+  }
+
+  body.detail-single-object-group #detail-content .content-header {
+    width: auto;
+  }
+
+  body.detail-single-object-group #detail-content .vertical-content {
+    width: 95%;
+  } 
+
+  body.detail-single-object-group #detail-content p {
+    padding-right: 0;
   }
