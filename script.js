@@ -688,6 +688,9 @@ function groupLabelById(id) {
 const activeTags = new Set();
 window.activeTags = activeTags;
 
+// Theme filter: mutually exclusive with tag filters
+window.activeThemeFilter = null;
+
 // Always refresh the selection bar when tags change
 (function patchActiveTagsForSelectionBar() {
   const s = window.activeTags;
@@ -5507,6 +5510,13 @@ function updateOffgridCounters() {
   const vp = workspaceEl.getBoundingClientRect();
   const items = Array.from(gridEl.querySelectorAll('.object'));
 
+  const themeFilter = window.activeThemeFilter || null;
+  let themeMatchesById = null;
+  if (themeFilter && typeof window.objectsMatchingTheme === 'function') {
+    const objs = window.objectsMatchingTheme(themeFilter) || [];
+    themeMatchesById = new Set(objs.map(o => String(o.id)));
+  }
+
   const data = {
     top: { total: 0, perTag: {} },
     bottom: { total: 0, perTag: {} },
@@ -5528,7 +5538,12 @@ function updateOffgridCounters() {
     const overlaps = !(r.right <= vp.left || r.left >= vp.right || r.bottom <= vp.top || r.top >= vp.bottom);
     if (overlaps) continue;
 
-    // Measure "how far outside" on each side and assign to the dominant side
+    // If we are in theme-filter mode, only count objects that match the theme
+    if (themeFilter && themeMatchesById && !themeMatchesById.has(el.id)) {
+      continue;
+    }
+
+    // Measure "how far outside" ...
     const dTop    = Math.max(vp.top    - r.bottom, 0);
     const dBottom = Math.max(r.top     - vp.bottom, 0);
     const dLeft   = Math.max(vp.left   - r.right, 0);
@@ -6254,10 +6269,37 @@ window.toggleTagFromDetail = toggleTagFromDetail;
 
 function updateObjectGlowsWithGradient() {
   const selected = [...activeTags];
+  const themeFilter = window.activeThemeFilter || null;
+  let themedIds = null;
+
+  // Pre-compute which objects match the theme (if any)
+  if (themeFilter && typeof window.objectsMatchingTheme === 'function') {
+    const objs = window.objectsMatchingTheme(themeFilter) || [];
+    themedIds = new Set(objs.map(o => String(o.id)));
+  }
+
   document.querySelectorAll(".object").forEach(div => {
     const tags = (div.dataset.tags || '').split(",").filter(Boolean);
     const glow = div.querySelector(".object-glow");
     if (!glow) return;
+
+    // === THEME FILTER ===
+    if (themeFilter && themedIds) {
+      if (!themedIds.has(div.id)) {
+        // not in the theme → no glow
+        glow.style.setProperty('--glow', 'transparent');
+        glow.style.setProperty('--glow-color', 'transparent');
+      } else {
+        // matched theme → single-color glow
+        const color = getComputedStyle(document.documentElement)
+          .getPropertyValue('--main-button-outline-color') || '#000';
+        glow.style.setProperty('--glow', color.trim());
+        glow.style.setProperty('--glow-color', color.trim());
+      }
+      return; // theme mode wins over tag mode
+    }
+
+    // === TAG FILTER (existing behavior) ===
 
     // nothing selected → no glow
     if (selected.length === 0) {
@@ -6318,7 +6360,6 @@ function updateObjectGlowsWithGradient() {
     });
     const conic = `conic-gradient(from 0deg at 50% 50%, ${stops.join(", ")})`;
     glow.style.setProperty('--glow', conic);
-    // use the first tag color as a simple flat color for Safari
     glow.style.setProperty('--glow-color', colors[0] || 'transparent');
   });
 }
@@ -6400,6 +6441,19 @@ function initSlideInTags() {
     }
     const tag = li.dataset.tag;
     const color = tagColors[tag];
+
+    // If a theme filter is active, clear it (tags and themes are exclusive)
+    if (window.activeThemeFilter) {
+      window.activeThemeFilter = null;
+      if (typeof clearThemesActiveState === 'function') {
+        clearThemesActiveState();
+      }
+      if (typeof closeMenuSecondary === 'function') {
+        closeMenuSecondary('#discover-connections');
+      }
+      // The tag toggle below plus the existing update* calls will refresh
+      // glows, off-grid counters and the selection bar.
+    }
 
     // In SCOPED policy: lock to the group of the first selection
     if (TAG_GROUP_POLICY === TAG_GROUP_POLICIES.SCOPED) {
@@ -6523,7 +6577,7 @@ function openMenuSecondary(slideInSelector, { title, paragraphs, showSelectButto
 
   // Theme "Select" / "Back" handlers
   if (showSelectButton) {
-    // Back → close secondary pane, return to themes list
+    // Back → close secondary pane, return to themes list (esp. on mobile)
     const backBtn = panel.querySelector('.theme-back-button');
     if (backBtn) {
       backBtn.addEventListener('click', (ev) => {
@@ -6532,7 +6586,7 @@ function openMenuSecondary(slideInSelector, { title, paragraphs, showSelectButto
       });
     }
 
-    // Select → open theme gallery for active theme row
+    // Select → activate theme-based filtering on the grid
     const btn = panel.querySelector('.theme-select-button');
     if (btn) {
       btn.addEventListener('click', (ev) => {
@@ -6548,14 +6602,38 @@ function openMenuSecondary(slideInSelector, { title, paragraphs, showSelectButto
           : null;
         if (!theme) return;
 
-        // Optionally collapse Discover sidebar before entering gallery
-        if (typeof window.collapseDiscoverSidebar === 'function') {
-          window.collapseDiscoverSidebar();
+        // 1) Clear any tag selection (mutually exclusive)
+        if (window.activeTags) {
+          window.activeTags.clear();
+        }
+        if (typeof clearAllTagSelectionsUI === 'function') {
+          clearAllTagSelectionsUI();
+        }
+        if (typeof updateTagAvailability === 'function') {
+          updateTagAvailability();
         }
 
-        if (typeof window.openThemeGallery === 'function') {
-          window.openThemeGallery(theme);
+        // Reset tag group lock (if you use it)
+        if (typeof window.activeTagGroupId !== 'undefined') {
+          window.activeTagGroupId = null;
         }
+
+        // 2) Set the active theme filter
+        window.activeThemeFilter = theme;
+
+        // 3) Update highlights, counters, and selection bar
+        if (typeof updateObjectGlowsWithGradient === 'function') {
+          updateObjectGlowsWithGradient();
+        }
+        if (typeof scheduleOffgridUpdate === 'function') {
+          scheduleOffgridUpdate();
+        }
+        if (typeof renderSelectionBar === 'function') {
+          renderSelectionBar();
+        }
+
+        // 4) Close the secondary pane (especially for mobile full-screen view)
+        closeMenuSecondary(slideInSelector);
       }, { once: true });
     }
   }
@@ -7832,6 +7910,7 @@ function objectsMatchingCurrentFilter() {
   const all = window.gridObject?.objects || [];
   const tags = [...(window.activeTags || [])];
   const mode = (window.TAG_MODE || 'OR').toUpperCase();
+  const themeFilter = window.activeThemeFilter || null;
 
   // Respect tag scoping if enabled
   let candidates = all;
@@ -7842,8 +7921,15 @@ function objectsMatchingCurrentFilter() {
     candidates = candidates.filter(o => normalize(o.groupId) === gid);
   }
 
+  // Theme-only filter (no tags selected)
+  if (tags.length === 0 && themeFilter) {
+    return candidates.filter(o => objectMatchesTheme(o, themeFilter));
+  }
+
+  // No tags and no theme → everything passes
   if (tags.length === 0) return candidates;
 
+  // Tag-based filter (existing behavior)
   return candidates.filter(o => {
     const own = new Set(getObjectFilterTags(o));  // connectingTags only
     return (mode === 'AND')
@@ -7852,16 +7938,15 @@ function objectsMatchingCurrentFilter() {
   });
 }
 
-function objectsMatchingTheme(themeOrId) {
-  const all = window.gridObject?.objects || [];
-  if (!themeOrId) return all;
+function objectMatchesTheme(obj, themeOrId) {
+  if (!obj || !themeOrId) return false;
 
   let theme = themeOrId;
   if (typeof theme !== 'object') {
     if (typeof window.findThemeById === 'function') {
       theme = window.findThemeById(themeOrId);
     } else {
-      return all;
+      return false;
     }
   }
 
@@ -7871,15 +7956,19 @@ function objectsMatchingTheme(themeOrId) {
     .trim()
     .toLowerCase();
 
-  return all.filter(o => {
-    const list = Array.isArray(o.themes) ? o.themes : [];
-    return list.some(t => {
-      const tid   = t.id != null ? String(t.id) : null;
-      const tName = (t.name || '').toString().trim().toLowerCase();
-      return (wantedId && tid === wantedId) ||
-             (wantedName && tName === wantedName);
-    });
+  const list = Array.isArray(obj.themes) ? obj.themes : [];
+  return list.some(t => {
+    const tid   = t.id != null ? String(t.id) : null;
+    const tName = (t.name || '').toString().trim().toLowerCase();
+    return (wantedId && tid === wantedId) ||
+           (wantedName && tName === wantedName);
   });
+}
+
+function objectsMatchingTheme(themeOrId) {
+  const all = window.gridObject?.objects || [];
+  if (!themeOrId) return all;
+  return all.filter(o => objectMatchesTheme(o, themeOrId));
 }
 
 window.objectsMatchingTheme = objectsMatchingTheme;
@@ -8211,9 +8300,10 @@ function renderSelectionBar() {
   // Current selection
   const raw  = window.activeTags;
   const tags = Array.isArray(raw) ? raw : (raw instanceof Set ? [...raw] : []);
+  const theme = window.activeThemeFilter || null;
 
-  // No tags → hide immediately (prevents “sticky” bar)
-  if (tags.length === 0) {
+  // No tags and no theme → hide immediately (prevents “sticky” bar)
+  if (tags.length === 0 && !theme) {
     bar.classList.remove('show');
     ws.classList.remove('has-selection-bar');
     list.innerHTML = '';
@@ -8222,20 +8312,30 @@ function renderSelectionBar() {
     return;
   }
 
-  // Build pills
+  // Build pills (either theme OR tags)
   list.innerHTML = '';
-  for (const tag of tags) {
+
+  if (theme && tags.length === 0) {
     const li = document.createElement('li');
-    li.dataset.tag = tag;
-    li.innerHTML = `${tag} <span class="x" aria-hidden="true">X</span>`;
-    const color = window.tagColors?.[tag];
-    if (color) {
-      li.classList.add('active');
-      li.style.borderColor = color;
-      li.style.color = color;
-      li.style.boxShadow = `${color}66 0 0 8px`;
-    }
+    li.dataset.themeId = theme.id != null ? String(theme.id) : '';
+    li.className = 'theme-pill';
+    const name = theme.title || theme.name || 'Untitled theme';
+    li.innerHTML = `${name} <span class="x" aria-hidden="true">X</span>`;
     list.appendChild(li);
+  } else {
+    for (const tag of tags) {
+      const li = document.createElement('li');
+      li.dataset.tag = tag;
+      li.innerHTML = `${tag} <span class="x" aria-hidden="true">X</span>`;
+      const color = window.tagColors?.[tag];
+      if (color) {
+        li.classList.add('active');
+        li.style.borderColor = color;
+        li.style.color = color;
+        li.style.boxShadow = `${color}66 0 0 8px`;
+      }
+      list.appendChild(li);
+    }
   }
 
   // Right-side actions (Create new gallery) — NOT in ad-hoc tag gallery
@@ -8258,8 +8358,19 @@ function renderSelectionBar() {
     btn.className = 'button btn-create-gallery';
     btn.innerHTML = '<span class="text">Create new gallery</span><span class="icon">→</span>';
     btn.addEventListener('click', () => {
-      const objs = objectsMatchingCurrentFilter();
-      window.openTagsGallery(objs, tags);
+      const theme = window.activeThemeFilter || null;
+      if (theme && tags.length === 0) {
+        // Theme-based gallery
+        if (typeof window.openThemeGallery === 'function') {
+          window.openThemeGallery(theme);
+        }
+      } else {
+        // Tag-based gallery (existing behavior)
+        const objs = objectsMatchingCurrentFilter();
+        if (typeof window.openTagsGallery === 'function') {
+          window.openTagsGallery(objs, tags);
+        }
+      }
     });
 
     actions.appendChild(btn);
@@ -8277,6 +8388,24 @@ function initSelectionBar() {
   bar.dataset.inited = '1';
 
   bar.addEventListener('click', (e) => {
+    // 1) Theme pill
+    const themeLi = e.target.closest('li[data-theme-id]');
+    if (themeLi) {
+      // Clear theme filter and refresh UI
+      window.activeThemeFilter = null;
+      if (typeof updateObjectGlowsWithGradient === 'function') {
+        updateObjectGlowsWithGradient();
+      }
+      if (typeof scheduleOffgridUpdate === 'function') {
+        scheduleOffgridUpdate();
+      }
+      if (typeof renderSelectionBar === 'function') {
+        renderSelectionBar();
+      }
+      return;
+    }
+
+    // 2) Tag pill
     const li = e.target.closest('li[data-tag]');
     if (!li) return;
     const tag = li.dataset.tag;
