@@ -2463,6 +2463,23 @@ function collapseDiscoverSidebar() {
 // (optional) expose for debugging / future reuse
 window.collapseDiscoverSidebar = collapseDiscoverSidebar;
 
+function collapseSlideInsStrip() {
+  const slideIns = document.getElementById('slide-ins');
+  if (!slideIns) return;
+
+  // Push whole strip off-screen (now for all breakpoints; CSS change below)
+  slideIns.classList.add('is-collapsed');
+
+  // Also collapse individual panels so width math stays compact
+  if (typeof collapseDiscoverSidebar === 'function') {
+    collapseDiscoverSidebar();
+  }
+
+  if (typeof updateMobileSlideInsToggle === 'function') {
+    updateMobileSlideInsToggle();
+  }
+}
+
 // --- Mobile-only: hide/show the slide-in strip as a group ---
 
 function isMobileViewportForSlideIns() {
@@ -2490,17 +2507,15 @@ function updateMobileSlideInsToggle() {
     slideIns.classList.contains('visible') &&
     !!slideIns.querySelector('.slide-in:not(.is-hidden)');
 
-  if (!isMobile || !anyVisibleChild) {
-    slideIns.classList.remove('is-collapsed');
+  if (!anyVisibleChild) {
     collapseEl.hidden = true;
     expandEl.hidden   = true;
-
-    // Ensure overlay is hidden when slide-ins are not used on mobile
+  
     if (workspaceOverlay) {
       workspaceOverlay.classList.remove('is-visible');
     }
     return;
-  }
+  }    
 
   const collapsed = slideIns.classList.contains('is-collapsed');
   collapseEl.hidden = collapsed;
@@ -2508,8 +2523,8 @@ function updateMobileSlideInsToggle() {
 
   // Show overlay only on mobile when the strip is expanded (not collapsed)
   if (workspaceOverlay) {
-    const shouldShowOverlay = !collapsed;
-    workspaceOverlay.classList.toggle('is-visible', shouldShowOverlay);
+    const shouldShowOverlay = isMobile && !collapsed;
+    workspaceOverlay.classList.toggle('is-visible', shouldShowOverlay);    
   }
 }
 
@@ -2538,8 +2553,6 @@ function initMobileSlideInsToggle() {
   // Clicking the floating icon: bring the strip back
   expandEl.addEventListener('click', (e) => {
     e.preventDefault();
-    if (!isMobileViewportForSlideIns()) return;
-
     slideIns.classList.remove('is-collapsed');
     updateMobileSlideInsToggle();
   });
@@ -6632,8 +6645,19 @@ function openMenuSecondary(slideInSelector, { title, paragraphs, showSelectButto
           renderSelectionBar();
         }
 
-        // 4) Close the secondary pane (especially for mobile full-screen view)
+        // 4) Close the secondary pane
         closeMenuSecondary(slideInSelector);
+
+        // 5) Close the sidebar panel (keep the handle visible; do NOT move #slide-ins off-screen)
+        const wrap = document.querySelector(slideInSelector);
+        if (wrap) {
+          wrap.classList.remove('expanded', 'secondary-open');
+          wrap.querySelector('.vertical-content')?.classList.remove('visible');
+        }
+
+        // keep layout math / toggles in sync
+        if (typeof updateRightCounterOffset === 'function') updateRightCounterOffset();
+        if (typeof updateMobileSlideInsToggle === 'function') updateMobileSlideInsToggle();
       }, { once: true });
     }
   }
