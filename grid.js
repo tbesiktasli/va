@@ -109,7 +109,7 @@ export class Grid {
       this.zoomLevel = 1;
       // NEW: display config (initial/reset zoom)
       this._grid = [];
-      this.currentState = 'grouped';
+      this._setState('grouped');
       this._detail = { active: false };
       this._clusterTimer = null;
 
@@ -211,6 +211,14 @@ export class Grid {
         if (document.fonts && document.fonts.ready) {
           document.fonts.ready.then(() => this._refitAllText?.());
         }
+      }
+    }
+
+    // Keep Grid state in sync with a DOM attribute so CSS can react (e.g., disable glows in grouped view)
+    _setState(next) {
+      this.currentState = next;
+      if (this.htmlGridElement) {
+        this.htmlGridElement.dataset.view = next;
       }
     }
 
@@ -938,7 +946,7 @@ export class Grid {
       //this._detail = { active: false };
       //this.currentState = 'ungrouped';
       this._detail = { active: false };
-      this.currentState = prevState || 'ungrouped';
+      this._setState(prevState || 'ungrouped');
       this._applyTransformsForCurrentState();
     
       // Remove any temporary overscroll allowance and glide back inside bounds
@@ -1738,7 +1746,7 @@ export class Grid {
       this.fitToView('grouped', 200);
       this._syncPanStateFromDom();
     
-      this.currentState = 'grouped';
+      this._setState('grouped');
       this._applyTransformsForCurrentState?.();   // → this triggers the CSS transition
     
       const z = this.zoomLevel || 1;
@@ -1783,7 +1791,7 @@ export class Grid {
 
     groupObjectsInstant() {
       this.pauseAllVideos();
-      this.currentState = 'grouped';
+      this._setState('grouped');
     
       const z = this.zoomLevel || 1;
     
@@ -2088,7 +2096,7 @@ export class Grid {
 
         // When cluster animation has completed, mark view as clustered
         if (this.currentState === 'pre-cluster') {
-          this.currentState = 'clustered';
+          this._setState('clustered');
         }
 
         this._waitForObjectTransformsToSettle(() => {
@@ -2143,7 +2151,7 @@ export class Grid {
       const prev = this.currentState;
     
       // 1) set state + let CSS animate to ungrouped targets
-      this.currentState = 'ungrouped';
+      this._setState('ungrouped');
       console.log('ungroup objects');
     
       const z = this.zoomLevel || 1;
@@ -2432,7 +2440,7 @@ export class Grid {
                 const from = this._detail.source || 'ungrouped';
                 this.exitDetail().then(() => {
                   // restore the source state before re-opening
-                  this.currentState = from;
+                  this._setState(from);
                   if (from === 'clustered') {
                     // use your clustered-detail opener; defaults inside handle size/margin
                     this.enterClusterDetail?.(clickedId);
