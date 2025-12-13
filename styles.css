@@ -763,6 +763,11 @@
   html.is-safari .object-glow::before {
     content: none;
   }  
+
+/* Disable the glow “highlight” when the grid is in grouped view */
+#grid[data-view="grouped"] .object-glow {
+  display: none !important;
+}
   
 #controls {
   position: fixed;
