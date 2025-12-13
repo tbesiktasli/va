@@ -1,6 +1,7 @@
 :root {
   --header-h: 50px; /* fallback */
   --selection-bar-h: 88px; /* 2-row selection bar height */
+  --selection-bar-h-compact: 56px; /* 1-row selection bar height (ad-hoc gallery) */
   --handle-w: 40px; /* closed slide-in handle width so #selection-bar can resolve it */
   --offgrid-left: 8px;    /* fixed left margin for left counter */
   --offgrid-right: 8px;   /* base right margin; JS adds slide-in visible width to this */
@@ -1020,6 +1021,11 @@ body.in-group-gallery:not(.in-adhoc-gallery) #gallery-ungroup {
   align-items: center;
 }
 
+/* Reserve space at the bottom of the gallery title so fixed overlays (selection bar) never cover the Explore button */
+#group-gallery .title-box {
+  padding-bottom: calc(var(--titlebox-bottom-inset, 0px) + env(safe-area-inset-bottom, 0px));
+}
+
 .wide-content .title-box.visible {
   opacity: 1;
   transform: translateY(0);
@@ -1046,20 +1052,42 @@ body.in-group-gallery:not(.in-adhoc-gallery) #gallery-ungroup {
   cursor: pointer;
 }
 
-#group-gallery .title-box h2 .adhoc-title-tag-label {
-  display: inline-block;
+#group-gallery .title-box h2 .adhoc-title-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1em;            /* controls distance between label and × */
+  cursor: pointer;
 }
 
 #group-gallery .title-box h2 .adhoc-title-tag-close {
-  position: absolute;
-  top: 0;                     /* "top right end" of the tag text */
-  right: 0;
+  position: static;
   border: none;
   background: transparent;
   font: inherit;
   line-height: 1;
   cursor: pointer;
   padding: 0;
+}
+
+/* Ad-hoc gallery: subtitle is unused → don’t waste vertical space */
+body.in-adhoc-gallery #group-gallery .title-box h3 {
+  display: none;
+}
+
+/* Prevent super-long tags from overflowing horizontally */
+body.in-adhoc-gallery #group-gallery .title-box h2 {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Keep the "×" easy to tap even when font-size shrinks */
+#group-gallery .title-box h2 .adhoc-title-tag-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.1em;
+  min-height: 1.1em;
+  touch-action: manipulation;
 }
 
 .wide-content .title-box h2, .wide-content .title-box h3 {
@@ -1985,6 +2013,16 @@ and pin the expanded panel to the right edge. */
   /* When selection bar is visible, push up bottom overlays by its height */
   #workspace.has-selection-bar #offgrid-bottom { bottom: calc(8px + var(--selection-bar-h)); transition: bottom .4s ease; }
   #workspace.has-selection-bar #fab-bottom-left { bottom: calc(var(--fab-edge-gap) + var(--selection-bar-h)); transition: bottom .4s ease; }  
+
+  /* Compact (single-row) selection bar used in ad-hoc tag gallery */
+  #workspace.selection-bar--compact {
+    --selection-bar-h: var(--selection-bar-h-compact);
+  }
+
+  #workspace.selection-bar--compact #selection-bar {
+    grid-template-rows: 1fr; /* no actions row */
+    row-gap: 0;
+  }
 
 /* ====== TWO-COLUMN MENU BODY ====== */
 #slide-ins .slide-in[data-mode="menu"] {
