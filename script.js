@@ -2638,6 +2638,150 @@ function initMobileSlideInsToggle() {
 
     // No subtitle in ad-hoc gallery
     if (sEl) sEl.textContent = '';
+
+    // NEW: shrink-to-fit when many tags would overflow the title box
+    scheduleFitAdhocGalleryTitle();
+  }
+
+  // --- Ad-hoc title: auto shrink-to-fit (desktop + mobile) ---
+  const ADHOC_TITLE_FIT = {
+    minPx: 14,        // don’t go smaller than this (tweak if needed)
+    precisionPx: 0.5, // font-size step precision
+    maxIter: 18,
+    safetyPx: 12      // breathing room so we don’t “just barely” fit
+  };
+
+  let __adhocFitInit = false;
+  let __adhocFitRaf = 0;
+
+  function scheduleFitAdhocGalleryTitle() {
+    initAdhocTitleFitObservers();
+    cancelAnimationFrame(__adhocFitRaf);
+    __adhocFitRaf = requestAnimationFrame(fitAdhocGalleryTitleNow);
+  }
+
+  function initAdhocTitleFitObservers() {
+    if (__adhocFitInit) return;
+    __adhocFitInit = true;
+
+    const titleBox = document.querySelector('#group-gallery .title-box');
+    if (titleBox && 'ResizeObserver' in window) {
+      const ro = new ResizeObserver(() => scheduleFitAdhocGalleryTitle());
+      ro.observe(titleBox);
+    }
+
+    window.addEventListener('resize', scheduleFitAdhocGalleryTitle, { passive: true });
+    window.addEventListener('orientationchange', scheduleFitAdhocGalleryTitle, { passive: true });
+
+    // If the fixed selection bar slides in/out, the *visible* title area changes
+    // even though .title-box keeps its full height. Re-fit when that happens.
+    const sb = document.getElementById('selection-bar');
+    if (sb && 'MutationObserver' in window) {
+      const mo = new MutationObserver(() => scheduleFitAdhocGalleryTitle());
+      mo.observe(sb, { attributes: true, attributeFilter: ['class', 'style'] });
+    }
+  }
+
+  function fitAdhocGalleryTitleNow() {
+    __adhocFitRaf = 0;
+
+    // Only in the ad-hoc tags gallery
+    if (!document.body.classList.contains('in-adhoc-gallery')) return;
+
+    const gg = document.getElementById('group-gallery');
+    if (!gg || !gg.classList.contains('active')) return;
+
+    const tEl = gg.querySelector('.title-box h2');
+    const titleBox = tEl?.closest('.title-box');
+    if (!tEl || !titleBox) return;
+
+    // Not visible? Don’t measure.
+    if (titleBox.offsetParent === null) return;
+
+    applyAdhocTitleBoxBottomInset(titleBox);
+
+    // Reset first so it can also scale UP again when space becomes available
+    tEl.style.fontSize = '';
+
+    const basePx = parseFloat(getComputedStyle(tEl).fontSize) || 32;
+    const minPx = Math.min(ADHOC_TITLE_FIT.minPx, basePx);
+
+    const availablePx = computeAvailableTitleHeightPx(titleBox, tEl) - ADHOC_TITLE_FIT.safetyPx;
+    if (availablePx <= 0) return;
+
+    // If it already fits at base size, keep it
+    if (tEl.scrollHeight <= availablePx) return;
+
+    // If even min doesn’t fit, clamp to min
+    tEl.style.fontSize = `${minPx}px`;
+    if (tEl.scrollHeight > availablePx) return;
+
+    // Binary search: find the largest font-size that still fits
+    let lo = minPx;
+    let hi = basePx;
+
+    for (let i = 0; i < ADHOC_TITLE_FIT.maxIter && (hi - lo) > ADHOC_TITLE_FIT.precisionPx; i++) {
+      const mid = (lo + hi) / 2;
+      tEl.style.fontSize = `${mid}px`;
+
+      if (tEl.scrollHeight <= availablePx) lo = mid;
+      else hi = mid;
+    }
+
+    // Round to configured precision (e.g. 0.5px)
+    const p = ADHOC_TITLE_FIT.precisionPx;
+    const finalPx = Math.floor(lo / p) * p;
+    tEl.style.fontSize = `${finalPx}px`;
+  }
+
+  function computeAvailableTitleHeightPx(titleBoxEl, titleEl) {
+    const cs = getComputedStyle(titleBoxEl);
+    const pt = parseFloat(cs.paddingTop) || 0;
+    const pb = parseFloat(cs.paddingBottom) || 0;
+  
+    // Height available for content INSIDE padding
+    const contentBoxH = titleBoxEl.clientHeight - pt - pb;
+  
+    // Reserve vertical space taken by other title-box children (e.g. Explore button, subtitle)
+    let reserved = 0;
+    for (const child of titleBoxEl.children) {
+      if (child === titleEl) continue;
+      if (child.offsetParent === null) continue;
+      if (child.tagName === 'H3' && !child.textContent.trim()) continue;
+      reserved += outerHeightPx(child);
+    }
+  
+    return contentBoxH - reserved;
+  }  
+
+  function applyAdhocTitleBoxBottomInset(titleBoxEl) {
+    // Default: no inset
+    let inset = 0;
+  
+    const bar = document.getElementById('selection-bar');
+    const barShown = bar && bar.classList.contains('show');
+  
+    if (barShown) {
+      const barH = Math.ceil(bar.getBoundingClientRect().height || 0);
+  
+      // You asked to also account for the 60px "top margin" spacing.
+      // Make it robust: try to read it from the Explore button’s computed margin-top.
+      const exploreBtn = titleBoxEl.querySelector('#scroll-on.button');
+      const extraGap =
+        exploreBtn ? (parseFloat(getComputedStyle(exploreBtn).marginTop) || 60) : 60;
+  
+      inset = barH + Math.ceil(extraGap);
+    }
+  
+    titleBoxEl.style.setProperty('--titlebox-bottom-inset', `${inset}px`);
+  }  
+
+  function outerHeightPx(el) {
+    const r = el.getBoundingClientRect();
+    const s = getComputedStyle(el);
+    const mt = parseFloat(s.marginTop) || 0;
+    const mb = parseFloat(s.marginBottom) || 0;
+    return r.height + mt + mb;
   }
 
   // DRAG-TO-CLICK GUARD (grouped mode)
@@ -2683,9 +2827,12 @@ function initMobileSlideInsToggle() {
       if (meta) {
         const tEl = document.querySelector('#group-gallery .title-box h2');
         const sEl = document.querySelector('#group-gallery .title-box h3');
-        if (tEl) tEl.textContent = meta.title;
+        if (tEl) {
+          tEl.style.fontSize = '';     // NEW: reset shrink-to-fit
+          tEl.textContent = meta.title;
+        }
         if (sEl) sEl.textContent = meta.subtitle;
-      }
+      }      
     }
 
     // Keep the 3 content sidebars in sync with this group
@@ -2954,6 +3101,10 @@ function initMobileSlideInsToggle() {
   
     // Reset scroll positions (shared with detail re-entry)
     resetGalleryScrollPositions();
+
+    // NEW: clear any ad-hoc title resizing when leaving the gallery
+    const tEl = groupGalleryEl?.querySelector('.title-box h2');
+    if (tEl) tEl.style.fontSize = '';
   
     // Detach gallery observers / media behaviors
     window.__galleryIO__?.onClose?.();
@@ -8106,6 +8257,11 @@ function restoreGridStateFromDetail() {
 }
 window.restoreGridStateFromDetail = restoreGridStateFromDetail;
 
+function isAdhocGalleryActive() {
+  const gg = document.getElementById('group-gallery');
+  return !!(gg?.classList.contains('active') && document.body.classList.contains('in-adhoc-gallery'));
+}
+
 // Where the bottom selection bar is allowed (no galleries)
 function selectionBarIsAllowed() {
   const b = document.body;
@@ -8121,7 +8277,7 @@ function selectionBarIsAllowed() {
 
   // Never in galleries
   if (b.classList.contains('in-group-gallery'))  return false;
-  if (b.classList.contains('in-adhoc-gallery'))  return true;
+  if (isAdhocGalleryActive()) return true;
 
   // Allowed grid states (instant show during clustering)
   return state === 'clustered' || state === 'ungrouped' || state === 'pre-cluster';
@@ -8312,14 +8468,14 @@ function renderSelectionBar() {
   if (typeof window.selectionBarIsAllowed === 'function' && !selectionBarIsAllowed()) {
     bar.classList.remove('show');
     ws.classList.remove('has-selection-bar');
+    ws.classList.remove('selection-bar--compact');
     list.innerHTML = '';
     return;
-  }
+  }  
 
   // Are we inside the ad-hoc (tag) gallery?
-  const isAdhoc =
-    document.body.classList.contains('in-adhoc-gallery') ||
-    !!history.state?.adhoc;
+  const isAdhoc = isAdhocGalleryActive();
+  ws.classList.toggle('selection-bar--compact', isAdhoc);
 
   // Current selection
   const raw  = window.activeTags;
@@ -8330,11 +8486,12 @@ function renderSelectionBar() {
   if (tags.length === 0 && !theme) {
     bar.classList.remove('show');
     ws.classList.remove('has-selection-bar');
+    ws.classList.remove('selection-bar--compact');
     list.innerHTML = '';
     const a = bar.querySelector('.sb-actions');
     if (a) a.remove();
     return;
-  }
+  }  
 
   // Build pills (either theme OR tags)
   list.innerHTML = '';
@@ -8435,9 +8592,7 @@ function initSelectionBar() {
     const tag = li.dataset.tag;
 
     // Are we inside the ad-hoc (tag) gallery?
-    const isAdhoc =
-      document.body.classList.contains('in-adhoc-gallery') ||
-      !!history.state?.adhoc;
+    const isAdhoc = isAdhocGalleryActive();
 
     if (window.activeTags?.has(tag) && typeof window.deselectTagGlobally === 'function') {
       window.deselectTagGlobally(tag, { closeGalleryWhenEmpty: isAdhoc });
