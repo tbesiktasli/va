@@ -23,8 +23,12 @@ function fitTextToContainer(container, maxFontSize = 100, minFontSize = 7) {
   const cs = getComputedStyle(container);
   const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
   const padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
-  const availW = Math.max(0, container.clientWidth  - padX);
-  const availH = Math.max(0, container.clientHeight - padY);
+  const targetW = parseFloat(container.style.width)  || container.clientWidth;
+  const targetH = parseFloat(container.style.height) || container.clientHeight;
+  
+  const availW = Math.max(0, targetW - padX);
+  const availH = Math.max(0, targetH - padY);
+  
   span.style.maxWidth = `${availW}px`;
 
   // If there is literally no space, fall back immediately
@@ -94,6 +98,9 @@ export class Grid {
       
         objectScale: 0.8, // NEW: starting size for all objects (1 = keep original)
         detailConnectingTagLimit: null,
+
+        textPadBase: 20, // px at zoom = 1
+        textPadMin:  6,  // px floor when zooming out
       };
       
       this.objects = objects;
@@ -107,6 +114,7 @@ export class Grid {
       }
       this.groups = groups || {};
       this.zoomLevel = 1;
+      this._updateGridTextPadding();
       // NEW: display config (initial/reset zoom)
       this._grid = [];
       this._setState('grouped');
@@ -195,6 +203,7 @@ export class Grid {
       this.initWheelBlock();
       //this.groupObjects();
       this.groupObjectsInstant();
+      if (window.DEBUG_GRID_ANIM) this._installAnimDebug();
       // Always do a post-paint text refit (even without base zoom)
       requestAnimationFrame(() => this._refitAllText?.());
       // And again once web fonts are fully ready
@@ -213,6 +222,49 @@ export class Grid {
         }
       }
     }
+
+    _updateGridTextPadding() {
+      const gridEl = this.htmlGridElement;
+      if (!gridEl) return;
+    
+      const cfg  = this.display || {};
+      const base = cfg.textPadBase ?? 20;
+      const min  = cfg.textPadMin  ?? 6;
+    
+      const z = this.zoomLevel || 1;
+    
+      // Only shrink when zooming out (cap at base for zoom>=1)
+      const padPx = Math.max(min, Math.min(base, base * z));
+    
+      gridEl.style.setProperty('--grid-text-pad', `${padPx}px`);
+    }    
+
+    _installAnimDebug() {
+      const gridEl = this.htmlGridElement;
+      if (!gridEl || gridEl.__animDebugInstalled) return;
+      gridEl.__animDebugInstalled = true;
+    
+      const handler = (ev) => {
+        if (!ev.target?.classList?.contains('object')) return;
+        if (ev.propertyName && ev.propertyName !== 'transform') return;
+    
+        const id = ev.target.id;
+        const tr = getComputedStyle(ev.target).transform;
+    
+        console.debug(`[grid-anim ${ev.type}]`, {
+          t: Number(performance.now().toFixed(1)),
+          id,
+          prop: ev.propertyName,
+          state: this.currentState,
+          transform: tr,
+        });
+      };
+    
+      ['transitionrun', 'transitionstart', 'transitionend', 'transitioncancel']
+        .forEach(type => gridEl.addEventListener(type, handler, true));
+    
+      console.debug('[grid-anim] transition debug installed');
+    }    
 
     // Keep Grid state in sync with a DOM attribute so CSS can react (e.g., disable glows in grouped view)
     _setState(next) {
@@ -793,6 +845,7 @@ export class Grid {
       this.stopHoverTts();
 
       const el = document.getElementById(obj.id);
+      const z = this.zoomLevel || 1; // world → screen scaling (keep consistent with enterDetail)
     
       // Detail size = half of ungrouped in both dimensions
       const cfg = this.detailConfig.clustered;
@@ -861,7 +914,7 @@ export class Grid {
         const newTop  = nccy - other.height / 2;
         const dx = newLeft - other.grid_x;
         const dy = newTop  - other.grid_y;
-        otherEl.style.transform = `translate(${dx}px, ${dy}px)`; // preserves angular order
+        otherEl.style.transform = `translate(${dx * z}px, ${dy * z}px)`; // preserves angular order
       }
       // Leave other groups untouched (their cluster transforms stay as-is)
     
@@ -872,7 +925,7 @@ export class Grid {
       const dy1 = targetTop1  - obj.grid_y;
       // Stage 1: slide to center (keeps current size)
       requestAnimationFrame(() => {
-        el.style.transform = `translate(${dx1}px, ${dy1}px)`;
+        el.style.transform = `translate(${dx1 * z}px, ${dy1 * z}px)`;
       });
     
       // Center camera on cluster center (nice polish)
@@ -891,9 +944,9 @@ export class Grid {
         const targetTop2  = cy  - height / 2;
         const dx2 = targetLeft2 - obj.grid_x;
         const dy2 = targetTop2  - obj.grid_y;
-        el.style.width  = `${width}px`;
-        el.style.height = `${height}px`;
-        el.style.transform = `translate(${dx2}px, ${dy2}px)`;
+        el.style.width  = `${width * z}px`;
+        el.style.height = `${height * z}px`;
+        el.style.transform = `translate(${dx2 * z}px, ${dy2 * z}px)`;        
     
         // Build detail panel UI (reuse your ungrouped panel structure)
         // Shared panel builder
@@ -937,9 +990,11 @@ export class Grid {
       }
     
       // Restore focused tile
-      el.style.width  = `${prev.width}px`;
-      el.style.height = `${prev.height}px`;
+      const z = this.zoomLevel || 1;
+      el.style.width  = `${prev.width * z}px`;
+      el.style.height = `${prev.height * z}px`;
       el.style.transform = prev.transform || '';
+
       if (focusObj?.type === 'image') el.style.backgroundImage = prev.bg;
       el.className = prev.className || el.className; // remove is-detail/fade
     
@@ -1434,17 +1489,11 @@ export class Grid {
       } else if (view === 'grouped') {
         for (const o of this.objects) pushRect(o.group_x, o.group_y, o.width, o.height);
       } else if (view === 'clustered') {
-        // if cluster_x/y exist, use them; else fall back to grouped
-        let had = false;
+        // Use cluster coords when present; otherwise fall back per-object to grouped/grid.
         for (const o of this.objects) {
-          if (o.cluster_x != null && o.cluster_y != null) {
-            pushRect(o.cluster_x, o.cluster_y, o.width, o.height);
-            had = true;
-          }
-        }
-        if (!had) {
-          // fallback pre-cluster: approximate with grouped
-          for (const o of this.objects) pushRect(o.group_x, o.group_y, o.width, o.height);
+          const x = (o.cluster_x ?? o.group_x ?? o.grid_x);
+          const y = (o.cluster_y ?? o.group_y ?? o.grid_y);
+          pushRect(x, y, o.width, o.height);
         }
       } else if (view === 'footprints' && footprints) {
         // use group centers + radii to approximate future cluster extents
@@ -1541,35 +1590,137 @@ export class Grid {
       }
     }
 
-    // Wait for the next transform animation on any tile to finish,
-    // then run `callback`. Falls back to a timeout if there is no transition.
-    _waitForObjectTransformsToSettle(callback, fallbackMs = 520) {
-      if (!this.htmlGridElement) {
-        callback();
-        return;
+    // Wait until specific CSS transitions have actually finished (across all tiles),
+    // then run `callback`. Uses a short "quiet window" after the last transitionend.
+    // Includes a fallback so we never hang.
+    //
+    // Supports either:
+    //   _waitForObjectTransitionsToSettle(cb, { props: ['width','height'], fallbackMs: 900, quietMs: 56 })
+    // or:
+    //   _waitForObjectTransitionsToSettle(cb, { props: ['transform'] }, 650)  <-- via wrappers below
+    _waitForObjectTransitionsToSettle(callback, optsOrFallbackMs = 650) {
+      const gridEl = this.htmlGridElement;
+      if (!gridEl) return callback();
+
+      // Normalize args
+      const opts = (optsOrFallbackMs && typeof optsOrFallbackMs === 'object')
+        ? optsOrFallbackMs
+        : { fallbackMs: optsOrFallbackMs };
+
+      const props = Array.isArray(opts.props) && opts.props.length ? opts.props : ['transform'];
+      const want = new Set(props);
+
+      const quietMs = Number.isFinite(opts.quietMs) ? opts.quietMs : 48;
+      let fallbackMs = Number.isFinite(opts.fallbackMs) ? opts.fallbackMs : 650;
+
+      // Make sure fallback is not shorter than the actual CSS transition for the relevant props.
+      const sampleObj = gridEl.querySelector('.object');
+      if (sampleObj) {
+        const cs = getComputedStyle(sampleObj);
+
+        const toMs = (v) => {
+          if (!v) return 0;
+          const s = String(v).trim();
+          if (s.endsWith('ms')) return parseFloat(s) || 0;
+          if (s.endsWith('s')) return (parseFloat(s) || 0) * 1000;
+          return parseFloat(s) || 0;
+        };
+
+        const propsList = (cs.transitionProperty || '').split(',').map(s => s.trim()).filter(Boolean);
+        const durs      = (cs.transitionDuration || '').split(',').map(s => s.trim()).filter(Boolean);
+        const dels      = (cs.transitionDelay || '').split(',').map(s => s.trim()).filter(Boolean);
+
+        const maxLen = Math.max(propsList.length, durs.length, dels.length, 1);
+
+        let maxRelevantTotal = 0;
+        for (let i = 0; i < maxLen; i++) {
+          const prop  = (propsList[i % propsList.length] || 'all');
+          const dur   = toMs(durs[i % durs.length] || '0s');
+          const del   = toMs(dels[i % dels.length] || '0s');
+          const total = dur + del;
+
+          // We care about specific props, and 'all' covers them too.
+          if (prop === 'all' || want.has(prop)) {
+            if (total > maxRelevantTotal) maxRelevantTotal = total;
+          }
+        }
+
+        if (maxRelevantTotal > 0) {
+          fallbackMs = Math.max(fallbackMs, Math.ceil(maxRelevantTotal + quietMs + 50));
+        }
       }
 
-      const gridEl = this.htmlGridElement;
       let done = false;
-      let timer = null;
+      let fallbackTimer = null;
+      let quietTimer = null;
 
       const finish = () => {
         if (done) return;
         done = true;
-        if (timer) clearTimeout(timer);
+        if (fallbackTimer) clearTimeout(fallbackTimer);
+        if (quietTimer) clearTimeout(quietTimer);
         gridEl.removeEventListener('transitionend', onEnd, true);
         callback();
       };
 
+      const armQuietFinish = () => {
+        if (quietTimer) clearTimeout(quietTimer);
+        quietTimer = setTimeout(finish, quietMs);
+      };
+
       const onEnd = (ev) => {
-        // Only react to transform transitions on grid objects
-        if (ev.propertyName !== 'transform') return;
         if (!ev.target?.classList?.contains('object')) return;
-        finish();
+        if (!want.has(ev.propertyName)) return;
+        armQuietFinish();
       };
 
       gridEl.addEventListener('transitionend', onEnd, true);
-      timer = setTimeout(finish, fallbackMs);
+      fallbackTimer = setTimeout(finish, fallbackMs);
+
+      // If nothing fires, fallback handles it.
+    }
+
+    // Backwards-compatible wrapper (existing callers keep working)
+    _waitForObjectTransformsToSettle(callback, optsOrFallbackMs = 650) {
+      const base = (optsOrFallbackMs && typeof optsOrFallbackMs === 'object')
+        ? optsOrFallbackMs
+        : { fallbackMs: optsOrFallbackMs };
+      return this._waitForObjectTransitionsToSettle(callback, { ...base, props: ['transform'] });
+    }
+
+    // New wrapper for zoom-resize settling
+    _waitForObjectSizesToSettle(callback, optsOrFallbackMs = 650) {
+      const base = (optsOrFallbackMs && typeof optsOrFallbackMs === 'object')
+        ? optsOrFallbackMs
+        : { fallbackMs: optsOrFallbackMs };
+      return this._waitForObjectTransitionsToSettle(callback, { ...base, props: ['width', 'height'] });
+    }
+
+    _setObjectTransitionsEnabled(enabled) {
+      // Inline transition toggling is fine, but we MUST flush when disabling,
+      // otherwise the browser may batch and still animate the bake step.
+      for (const o of this.objects) {
+        const el = document.getElementById(o.id);
+        if (!el) continue;
+        el.style.transition = enabled ? '' : 'none';
+      }
+    
+      if (!enabled) {
+        // Force style flush so "transition: none" is applied BEFORE we change transforms.
+        const any = this.htmlGridElement?.querySelector?.('.object');
+        if (any) void any.offsetHeight;
+      }
+    }    
+
+    _forceLayoutFlush() {
+      // Any forced layout read works; offsetHeight is simple and reliable.
+      // Use the grid root so we flush the same subtree we are animating.
+      void this.htmlGridElement.offsetHeight;
+    }    
+
+    _restoreTransitionsNextFrameWithFlush() {
+      this._forceLayoutFlush();
+      requestAnimationFrame(() => this._setObjectTransitionsEnabled(true));
     }
 
       // Refit all text tiles currently in the DOM
@@ -1674,6 +1825,8 @@ export class Grid {
       }
     
       this.zoomLevel = next;
+      this._updateGridTextPadding();
+      const zoomToken = (this._zoomToken = (this._zoomToken || 0) + 1);
     
       // Resize grid container based on the NEW zoom
       const newWidth  = this.gridDimension.width  * this.zoomLevel;
@@ -1708,20 +1861,23 @@ export class Grid {
       // (no animation here; we just correct the position immediately)
       this.clampCameraToBounds(false, 'zoom');
     
+      // After width/height transitions finish, do one final refit pass.
+      // (Token prevents older zooms from “winning” if the user zooms repeatedly.)
+      this._waitForObjectSizesToSettle(() => {
+        if (zoomToken !== this._zoomToken) return;
+
+        for (const obj of this.objects) {
+          if (obj.type !== 'text') continue;
+          const el = document.getElementById(obj.id);
+          if (el) fitTextToContainer(el);
+        }
+      }, { quietMs: 56, fallbackMs: 650 });
+
       // Re-enable transform animations on the next frame so future state switches animate
       requestAnimationFrame(() => {
         document.body.classList.remove('zooming');
-    
-        // One more pass next frame so layout has fully settled
-        requestAnimationFrame(() => {
-          for (const obj of this.objects) {
-            if (obj.type === 'text') {
-              const el = document.getElementById(obj.id);
-              if (el) fitTextToContainer(el);
-            }
-          }
-        });
       });
+
     }    
 
     zoomIn() {
@@ -1755,11 +1911,8 @@ export class Grid {
         if (this.currentState !== 'grouped') return;
 
         // 1) turn transitions OFF for all objects
-        for (const o of this.objects) {
-          const el = document.getElementById(o.id);
-          if (!el) continue;
-          el.style.transition = 'none';
-        }
+        // (Use the shared helper so we also force a style flush.)
+        this._setObjectTransitionsEnabled(false);
 
         // 2) bake grouped positions with transitions OFF
         for (const o of this.objects) {
@@ -1777,14 +1930,9 @@ export class Grid {
           el.style.transform = ''; // now this will NOT animate
         }
 
-        // 3) restore transitions on next frame for future mode switches
-        requestAnimationFrame(() => {
-          for (const o of this.objects) {
-            const el = document.getElementById(o.id);
-            if (!el) continue;
-            el.style.transition = '';
-          }
-        });
+        // Force paint/layout so the baked transform='' is committed while transitions are OFF
+
+        this._restoreTransitionsNextFrameWithFlush();
       });
 
     }      
@@ -2022,39 +2170,44 @@ export class Grid {
       this.movePilesToNewCenters(centers, 18, 8);
       this._applyTransformsForCurrentState?.(); // cluster animation fix
     
-      // 7) After the piles reached the new centers, perform the non-overlap “explode”
-      this._clusterTimer = setTimeout(() => {
+      // Instead of a fixed timeout, wait until the "move piles to new centers"
+      // transform transitions have actually finished (prevents the intermittent "tail").
+      this._waitForObjectTransformsToSettle(() => {
+        // If the user switched modes while we were animating, bail out.
+        if (this.currentState !== 'pre-cluster') return;
+
+        // --- keep your existing explode code exactly as-is here ---
         const groupedObjects = {};
         for (const obj of this.objects) {
           (groupedObjects[obj.groupId] ??= []).push(obj);
         }
-    
+
         // Place larger items first — helps reduce overlaps
         for (const groupId in groupedObjects) {
           const group = this.groups[groupId];
           const objs = groupedObjects[groupId].slice().sort(
             (a, b) => (b.width * b.height) - (a.width * a.height)
           );
-    
+
           const placed = [];
           const buffer = (this.spacing?.cluster?.itemGap ?? 12);
           const maxSpiralRadius = 1600;
           const stepAngle = Math.PI / 12;
           const stepRadius = 10;
-    
+
           for (const obj of objs) {
             let found = false;
-    
+
             for (let radius = 0; radius < maxSpiralRadius && !found; radius += stepRadius) {
               for (let angle = 0; angle < 2 * Math.PI; angle += stepAngle) {
                 const tryX = group.x + Math.cos(angle) * radius;
                 const tryY = group.y + Math.sin(angle) * radius;
-    
+
                 const halfW = obj.width / 2 + buffer;
                 const halfH = obj.height / 2 + buffer;
                 const left   = tryX - halfW, right  = tryX + halfW;
                 const top    = tryY - halfH, bottom = tryY + halfH;
-    
+
                 let overlaps = false;
                 for (const other of placed) {
                   const ol = other.cluster_x - other.width  / 2 - buffer;
@@ -2063,7 +2216,7 @@ export class Grid {
                   const ob = other.cluster_y + other.height / 2 + buffer;
                   if (!(right < ol || left > or || bottom < ot || top > ob)) { overlaps = true; break; }
                 }
-    
+
                 if (!overlaps) {
                   obj.cluster_x = tryX;
                   obj.cluster_y = tryY;
@@ -2073,7 +2226,7 @@ export class Grid {
                 }
               }
             }
-    
+
             if (!found) {
               // Fallback near center
               obj.cluster_x = group.x + Math.random() * 50;
@@ -2081,7 +2234,7 @@ export class Grid {
               placed.push(obj);
             }
           }
-    
+
           // Apply transform at current zoom
           const z = this.zoomLevel || 1;
           objs.forEach(obj => {
@@ -2104,11 +2257,7 @@ export class Grid {
           if (this.currentState !== 'clustered') return;
 
           // 1) turn transitions OFF for all objects while we bake
-          for (const obj of this.objects) {
-            const el = document.getElementById(obj.id);
-            if (!el) continue;
-            el.style.transition = 'none';
-          }
+          this._setObjectTransitionsEnabled(false);
 
           // 2) bake clustered positions with transitions OFF
           for (const obj of this.objects) {
@@ -2128,19 +2277,17 @@ export class Grid {
             if (!el) continue;
             el.style.left = `${obj.grid_x * z}px`;
             el.style.top  = `${obj.grid_y * z}px`;
-            el.style.transform = '';  // no animation because transition is 'none'
+            el.style.transform = '';
           }
 
-          // 3) restore transitions on next frame
-          requestAnimationFrame(() => {
-            for (const obj of this.objects) {
-              const el = document.getElementById(obj.id);
-              if (!el) continue;
-              el.style.transition = ''; // back to stylesheet value
-            }
-          });
+          // 3) ✅ NOW resize/rebase the grid to the *actual* clustered box
+          // (pre-fit uses footprint estimates; post-fit fixes unreachable "outside grid" items)
+          this.fitToView('clustered', Math.round(postFitPad * spread));
+
+          // Force paint/layout so the baked transform='' is committed while transitions are OFF
+          this._restoreTransitionsNextFrameWithFlush();
         });
-      }, 520);
+      }, { fallbackMs: 900, quietMs: 56 });
     }    
   
     ungroupObjects(event) {
@@ -2174,10 +2321,7 @@ export class Grid {
         const zNow = this.zoomLevel || 1;
 
         // 1) turn transitions off while we bake
-        for (const obj of this.objects) {
-          const el = document.getElementById(obj.id);
-          if (el) el.style.transition = 'none';
-        }
+        this._setObjectTransitionsEnabled(false);
 
         // 2) restore/bake the ungrouped positions into the main coords
         for (const obj of this.objects) {
@@ -2208,12 +2352,7 @@ export class Grid {
         }
 
         // 5) restore transitions on next frame
-        requestAnimationFrame(() => {
-          for (const obj of this.objects) {
-            const el = document.getElementById(obj.id);
-            if (el) el.style.transition = '';
-          }
-        });
+        requestAnimationFrame(() => this._setObjectTransitionsEnabled(true));
       });
     }     
   
