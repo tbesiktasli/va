@@ -2503,6 +2503,18 @@ function updateMobileSlideInsToggle() {
 
   const isMobile = isMobileViewportForSlideIns();
 
+  // ✅ Default on mobile: start with the strip collapsed (minimized) once per page load
+  if (isMobile && slideIns.dataset.mobileDefaultCollapsed !== '1') {
+    slideIns.classList.add('is-collapsed');
+
+    // Also collapse individual panels so width math stays compact
+    if (typeof collapseDiscoverSidebar === 'function') {
+      collapseDiscoverSidebar();
+    }
+
+    slideIns.dataset.mobileDefaultCollapsed = '1';
+  }
+
   const anyVisibleChild =
     slideIns.classList.contains('visible') &&
     !!slideIns.querySelector('.slide-in:not(.is-hidden)');
@@ -8456,6 +8468,24 @@ const HeaderTyper = (() => {
   return { type, cancel };
 })();
 
+function syncSelectionBarOverflow() {
+  const bar = document.getElementById('selection-bar');
+  if (!bar) return;
+
+  const scroller = bar.querySelector('.sb-tags-scroll');
+  const list = document.getElementById('selected-tags-list');
+  if (!scroller || !list) return;
+
+  // If total chip width exceeds visible width => overflow
+  const overflow = list.scrollWidth > scroller.clientWidth + 1;
+
+  bar.classList.toggle('sb-overflow', overflow);
+
+  // When overflowing, force the scroll start to be at the beginning (left)
+  // When not overflowing, keep it at 0 as well (centering is handled by flex)
+  scroller.scrollLeft = 0;
+}
+
 // === Selected Tags Bottom Bar ===
 function renderSelectionBar() {
   console.log("renderSelectionBar called")
@@ -8470,6 +8500,7 @@ function renderSelectionBar() {
     ws.classList.remove('has-selection-bar');
     ws.classList.remove('selection-bar--compact');
     list.innerHTML = '';
+    bar.classList.remove('sb-overflow');
     return;
   }  
 
@@ -8490,6 +8521,7 @@ function renderSelectionBar() {
     list.innerHTML = '';
     const a = bar.querySelector('.sb-actions');
     if (a) a.remove();
+    bar.classList.remove('sb-overflow');
     return;
   }  
 
@@ -8560,6 +8592,7 @@ function renderSelectionBar() {
   // Show
   bar.classList.add('show');
   ws.classList.add('has-selection-bar');
+  requestAnimationFrame(syncSelectionBarOverflow);
 }
 window.renderSelectionBar = renderSelectionBar;
 
@@ -8567,6 +8600,12 @@ function initSelectionBar() {
   const bar = document.getElementById('selection-bar');
   if (!bar || bar.dataset.inited === '1') return;
   bar.dataset.inited = '1';
+
+  const scroller = bar.querySelector('.sb-tags-scroll');
+  if (scroller && 'ResizeObserver' in window) {
+    const ro = new ResizeObserver(() => syncSelectionBarOverflow());
+    ro.observe(scroller);
+  }
 
   bar.addEventListener('click', (e) => {
     // 1) Theme pill
