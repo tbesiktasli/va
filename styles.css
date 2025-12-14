@@ -276,6 +276,7 @@
   }
 
   #grid {
+    --grid-text-pad: 20px; /* default before JS updates */
     /*border: 1px solid green;*/
     position: absolute;
     top: 0px;
@@ -338,7 +339,7 @@
   #grid .object.text {
     box-sizing: border-box;               /* keep absolute size even with padding */
     border: 1px solid var(--object-text-border-color);
-    padding: 20px;
+    padding: var(--grid-text-pad);
     background-color: var(--main-bright-bg-color);
 
     /* use plain Noto Serif (not Display) */
@@ -1973,9 +1974,14 @@ and pin the expanded panel to the right edge. */
     display: flex;
     flex-wrap: nowrap;            /* single line */
     align-items: center;
-    justify-content: flex-start;
+    justify-content: center;
     gap: 8px;
     margin: 0;
+  }
+
+  /* If chips overflow, align them to the left so scroll starts at the beginning */
+  #selection-bar.sb-overflow .sb-tags-scroll .tags {
+    justify-content: flex-start;
   }
   
   /* Chip styling (kept consistent with your existing selection-bar chips) */
