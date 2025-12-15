@@ -2543,6 +2543,101 @@ export class Grid {
         clickCandidateId: null,
         slack: 0,
       };
+
+      // --- Touch pinch state (2-finger zoom) ---
+      this._touchPointers = new Map(); // pointerId -> {x,y}
+      this._pinch = {
+        active: false,
+        startDist: 0,
+        startZoom: 1,
+        worldX: 0,
+        worldY: 0,
+      };
+
+      const readCameraLeftTop = () => {
+        const p = this._pan;
+        if (p && isFinite(p.targetX) && isFinite(p.targetY)) return { left: p.targetX, top: p.targetY };
+
+        const cs = getComputedStyle(this.htmlGridElement);
+        const left = parseFloat(this.htmlGridElement.style.left || cs.left || "0") || 0;
+        const top  = parseFloat(this.htmlGridElement.style.top  || cs.top  || "0") || 0;
+        return { left, top };
+      };
+
+      const writeCameraLeftTop = (left, top) => {
+        this.htmlGridElement.style.left = `${left}px`;
+        this.htmlGridElement.style.top  = `${top}px`;
+
+        // keep pan state in sync so inertia / clamps don’t fight pinch
+        const p = this._pan;
+        if (p) {
+          p.currentX = left; p.currentY = top;
+          p.targetX  = left; p.targetY  = top;
+          p.vx = 0; p.vy = 0;
+        }
+      };
+
+      const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+      const mid  = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+
+      const startPinchIfReady = () => {
+        if (this._touchPointers.size !== 2) return;
+
+        const pts = Array.from(this._touchPointers.values());
+        const a = pts[0], b = pts[1];
+        const m = mid(a, b);
+
+        const { left, top } = readCameraLeftTop();
+        const z = this.zoomLevel || 1;
+
+        // World point currently under the midpoint stays under the midpoint throughout the pinch
+        this._pinch.active = true;
+        this._pinch.startDist = Math.max(1, dist(a, b));
+        this._pinch.startZoom = z;
+        this._pinch.worldX = (m.x - left) / z;
+        this._pinch.worldY = (m.y - top) / z;
+
+        // cancel any active 1-finger pan immediately
+        if (this._pan) {
+          this._pan.isDown = false;
+          this._pan.clickCandidateId = null;
+        }
+        this.htmlGridElement.classList.remove('dragging');
+      };
+
+      const applyPinch = () => {
+        if (!this._pinch.active || this._touchPointers.size !== 2) return;
+
+        const cfg  = this.display || {};
+        const minZ = cfg.minZoom ?? 0.25;
+        const maxZ = cfg.maxZoom ?? 4;
+
+        const pts = Array.from(this._touchPointers.values());
+        const a = pts[0], b = pts[1];
+        const m = mid(a, b);
+
+        const d = Math.max(1, dist(a, b));
+        let nextZoom = this._pinch.startZoom * (d / this._pinch.startDist);
+        nextZoom = Math.max(minZ, Math.min(maxZ, nextZoom));
+
+        // Apply zoom without re-centering the view
+        if (typeof this.setZoomAbsolute === 'function') {
+          // use your existing helper if present
+          this.setZoomAbsolute(nextZoom, { center: false, animate: false });
+        } else {
+          // fallback: multiply current zoom
+          const factor = nextZoom / (this.zoomLevel || 1);
+          this.zoom?.(factor);
+        }
+
+        // Keep the pinch midpoint anchored to the same world point
+        const left = m.x - this._pinch.worldX * nextZoom;
+        const top  = m.y - this._pinch.worldY * nextZoom;
+        writeCameraLeftTop(left, top);
+
+        // Respect bounds (instant clamp is fine during pinch)
+        this.clampCameraToBounds?.(false, 'pinch');
+      };
     
       // Bounds that include slack on both sides
       const boundsX = () => {
@@ -2638,6 +2733,12 @@ export class Grid {
         // ignore drags starting on the detail overlay
         if (e.target && e.target.closest && e.target.closest('.detail-panel')) return;
 
+        // Track touch pointers for pinch
+        if (e.pointerType === 'touch') {
+          this._touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          startPinchIfReady();
+        }
+
         this._pan.slack = 0;
     
         const card = e.target.closest?.('.object');
@@ -2657,6 +2758,16 @@ export class Grid {
     
       window.addEventListener('pointermove', (e) => {
         const p = this._pan;
+
+        // Pinch move (2-finger zoom)
+        if (this._touchPointers?.has(e.pointerId)) {
+          this._touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          if (this._pinch?.active) {
+            applyPinch();
+            return; // don’t also pan while pinching
+          }
+        }
+
         if (!p.isDown) return;
     
         const dx = e.clientX - p.lastX;
@@ -2686,6 +2797,15 @@ export class Grid {
       }, { passive: true });
     
       window.addEventListener('pointerup', (e) => {
+
+        // Touch pointer cleanup for pinch
+        if (this._touchPointers?.has(e.pointerId)) {
+          this._touchPointers.delete(e.pointerId);
+          if (this._pinch?.active && this._touchPointers.size < 2) {
+            this._pinch.active = false;
+          }
+        }
+
         const p = this._pan;
         if (!p.isDown) return;
     
