@@ -5605,10 +5605,48 @@ fabCluster?.addEventListener('click',(e) => { e.preventDefault(); gridObject.clu
 fabUngroup?.addEventListener('click',(e) => { e.preventDefault(); gridObject.ungroupObjects(); markActive('ungroup'); refreshSlideInsVisibility(); });
 fabZoomIn?.addEventListener('click', (e) => { e.preventDefault(); gridObject.zoomIn(); });
 fabZoomOut?.addEventListener('click',(e) => { e.preventDefault(); gridObject.zoomOut(); });
-fabFitAll?.addEventListener('click', (e) => { e.preventDefault(); gridObject.fitAll(120); });
+function setFitAllIconDone(done) {
+  if (!fabFitAll) return;
+
+  fabFitAll.classList.toggle('is-fit-done', !!done);
+
+  // Make the second-click behavior discoverable
+  const label = done ? 'Reset Zoom' : 'Fit All';
+  fabFitAll.title = label;
+  fabFitAll.setAttribute('aria-label', label);
+}
+
+fabFitAll?.addEventListener('click', (e) => {
+  e.preventDefault();
+  if (!gridObject) return;
+
+  const isDone = fabFitAll.classList.contains('is-fit-done');
+
+  if (!isDone) {
+    // 1st click: fit everything into view
+    gridObject.fitAll(120);
+    setFitAllIconDone(true);
+  } else {
+    // 2nd click: return to your configured base zoom (Grid.display.baseZoom)
+    if (typeof gridObject.resetZoomToBase === 'function') {
+      gridObject.resetZoomToBase(true);
+    } else {
+      // Fallback (shouldn't happen): snap to 1x
+      gridObject.setZoomAbsolute?.(1, { center: true, animate: true });
+    }
+    setFitAllIconDone(false);
+  }
+
+  // Keep counters/offsets in sync with the new camera state
+  scheduleOffgridUpdate?.();
+});
 
 // Recalculate counters after any camera/state change
 ;[fabGroup, fabCluster, fabUngroup, fabZoomIn, fabZoomOut].forEach(btn => btn?.addEventListener('click', scheduleOffgridUpdate));
+
+;[fabGroup, fabCluster, fabUngroup, fabZoomIn, fabZoomOut].forEach(btn =>
+  btn?.addEventListener('click', () => setFitAllIconDone(false))
+);
 
 // Optional: highlight active mode button (purely visual)
 function markActive(which) {
@@ -5656,6 +5694,9 @@ window.scanOffgrid = (dir=null, tag=null) => {
 // --- Off-grid counters (Top/Bottom/Left/Right) ---
 const workspaceEl = document.getElementById('workspace');
 const gridEl = document.getElementById('grid');
+// === Off-grid counters (performance toggle) ===
+// TEMP: set to false to disable counters and all their observers (useful for performance debugging)
+const OFFGRID_COUNTERS_ENABLED = true;
 const counters = {
   top:    document.getElementById('offgrid-top'),
   bottom: document.getElementById('offgrid-bottom'),
@@ -5663,7 +5704,12 @@ const counters = {
   right:  document.getElementById('offgrid-right'),
 };
 
+if (!OFFGRID_COUNTERS_ENABLED) {
+  Object.values(counters).forEach(n => n?.setAttribute('aria-hidden', 'true'));
+}
+
 function scheduleOffgridUpdate() {
+  if (!OFFGRID_COUNTERS_ENABLED) return;
   if (scheduleOffgridUpdate._raf) return;
   scheduleOffgridUpdate._raf = requestAnimationFrame(() => {
     scheduleOffgridUpdate._raf = null;
@@ -5674,6 +5720,7 @@ function scheduleOffgridUpdate() {
 }
 
 function updateOffgridCounters() {
+  if (!OFFGRID_COUNTERS_ENABLED) return;
   if (!workspaceEl || !gridEl) return;
 
   // NEW: hide counters in grouped grid view
@@ -6024,16 +6071,18 @@ function summarizeRect(r) {
 }
 
 // Observe grid pan/zoom (style changes), viewport resize, and object visibility
-const mo = new MutationObserver(scheduleOffgridUpdate);
-if (gridEl) mo.observe(gridEl, { attributes: true, attributeFilter: ['style', 'class'] });
-window.addEventListener('resize', scheduleOffgridUpdate);
+if (OFFGRID_COUNTERS_ENABLED) {
+  const mo = new MutationObserver(scheduleOffgridUpdate);
+  if (gridEl) mo.observe(gridEl, { attributes: true, attributeFilter: ['style', 'class'] });
+  window.addEventListener('resize', scheduleOffgridUpdate);
 
-// IntersectionObserver to react when items enter/leave
-const io = new IntersectionObserver(() => scheduleOffgridUpdate(), { root: workspaceEl, threshold: 0 });
-Array.from(gridEl.querySelectorAll('.object')).forEach(el => io.observe(el));
+  // IntersectionObserver to react when items enter/leave
+  const io = new IntersectionObserver(() => scheduleOffgridUpdate(), { root: workspaceEl, threshold: 0 });
+  Array.from(gridEl.querySelectorAll('.object')).forEach(el => io.observe(el));
 
-// Kick an initial paint
-requestAnimationFrame(updateOffgridCounters);
+  // Kick an initial paint
+  requestAnimationFrame(updateOffgridCounters);
+}
 
 // Keep the right badge offset aligned with the current slide-ins width
 const slideInsEl = document.getElementById('slide-ins');
@@ -6447,6 +6496,10 @@ function updateObjectGlowsWithGradient() {
   const selected = [...activeTags];
   const themeFilter = window.activeThemeFilter || null;
   let themedIds = null;
+
+  const gridEl = document.getElementById('grid');
+  const anyGlowActive = (themeFilter != null) || (selected.length > 0);
+  gridEl?.setAttribute('data-glow', anyGlowActive ? 'on' : 'off');  
 
   // Pre-compute which objects match the theme (if any)
   if (themeFilter && typeof window.objectsMatchingTheme === 'function') {
