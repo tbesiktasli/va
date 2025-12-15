@@ -277,6 +277,13 @@ export class Grid {
     _vw() { return this.viewportEl?.clientWidth  || window.innerWidth; }
     _vh() { return this.viewportEl?.clientHeight || window.innerHeight; }
 
+    _isMobileViewport() {
+      const cfg = this.detailConfig?.mobile || {};
+      const breakpoint = cfg.breakpoint ?? 768;
+      const vw = this._vw?.() ?? window.innerWidth;
+      return vw <= breakpoint;
+    }
+
     // Adjust a detail panel size for mobile so it fills ~90% of the viewport
     _applyMobileDetailSizing(width, height) {
       const cfg = this.detailConfig?.mobile || {};
@@ -694,6 +701,23 @@ export class Grid {
 
       // Stop any hover TTS audio when opening inline detail
       this.stopHoverTts();
+
+      // Desktop UX: if the grid is zoomed, snap back to base zoom *before* opening inline detail.
+      // Mobile keeps its own "almost fullscreen" sizing behavior.
+      if (!this._isMobileViewport?.()) {
+        const baseZ = (this.display?.baseZoom ?? 1);
+        const curZ  = (this.zoomLevel || 1);
+        if (Math.abs(curZ - baseZ) > 1e-3) {
+          // Make the zoom reset instant (no width/height animation), so detail open feels deliberate.
+          this._setObjectTransitionsEnabled?.(false);
+          this.setZoomAbsolute?.(baseZ, { center: false, animate: false });
+          (this._forceLayoutFlush ? this._forceLayoutFlush() : void this.htmlGridElement?.offsetHeight);
+          this._setObjectTransitionsEnabled?.(true);
+
+          this.clampCameraToBounds?.(false, 'detail-reset-zoom');
+          this._syncPanStateFromDom?.();
+        }
+      }
     
       const el = document.getElementById(obj.id);
 
@@ -843,6 +867,22 @@ export class Grid {
 
       // Stop any hover TTS audio when opening clustered inline detail
       this.stopHoverTts();
+
+      // Desktop UX: if the grid is zoomed, snap back to base zoom *before* opening clustered detail.
+      // Mobile keeps its own "almost fullscreen" sizing behavior.
+      if (!this._isMobileViewport?.()) {
+        const baseZ = (this.display?.baseZoom ?? 1);
+        const curZ  = (this.zoomLevel || 1);
+        if (Math.abs(curZ - baseZ) > 1e-3) {
+          this._setObjectTransitionsEnabled?.(false);
+          this.setZoomAbsolute?.(baseZ, { center: false, animate: false });
+          (this._forceLayoutFlush ? this._forceLayoutFlush() : void this.htmlGridElement?.offsetHeight);
+          this._setObjectTransitionsEnabled?.(true);
+
+          this.clampCameraToBounds?.(false, 'detail-reset-zoom');
+          this._syncPanStateFromDom?.();
+        }
+      }
 
       const el = document.getElementById(obj.id);
       const z = this.zoomLevel || 1; // world → screen scaling (keep consistent with enterDetail)
@@ -2468,7 +2508,12 @@ export class Grid {
         // Optional: keep ctrl/cmd + wheel as zoom
         if (allowCtrlWheelZoom && (e.ctrlKey || e.metaKey)) {
           const factor = Math.pow(1.0015, -e.deltaY); // tweak speed if you want
-          this.zoom?.(factor);
+          this.zoom?.(factor, {
+            anchor: 'cursor',
+            anchorX: e.clientX,
+            anchorY: e.clientY
+          });
+          
           e.preventDefault();   // IMPORTANT: requires passive:false on listener
           e.stopPropagation();
           return;
