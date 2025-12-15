@@ -2419,9 +2419,49 @@ export class Grid {
       this.groupObjects(); // snap back to centered grouped view
     }
 
-    initWheelBlock({ allowCtrlWheelZoom = true } = {}) {
-      // Wheel over the grid should never scroll the page
-      this._onWheel = (e) => {
+    initWheelBlock({ allowCtrlWheelZoom = true, wheelPanSpeed = 1.5 } = {}) {
+      // Wheel over the grid should never scroll the page.
+      // Behavior:
+      //  - ctrl/cmd + wheel => zoom (existing)
+      //  - plain wheel / trackpad two-finger scroll => pan (NEW)
+      const toPixels = (e) => {
+        let dx = e.deltaX || 0;
+        let dy = e.deltaY || 0;
+    
+        // deltaMode: 0=pixels, 1=lines, 2=pages
+        if (e.deltaMode === 1) { dx *= 16; dy *= 16; }
+        else if (e.deltaMode === 2) { dx *= this._vh(); dy *= this._vh(); }
+    
+        return { dx, dy };
+      };
+    
+      const panBy = (panX, panY) => {
+        const p = this._pan;
+        if (p) {
+          // keep pan state aligned with the DOM before nudging targets
+          this._syncPanStateFromDom?.();
+    
+          p.targetX += panX;
+          p.targetY += panY;
+    
+          // small velocity so it feels responsive but doesn't "fling" like drag-inertia
+          p.vx = panX * 0.2;
+          p.vy = panY * 0.2;
+    
+          this._ensurePanTick?.();
+          return;
+        }
+    
+        // Fallback if initDrag() hasn't run yet
+        const cs = getComputedStyle(this.htmlGridElement);
+        const left = parseFloat(this.htmlGridElement.style.left || cs.left || "0") || 0;
+        const top  = parseFloat(this.htmlGridElement.style.top  || cs.top  || "0") || 0;
+        this.htmlGridElement.style.left = `${left + panX}px`;
+        this.htmlGridElement.style.top  = `${top + panY}px`;
+        this.clampCameraToBounds?.(false, 'wheel-pan-fallback');
+      };
+    
+      const handleWheel = (e) => {
         // Allow scroll if target is inside an element that explicitly opts-in
         if (e.target?.closest?.('[data-allow-scroll], .allow-scroll')) return;
     
@@ -2429,14 +2469,40 @@ export class Grid {
         if (allowCtrlWheelZoom && (e.ctrlKey || e.metaKey)) {
           const factor = Math.pow(1.0015, -e.deltaY); // tweak speed if you want
           this.zoom?.(factor);
+          e.preventDefault();   // IMPORTANT: requires passive:false on listener
+          e.stopPropagation();
+          return;
         }
+    
+        // NEW: wheel pan (trackpad two-finger scroll)
+        if (this._pan?.isDown) {
+          // avoid fighting the active drag pan
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+    
+        let { dx, dy } = toPixels(e);
+    
+        // Common convention: Shift + wheel forces horizontal panning
+        if (e.shiftKey && Math.abs(dy) > Math.abs(dx)) {
+          dx = dy;
+          dy = 0;
+        }
+    
+        const panX = (-dx) * wheelPanSpeed;
+        const panY = (-dy) * wheelPanSpeed;
+    
+        if (panX || panY) panBy(panX, panY);
     
         e.preventDefault();   // IMPORTANT: requires passive:false on listener
         e.stopPropagation();
       };
+    
+      this._onWheel = handleWheel;
       this.htmlGridElement.addEventListener('wheel', this._onWheel, { passive: false });
     
-      // Trackpads sometimes bubble wheel to window; block if it originated over the grid
+      // Trackpads sometimes bubble wheel to window; handle if it originated over the grid
       this._onWheelDoc = (e) => {
         const path = e.composedPath?.() || [];
         const overGrid = path.includes(this.htmlGridElement);
@@ -2446,8 +2512,7 @@ export class Grid {
         const target = e.target;
         if (target?.closest?.('[data-allow-scroll], .allow-scroll')) return;
     
-        e.preventDefault();
-        e.stopPropagation();
+        handleWheel(e);
       };
       window.addEventListener('wheel', this._onWheelDoc, { passive: false });
     
@@ -2458,7 +2523,7 @@ export class Grid {
         e.stopPropagation();
       };
       this.htmlGridElement.addEventListener('touchmove', this._onTouchMove, { passive: false });
-    }
+    }    
 
     initDrag() {
       // --- Pan state (read left/top robustly) ---
