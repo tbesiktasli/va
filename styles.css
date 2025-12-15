@@ -740,6 +740,11 @@
     mask-composite: exclude;
   }  
 
+  /* === Performance: disable expensive glow when not needed === */
+  #grid[data-glow="off"] .object-glow {
+    display: none !important;      /* cheapest: remove from paint/composite */
+  }
+
 /* Safari fallback for object glows:
    use the conic gradient as a multi-color border image.
    No blur, no mask, no blend-mode. */
@@ -3555,3 +3560,16 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   body.detail-single-object-group #detail-content p {
     padding-right: 0;
   }
+
+  /* Fit All icon states */
+#fab-fit-all .fit-icon--done {
+  display: none; /* default: show the regular fit icon */
+}
+
+#fab-fit-all.is-fit-done .fit-icon--default {
+  display: none;
+}
+
+#fab-fit-all.is-fit-done .fit-icon--done {
+  display: block;
+}
