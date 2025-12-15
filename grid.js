@@ -354,8 +354,8 @@ export class Grid {
 
     _syncPanStateFromDom() {
       if (!this._pan) return; // safe if pan system not initialized yet
-      const left = parseInt(this.htmlGridElement.style.left) || 0;
-      const top  = parseInt(this.htmlGridElement.style.top)  || 0;
+      const left = parseFloat(this.htmlGridElement.style.left) || 0;
+      const top  = parseFloat(this.htmlGridElement.style.top)  || 0;
       this._pan.currentX = this._pan.targetX = left;
       this._pan.currentY = this._pan.targetY = top;
     }
@@ -1188,9 +1188,8 @@ export class Grid {
       }
 
       if (this.currentState === 'ungrouped') {
-        this.fitToView('ungrouped', 160);
-        this._syncPanStateFromDom?.();
-      }
+        this.fitToView('ungrouped', 160, { animateCamera: true, reason: 'ungrouped-reflow' });
+      }      
     }
 
     // Public setter: change distance in ungrouped view at any time.
@@ -1513,7 +1512,8 @@ export class Grid {
     }
 
     // --- Core: rebase all world coords to fit bounds + padding, resize grid, refresh DOM ---
-    _fitGridToBounds(bounds, padding = 160) {
+    _fitGridToBounds(bounds, padding = 160, opts = {}) {
+      const { animateCamera = false, reason = 'fitGridToBounds' } = (opts || {});
       const { minX, minY, maxX, maxY } = bounds;
       const offsetX = padding - minX;
       const offsetY = padding - minY;
@@ -1566,9 +1566,9 @@ export class Grid {
       const anchorWorldX = (this._vw()/2 - prevLeft) / zoom;
       const anchorWorldY = (this._vh()/2 - prevTop) / zoom;
       // After rebasing world coords by (offsetX, offsetY), keep the same world point at center:
+      // NOTE: keep this instantaneous (it preserves the same on-screen content); only animate the clamp correction.
       this.centerViewportOnWorldPoint(anchorWorldX + offsetX, anchorWorldY + offsetY, /*animate*/ false);
-      this.clampCameraToBounds(false, 'anchor-drag');
-      this._syncPanStateFromDom();
+      this.clampCameraToBounds(animateCamera, reason);
     }
 
     // Re-apply CSS transforms for the current state at the current zoom
@@ -1733,13 +1733,22 @@ export class Grid {
     }
 
     // Convenience wrappers
-    fitToView(view, padding = 160) {
+    // opts:
+    //  - animateCamera: smoothly glides the camera if bounds changes force clamping
+    //  - reason: optional label for debug/logging
+    fitToView(view, padding = 160, opts = {}) {
       const b = this.getBoundsFor(view);
-      this._fitGridToBounds(b, padding);
+      this._fitGridToBounds(b, padding, {
+        reason: opts.reason ?? `fitToView:${view}`,
+        ...opts
+      });
     }
-    fitToFootprints(footprints, padding = 160) {
+    fitToFootprints(footprints, padding = 160, opts = {}) {
       const b = this.getBoundsFor('footprints', footprints);
-      this._fitGridToBounds(b, padding);
+      this._fitGridToBounds(b, padding, {
+        reason: opts.reason ?? 'fitToFootprints',
+        ...opts
+      });
     }
 
     // Zoom/pan so that *all items for the current state* fit in the viewport.
@@ -1791,9 +1800,30 @@ export class Grid {
     }
 
     // NEW: snap back to your configured base zoom
-    resetZoomToBase(animate = true) {
+    // centerOn:
+    //  - 'grid'  (default): center camera on the full grid's center
+    //  - 'bounds': center camera on the current state's content bounds
+    resetZoomToBase(animate = true, { centerOn = 'grid' } = {}) {
       const z = (this.display?.baseZoom ?? 1);
-      this.setZoomAbsolute(z, { center: true, animate });
+
+      // 1) Zoom back to base without changing where we're looking yet
+      this.setZoomAbsolute(z, { center: false, animate });
+
+      // 2) Recentre the camera
+      if (centerOn === 'bounds') {
+        const view = (this.currentState === 'pre-cluster') ? 'grouped' : this.currentState;
+        const b = this.getBoundsFor(view);
+        const cx = (b.minX + b.maxX) / 2;
+        const cy = (b.minY + b.maxY) / 2;
+        this.centerViewportOnWorldPoint(cx, cy, animate);
+      } else {
+        const cx = this.gridDimension.width / 2;
+        const cy = this.gridDimension.height / 2;
+        this.centerViewportOnWorldPoint(cx, cy, animate);
+      }
+
+      this.clampCameraToBounds(false, 'resetZoomToBase');
+      this._syncPanStateFromDom?.();
     }
 
     // Optional: change baseZoom at runtime; apply immediately if you want
@@ -1803,7 +1833,7 @@ export class Grid {
       if (apply) this.resetZoomToBase(animate);
     }
 
-    zoom(factor) {
+    zoom(factor, { anchor = 'center', anchorX = null, anchorY = null } = {}) {
       // Temporarily disable transform animation while we change transforms for zoom
       document.body.classList.add('zooming');
     
@@ -1812,6 +1842,30 @@ export class Grid {
       const minZ  = cfg.minZoom ?? 0.25;
       const maxZ  = cfg.maxZoom ?? 4;
       const prev  = this.zoomLevel || 1;
+
+      // --- Keep camera anchored while zooming (default: viewport center) ---
+      // Compute the world point currently under the chosen anchor,
+      // then re-position the camera after changing zoom so that world point stays put.
+      const cs = getComputedStyle(this.htmlGridElement);
+      const prevLeft = parseFloat(this.htmlGridElement.style.left || cs.left || "0") || 0;
+      const prevTop  = parseFloat(this.htmlGridElement.style.top  || cs.top  || "0") || 0;
+
+      const vw = this._vw();
+      const vh = this._vh();
+
+      let ax = vw / 2;
+      let ay = vh / 2;
+
+      if (anchor === 'cursor' && isFinite(anchorX) && isFinite(anchorY)) {
+        ax = anchorX;
+        ay = anchorY;
+      } else if (anchor && typeof anchor === 'object' && isFinite(anchor.x) && isFinite(anchor.y)) {
+        ax = anchor.x;
+        ay = anchor.y;
+      }
+
+      const worldX = (ax - prevLeft) / prev;
+      const worldY = (ay - prevTop) / prev;
     
       // Proposed new zoom, clamped to [minZ, maxZ]
       let next = prev * factor;
@@ -1833,6 +1887,13 @@ export class Grid {
       const newHeight = this.gridDimension.height * this.zoomLevel;
       this.htmlGridElement.style.width  = `${newWidth}px`;
       this.htmlGridElement.style.height = `${newHeight}px`;
+
+      // Anchor camera so the chosen point stays under the same viewport coordinate.
+      const newLeft = ax - worldX * this.zoomLevel;
+      const newTop  = ay - worldY * this.zoomLevel;
+      this.htmlGridElement.style.left = `${newLeft}px`;
+      this.htmlGridElement.style.top  = `${newTop}px`;
+      this._syncPanStateFromDom?.();
     
       // Resize and reposition objects in screen space
       for (const obj of this.objects) {
@@ -2162,9 +2223,8 @@ export class Grid {
       // 4) Compute new group centers with increased margin
       const centers = this.layoutGroupCentersForFootprints(footprints, Math.round(layoutMargin * spread));
     
-      // 5) Fit camera to the larger footprints and sync pan state
-      this.fitToFootprints(footprints, Math.round(preFitPad * spread));
-      this._syncPanStateFromDom?.();
+      // 5) Fit camera to the larger footprints (glide if clamping is needed)
+      this.fitToFootprints(footprints, Math.round(preFitPad * spread), { animateCamera: true, reason: 'cluster-prefit' });
     
       // 6) Animate piles to their new (more distant) centers
       this.movePilesToNewCenters(centers, 18, 8);
@@ -2282,7 +2342,7 @@ export class Grid {
 
           // 3) ✅ NOW resize/rebase the grid to the *actual* clustered box
           // (pre-fit uses footprint estimates; post-fit fixes unreachable "outside grid" items)
-          this.fitToView('clustered', Math.round(postFitPad * spread));
+          this.fitToView('clustered', Math.round(postFitPad * spread), { animateCamera: true, reason: 'cluster-postfit' });
 
           // Force paint/layout so the baked transform='' is committed while transitions are OFF
           this._restoreTransitionsNextFrameWithFlush();
@@ -2315,8 +2375,6 @@ export class Grid {
         }
       }
     
-      // ⛔️ REMOVED: this.fitToView('ungrouped', 160);
-    
       this._waitForObjectTransformsToSettle(() => {
         const zNow = this.zoomLevel || 1;
 
@@ -2338,7 +2396,7 @@ export class Grid {
         }
 
         // 3) ✅ NOW resize the grid to the *actual* ungrouped box
-        this.fitToView('ungrouped', 160);
+        this.fitToView('ungrouped', 160, { animateCamera: true, reason: 'ungroup-postfit' });
 
         // 4) if we’re coming from clustered/pre-cluster, restore compact centers
         if ((prev === 'clustered' || prev === 'pre-cluster') && this.baseGroupCenters) {
