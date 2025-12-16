@@ -284,6 +284,41 @@ export class Grid {
       return vw <= breakpoint;
     }
 
+    _getCameraLeftTop() {
+      const cs = getComputedStyle(this.htmlGridElement);
+      const left = parseFloat(this.htmlGridElement.style.left || cs.left || "0") || 0;
+      const top  = parseFloat(this.htmlGridElement.style.top  || cs.top  || "0") || 0;
+      return { left, top };
+    }
+    
+    _captureCameraSnapshot() {
+      const zoom = this.zoomLevel || 1;
+      const { left, top } = this._getCameraLeftTop();
+      const vw = this._vw();
+      const vh = this._vh();
+    
+      // Store world center so restore stays correct even if viewport size changes.
+      return {
+        zoom,
+        worldCenterX: (vw / 2 - left) / zoom,
+        worldCenterY: (vh / 2 - top) / zoom,
+      };
+    }
+    
+    _restoreCameraSnapshot(snap, { animate = true } = {}) {
+      if (!snap) return;
+    
+      // Restore zoom first (don’t auto-center)
+      this.setZoomAbsolute?.(snap.zoom, { center: false, animate });
+    
+      // Then restore the same world center
+      this.centerViewportOnWorldPoint?.(snap.worldCenterX, snap.worldCenterY, animate);
+    
+      // Final safety
+      this.clampCameraToBounds?.(animate, 'detail-restore-camera');
+      this._syncPanStateFromDom?.();
+    }    
+
     // Adjust a detail panel size for mobile so it fills ~90% of the viewport
     _applyMobileDetailSizing(width, height) {
       const cfg = this.detailConfig?.mobile || {};
@@ -592,16 +627,12 @@ export class Grid {
             wsInline = window.createWave(waveEl, obj.audio, { height: 70 });
           } else if (window.WaveSurfer) {
             wsInline = window.WaveSurfer.create({
+              ...(window.WS_DEFAULTS || {}),
               container: waveEl,
               height: 70,
-              barWidth: 1,
-              barGap: 1,
-              normalize: true,
-              responsive: true,
-              interact: true,
-              cursorWidth: 1,
             });
             wsInline.load(obj.audio);
+            
           }
 
           panel.__wsInline = wsInline; // allow exitDetail() to destroy reliably
@@ -702,6 +733,8 @@ export class Grid {
       // Stop any hover TTS audio when opening inline detail
       this.stopHoverTts();
 
+      const cameraPrev = this._captureCameraSnapshot?.();
+
       // Desktop UX: if the grid is zoomed, snap back to base zoom *before* opening inline detail.
       // Mobile keeps its own "almost fullscreen" sizing behavior.
       if (!this._isMobileViewport?.()) {
@@ -766,6 +799,7 @@ export class Grid {
           prevState: this.currentState,
           pushed: true,
           source: 'ungrouped',
+          cameraPrev,
         prev: {
           width: obj.width,
           height: obj.height,
@@ -868,6 +902,8 @@ export class Grid {
       // Stop any hover TTS audio when opening clustered inline detail
       this.stopHoverTts();
 
+      const cameraPrev = this._captureCameraSnapshot?.();
+
       // Desktop UX: if the grid is zoomed, snap back to base zoom *before* opening clustered detail.
       // Mobile keeps its own "almost fullscreen" sizing behavior.
       if (!this._isMobileViewport?.()) {
@@ -919,6 +955,7 @@ export class Grid {
         prevState: this.currentState,
         pushed: false,
         source: 'clustered',
+        cameraPrev,
         prev: {
           width: obj.width,
           height: obj.height,
@@ -1013,7 +1050,7 @@ export class Grid {
       if (!this._detail?.active) return Promise.resolve();
     
       //const { id, prev } = this._detail;
-      const { id, prev, prevState, pushed } = this._detail;
+      const { id, prev, prevState, pushed, cameraPrev } = this._detail;
       const focusObj = this.objects.find(o => o.id === id);
       const el = document.getElementById(id);
     
@@ -1045,20 +1082,13 @@ export class Grid {
       this._applyTransformsForCurrentState();
     
       // Remove any temporary overscroll allowance and glide back inside bounds
-      if (this._pan) {
-        this._pan.slack = 0;
-        // clamp to legal range
-        const zoom = this.zoomLevel || 1;
-        const w = parseFloat(this.htmlGridElement.style.width)  || (this.gridDimension.width  * zoom);
-        const h = parseFloat(this.htmlGridElement.style.height) || (this.gridDimension.height * zoom);
-        const minX = Math.min(0, window.innerWidth  - w);
-        const minY = Math.min(0, window.innerHeight - h);
-        const curLeft = parseFloat(this.htmlGridElement.style.left) || 0;
-        const curTop  = parseFloat(this.htmlGridElement.style.top)  || 0;
-        this._pan.targetX = Math.max(minX, Math.min(0, curLeft));
-        this._pan.targetY = Math.max(minY, Math.min(0, curTop));
-        this._pan.vx = 0; this._pan.vy = 0;
-        this._startPanLoop?.(); this._ensurePanTick?.();
+      if (this._pan) this._pan.slack = 0;
+
+      if (cameraPrev && !this._isMobileViewport?.()) {
+        this._restoreCameraSnapshot(cameraPrev, { animate: true });
+      } else {
+        // fallback behavior (mobile or if no snapshot)
+        this.clampCameraToBounds?.(true, 'exitDetail');
       }
     
       // Resolve after transitions settle
@@ -1377,51 +1407,80 @@ export class Grid {
           const waveWrap = document.createElement('div');
           waveWrap.className = 'wave-wrap';
           objectDiv.appendChild(waveWrap);
+          window.addAudioPlaceholder?.(waveWrap);
 
           // 1) Create WaveSurfer WITHOUT url (won’t fetch audio)
-          const ws = WaveSurfer.create({
-            container: waveWrap,
-            height: 48,
-            interact: false,
-            waveColor: '#9aa0a6',
-            progressColor: '#1a73e8',
-            cursorWidth: 0,
-          });
+          const ws = (window.createWave
+            ? window.createWave(waveWrap, null, {
+                height: 48,
+                interact: false,
+                waveColor: '#9aa0a6',
+                progressColor: '#1a73e8',
+                cursorWidth: 0,
+              })
+            : WaveSurfer.create({
+                ...(window.WS_DEFAULTS || {}),
+                container: waveWrap,
+                height: 48,
+                interact: false,
+                waveColor: '#9aa0a6',
+                progressColor: '#1a73e8',
+                cursorWidth: 0,
+              }));
+
+          ws.once?.('ready', () => window.removeAudioPlaceholder?.(waveWrap));
+
           objectDiv.__ws = ws;
 
           // 2) OPTIONAL: draw waveform from precomputed peaks (no audio fetch)
           //    We try to find a peaks JSON next to the audio: foo.mp3 -> foo.peaks.json
           let peaks, duration;
-          (async () => {
-            try {
-              const peaksUrl = object.audio.replace(/\.[^/.]+$/, '.peaks.json');
-              const r = await fetch(peaksUrl, { cache: 'force-cache' });
-              if (r.ok) {
-                const json = await r.json();
-                // support either { data: [...], duration: <sec> } or a plain array
-                peaks = Array.isArray(json) ? json : (json.data || json.peaks || undefined);
-                duration = (json.duration || json.length || object.duration || undefined);
-                if (peaks && peaks.length) {
-                  // Draw waveform from peaks only; still no audio fetched
-                  ws.load('', peaks, duration);
+          if (window.AUDIO_WAVE_RENDER_MODE === 'peaks') {
+            (async () => {
+              try {
+                const peaksUrl = object.audio.replace(/\.[^/.]+$/, '.peaks.json');
+                const r = await fetch(peaksUrl, { cache: 'force-cache' });
+                if (r.ok) {
+                  const json = await r.json();
+                  // support either { data: [...], duration: <sec> } or a plain array
+                  peaks = Array.isArray(json) ? json : (json.data || json.peaks || undefined);
+                  duration = (json.duration || json.length || object.duration || undefined);
+                  ws.__lazyPeaks = peaks;
+                  ws.__lazyDuration = duration;
+                  if (peaks && peaks.length && !ws.__mp3Requested) {
+                    // Draw waveform from peaks only; still no audio fetched
+                    ws.load('', peaks, duration);
+                  }                
                 }
-              }
-            } catch (e) { /* no peaks available — fine */ }
-          })();
+              } catch (e) { /* no peaks available — fine */ }
+            })();
+          }
+          // Lazy MP3 load: keep waveform via peaks.json, only fetch MP3 on first interaction
+          let hoverToken = 0;
 
-          // TEMP: eager-load (disable hover-lazy)
-          ws.load(object.audio, peaks, duration);
+          const ensureAudio = () => {
+            if (typeof window.ensureWaveAudio !== 'function') return Promise.resolve(false);
+            const meta = { peaks: peaks ?? ws.__lazyPeaks, duration: duration ?? ws.__lazyDuration };
+            return window.ensureWaveAudio(ws, object.audio, meta);
+          };
 
           // Hover play/pause for tiles — disabled in grouped mode and when tile is in inline detail
           const playOnHover = () => {
             if (this.currentState === 'grouped') return;         // ✅ no hover playback in grouped mode
             if (objectDiv.classList.contains('is-detail')) return;
-            try { ws.play?.(); } catch {}
+
+            const t = ++hoverToken;
+            ensureAudio().then(() => {
+              if (t !== hoverToken) return;
+              try { ws.play?.(); } catch {}
+            }).catch(() => {});
           };
 
           const pauseOnLeave = () => {
             if (this.currentState === 'grouped') return;         // ✅ symmetry / avoid unnecessary calls
             if (objectDiv.classList.contains('is-detail')) return;
+
+            hoverToken++;
             try { ws.pause?.(); } catch {}
           };
 
@@ -1808,7 +1867,7 @@ export class Grid {
       const zNow = this.zoomLevel || 1;
       if (zTarget < zNow) {
         const factor = zTarget / zNow;
-        this.zoom(factor);
+        this.zoom(factor, { source: 'fitall' });
       }
 
       // Center on the bounds' center in world space
@@ -1820,13 +1879,13 @@ export class Grid {
     }
 
     // NEW: set zoom to an absolute value (not a multiplier), then optionally center
-    setZoomAbsolute(targetZoom, { center = true, animate = true } = {}) {
+    setZoomAbsolute(targetZoom, { center = true, animate = true, source = '' } = {}) {
       const current = this.zoomLevel || 1;
       if (!isFinite(targetZoom) || targetZoom <= 0) return;
       const factor = targetZoom / current;
       if (Math.abs(factor - 1) < 1e-6) return;
 
-      this.zoom(factor);
+      this.zoom(factor, { source });
 
       if (center) {
         const view = (this.currentState === 'pre-cluster') ? 'grouped' : this.currentState;
@@ -1873,7 +1932,7 @@ export class Grid {
       if (apply) this.resetZoomToBase(animate);
     }
 
-    zoom(factor, { anchor = 'center', anchorX = null, anchorY = null } = {}) {
+    zoom(factor, { anchor = 'center', anchorX = null, anchorY = null, source = '' } = {}) {
       // Temporarily disable transform animation while we change transforms for zoom
       document.body.classList.add('zooming');
     
@@ -1882,6 +1941,19 @@ export class Grid {
       const minZ  = cfg.minZoom ?? 0.25;
       const maxZ  = cfg.maxZoom ?? 4;
       const prev  = this.zoomLevel || 1;
+
+      const emitZoom = (clamped = false) => {
+        this.htmlGridElement?.dispatchEvent?.(new CustomEvent('grid:zoom', {
+          detail: {
+            zoom: this.zoomLevel || 1,
+            source,
+            minZoom: minZ,
+            maxZoom: maxZ,
+            baseZoom: (this.display?.baseZoom ?? 1),
+            clamped
+          }
+        }));
+      };      
 
       // --- Keep camera anchored while zooming (default: viewport center) ---
       // Compute the world point currently under the chosen anchor,
@@ -1914,6 +1986,7 @@ export class Grid {
       // If clamping means "no effective change", bail early
       const appliedFactor = next / prev;
       if (Math.abs(appliedFactor - 1) < 1e-6) {
+        emitZoom(true);                 // NEW: tell UI we’re at a limit
         document.body.classList.remove('zooming');
         return;
       }
@@ -1979,14 +2052,15 @@ export class Grid {
         document.body.classList.remove('zooming');
       });
 
+      emitZoom(false);                  // NEW: normal zoom update
     }    
 
     zoomIn() {
-        this.zoom(1.1);
+      this.zoom(1.1, { source: 'button' });
     }
 
     zoomOut() {
-        this.zoom(0.9);
+      this.zoom(0.9, { source: 'button' });
     }
       
   
@@ -2511,7 +2585,8 @@ export class Grid {
           this.zoom?.(factor, {
             anchor: 'cursor',
             anchorX: e.clientX,
-            anchorY: e.clientY
+            anchorY: e.clientY,
+            source: 'wheel'
           });
           
           e.preventDefault();   // IMPORTANT: requires passive:false on listener
@@ -2668,11 +2743,11 @@ export class Grid {
         // Apply zoom without re-centering the view
         if (typeof this.setZoomAbsolute === 'function') {
           // use your existing helper if present
-          this.setZoomAbsolute(nextZoom, { center: false, animate: false });
+          this.setZoomAbsolute(nextZoom, { center: false, animate: false, source: 'pinch' });
         } else {
           // fallback: multiply current zoom
           const factor = nextZoom / (this.zoomLevel || 1);
-          this.zoom?.(factor);
+          this.zoom?.(factor, { source: 'pinch' });
         }
 
         // Keep the pinch midpoint anchored to the same world point
