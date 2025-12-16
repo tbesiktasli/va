@@ -245,8 +245,100 @@ function createWave(container, src, overrides = {}) {
   return ws;
 }
 
-// ✅ add this right here
-window.createWave ??= createWave;
+// Expose the shared WaveSurfer defaults/helper for other modules (e.g., grid.js)
+window.WS_DEFAULTS ??= WS_DEFAULTS;
+window.createWave  ??= createWave;
+
+// === Audio waveform rendering mode ===
+// 'placeholder' (default): show an icon until MP3 is actually loaded on interaction
+// 'peaks': fetch *.peaks.json and draw waveform immediately (no MP3 fetch)
+window.AUDIO_WAVE_RENDER_MODE ??= 'placeholder';
+
+// Inline SVG (Bootstrap Icons: music-note)
+window.AUDIO_PLACEHOLDER_SVG ??= `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+  <path d="M9 13c0 1.105-1.12 2-2.5 2S4 14.105 4 13s1.12-2 2.5-2 2.5.895 2.5 2"/>
+  <path fill-rule="evenodd" d="M9 3v10H8V3z"/>
+  <path d="M8 2.82a1 1 0 0 1 .804-.98l3-.6A1 1 0 0 1 13 2.22V4L8 5z"/>
+</svg>
+`.trim();
+
+function addAudioPlaceholder(container) {
+  if (!container) return;
+  if (container.querySelector(':scope > .audio-placeholder-icon')) return;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'audio-placeholder-icon';
+  wrap.innerHTML = window.AUDIO_PLACEHOLDER_SVG;
+
+  container.appendChild(wrap);
+}
+
+function removeAudioPlaceholder(container) {
+  container?.querySelector(':scope > .audio-placeholder-icon')?.remove();
+}
+
+window.addAudioPlaceholder ??= addAudioPlaceholder;
+window.removeAudioPlaceholder ??= removeAudioPlaceholder;
+
+// Audio lazy-loading: render waveform from peaks first; fetch MP3 only on interaction.
+window.AUDIO_HOVER_PREVIEW_DELAY_MS ??= 180;   // ms before hover-preview triggers a network fetch
+window.AUDIO_HOVER_PREVIEW_ENABLED  ??= true;  // set false to disable hover preview
+
+const __WS_AUDIO_STATE = new WeakMap();
+
+function __getWsAudioState(ws) {
+  let s = __WS_AUDIO_STATE.get(ws);
+  if (!s) {
+    s = { loaded: false, loading: false, src: null, peaks: null, duration: null, promise: null };
+    __WS_AUDIO_STATE.set(ws, s);
+  }
+  return s;
+}
+
+/**
+ * Ensure the MP3 is loaded for a WaveSurfer instance (once), optionally reusing already-fetched peaks/duration.
+ * Resolves when WaveSurfer fires 'ready'.
+ */
+function ensureWaveAudio(ws, src, meta = {}) {
+  if (!ws || !src) return Promise.resolve(false);
+
+  const s = __getWsAudioState(ws);
+
+  if (meta.peaks?.length) s.peaks = meta.peaks;
+  if (meta.duration) s.duration = meta.duration;
+
+  if (s.loaded && s.src === src) return Promise.resolve(true);
+  if (s.loading && s.promise) return s.promise;
+
+  s.loading = true;
+  s.src = src;
+
+  const peaks = meta.peaks?.length ? meta.peaks : s.peaks;
+  const duration = meta.duration || s.duration;
+
+  // MP3 is requested: prevent any late peaks-only load from clobbering playback.
+  try { ws.__mp3Requested = true; } catch {}
+
+  s.promise = new Promise((resolve, reject) => {
+    const onReady = () => { s.loaded = true; s.loading = false; resolve(true); };
+    const onError = (e) => { s.loaded = false; s.loading = false; reject(e); };
+
+    try {
+      ws.once?.('ready', onReady);
+      ws.once?.('error', onError);
+      ws.load(src, peaks, duration);
+    } catch (err) {
+      s.loading = false;
+      reject(err);
+    }
+  }).finally(() => { s.promise = null; });
+
+  return s.promise;
+}
+
+window.ensureWaveAudio ??= ensureWaveAudio;
+
 
 // ================= Prepage / Splash Screen =================
 function initPrepage() {
@@ -313,15 +405,45 @@ if (document.readyState === 'loading') {
 function isGrouped() {
   return window.gridObject?.currentState === 'grouped';
 }
-function hoverPlayGuarded(el, ws) {
-  el.addEventListener('mouseenter', () => { if (!isGrouped()) { try { ws.play(); } catch {} } }, { passive: true });
-  el.addEventListener('mouseleave', () => { if (!isGrouped()) { try { ws.pause(); } catch {} } }, { passive: true });
+
+function _bindHoverPlay(el, ws, opts = {}) {
+  const { guardGrouped = false, src = null, peaks = null, duration = null } = opts;
+  let hoverToken = 0;
+
+  const ensure = () => {
+    if (!src || typeof window.ensureWaveAudio !== 'function') return Promise.resolve(true);
+    const meta = {
+      peaks: peaks ?? ws?.__lazyPeaks,
+      duration: duration ?? ws?.__lazyDuration,
+    };
+    return window.ensureWaveAudio(ws, src, meta).then(() => true).catch(() => false);
+  };
+
+  el.addEventListener('mouseenter', () => {
+    if (guardGrouped && isGrouped()) return;
+    const t = ++hoverToken;
+    ensure().then((ok) => {
+      if (!ok) return;
+      if (t !== hoverToken) return;
+      try { ws.play(); } catch {}
+    });
+  }, { passive: true });
+
+  el.addEventListener('mouseleave', () => {
+    if (guardGrouped && isGrouped()) return;
+    hoverToken++;
+    try { ws.pause(); } catch {}
+  }, { passive: true });
+}
+
+// Hover play/pause, but disabled when the grid is grouped
+function hoverPlayGuarded(el, ws, src = null, meta = {}) {
+  _bindHoverPlay(el, ws, { guardGrouped: true, src, peaks: meta.peaks, duration: meta.duration });
 }
 
 // Always play/pause on hover, regardless of grid grouping
-function hoverPlay(el, ws) {
-  el.addEventListener('mouseenter', () => { try { ws.play(); } catch {} }, { passive: true });
-  el.addEventListener('mouseleave', () => { try { ws.pause(); } catch {} }, { passive: true });
+function hoverPlay(el, ws, src = null, meta = {}) {
+  _bindHoverPlay(el, ws, { guardGrouped: false, src, peaks: meta.peaks, duration: meta.duration });
 }
 
 // === MEDIA DEBUG ===
@@ -4668,7 +4790,7 @@ function initMobileSlideInsToggle() {
     const scroller = gg; // #group-gallery is the horizontal scroller (your viewport)
     //const options = { root: scroller, threshold: 0.15, rootMargin: '0px' };
     // TEMP: consider all items "in view"
-    const options = { root: scroller, threshold: 0, rootMargin: '9999px 0px 9999px 0px' };
+    const options = { root: scroller, threshold: 0.01, rootMargin: '600px 0px 600px 0px' };
 
     audioObserver = new IntersectionObserver((entries, obs) => {
       entries.forEach(en => {
@@ -4682,35 +4804,39 @@ function initMobileSlideInsToggle() {
         // Create WaveSurfer once per container (no audio loaded yet)
         if (!wsRegistry.has(wave.id)) {
           const ws = createWave(`#${wave.id}`, null);
+          window.addAudioPlaceholder?.(wave);
+          ws.once?.('ready', () => window.removeAudioPlaceholder?.(wave));
+
         
-          // try to draw peaks first (non-blocking)
+        // try to draw peaks first (non-blocking)
+        let peaks, duration;
+        if (window.AUDIO_WAVE_RENDER_MODE === 'peaks') {
           const peaksUrl = src.replace(/\.[^/.]+$/, '.peaks.json');
           (async () => {
             try {
               const r = await fetch(peaksUrl, { cache: 'force-cache' });
               if (!r.ok) return;
               const j = await r.json();
-              const peaks = Array.isArray(j) ? j : (j.data || j.peaks);
-              const duration = j.duration || j.length;
-              if (peaks?.length) ws.load('', peaks, duration);
+              peaks = Array.isArray(j) ? j : (j.data || j.peaks);
+              duration = j.duration || j.length;
+              ws.__lazyPeaks = peaks;
+              ws.__lazyDuration = duration;
+              if (peaks?.length && !ws.__mp3Requested) ws.load('', peaks, duration);
             } catch {}
           })();
-        
-          let loaded = false;
+        }
+        // hover plays/pauses (first hover will trigger MP3 fetch)
+        hoverPlay(item, ws, src);
 
-          // TEMP: eager-load (disable hover-lazy)
-          ws.load(src);
-          // hover just plays/pauses
-          item.addEventListener('mouseenter', () => { try { ws.play(); } catch {} }, { passive: true });
-        
-          item.addEventListener('mouseleave', () => {
-            try { ws.pause(); } catch {}
-          }, { passive: true });
-        
-          // click still toggles
-          item.addEventListener('click', () => ws.playPause());
-        
-          wsRegistry.set(wave.id, ws);
+        // click toggles play/pause (first click will trigger MP3 fetch)
+        item.addEventListener('click', () => {
+          const meta = { peaks: peaks ?? ws.__lazyPeaks, duration: duration ?? ws.__lazyDuration };
+          window.ensureWaveAudio(ws, src, meta).then(() => {
+            try { ws.playPause(); } catch {}
+          }).catch(() => {});
+        });
+
+        wsRegistry.set(wave.id, ws);
         }
         
         // Stop observing after first creation
@@ -4770,29 +4896,38 @@ function initMobileSlideInsToggle() {
 
       // Create WS directly on the element (avoids id collisions)
       const ws = createWave(wave, null);
+      window.addAudioPlaceholder?.(wave);
+      ws.once?.('ready', () => window.removeAudioPlaceholder?.(wave));
 
       // Optional: try peaks first to draw without fetching audio
-      (async () => {
-        try {
-          const peaksUrl = src.replace(/\.[^/.]+$/, '.peaks.json');
-          const r = await fetch(peaksUrl, { cache: 'force-cache' });
-          if (r.ok) {
-            const j = await r.json();
-            const peaks = Array.isArray(j) ? j : (j.data || j.peaks);
-            const duration = j.duration || j.length;
-            if (peaks?.length) ws.load('', peaks, duration);
-          }
-        } catch {}
-      })();
+      let peaks, duration;
+      if (window.AUDIO_WAVE_RENDER_MODE === 'peaks') {
+        (async () => {
+          try {
+            const peaksUrl = src.replace(/\.[^/.]+$/, '.peaks.json');
+            const r = await fetch(peaksUrl, { cache: 'force-cache' });
+            if (r.ok) {
+              const j = await r.json();
+              peaks = Array.isArray(j) ? j : (j.data || j.peaks);
+              duration = j.duration || j.length;
+              ws.__lazyPeaks = peaks;
+              ws.__lazyDuration = duration;
+              if (peaks?.length && !ws.__mp3Requested) ws.load('', peaks, duration);
+            }
+          } catch {}
+        })();
+      }
 
-      // Eager-load the audio (match current gallery/grid behavior)
-      ws.load(src);
+      // Hover play/pause (first hover will trigger MP3 fetch)
+      hoverPlay(item, ws, src);
 
-      // Reuse your hover helpers (no play on hover when grouped)
-      hoverPlay(item, ws);
-
-      // Click toggles play/pause
-      item.addEventListener('click', () => ws.playPause());
+      // Click toggles play/pause (first click will trigger MP3 fetch)
+      item.addEventListener('click', () => {
+        const meta = { peaks: peaks ?? ws.__lazyPeaks, duration: duration ?? ws.__lazyDuration };
+        window.ensureWaveAudio(ws, src, meta).then(() => {
+          try { ws.playPause(); } catch {}
+        }).catch(() => {});
+      });
 
       wsMap.set(wave, ws);
     });
@@ -4921,6 +5056,7 @@ function initMobileSlideInsToggle() {
       wave.style.width = '100%';                   // fill the item’s random width
       wave.style.height = '50px';
       item.dataset.audioSrc = o.audio || o.src || o.url || '';
+      if (window.addAudioPlaceholder) window.addAudioPlaceholder(wave);
       item.appendChild(wave);
 
       item.dataset.oid = o.id || '';
@@ -5605,16 +5741,59 @@ fabCluster?.addEventListener('click',(e) => { e.preventDefault(); gridObject.clu
 fabUngroup?.addEventListener('click',(e) => { e.preventDefault(); gridObject.ungroupObjects(); markActive('ungroup'); refreshSlideInsVisibility(); });
 fabZoomIn?.addEventListener('click', (e) => { e.preventDefault(); gridObject.zoomIn(); });
 fabZoomOut?.addEventListener('click',(e) => { e.preventDefault(); gridObject.zoomOut(); });
-function setFitAllIconDone(done) {
+
+function setFitAllIconDone(done, reason = '') {
   if (!fabFitAll) return;
 
   fabFitAll.classList.toggle('is-fit-done', !!done);
+  fabFitAll.dataset.fitStateReason = done ? (reason || 'manual') : '';
 
   // Make the second-click behavior discoverable
   const label = done ? 'Reset Zoom' : 'Fit All';
   fabFitAll.title = label;
   fabFitAll.setAttribute('aria-label', label);
 }
+
+function syncFabFitAllOnZoom(e) {
+  if (!fabFitAll || !window.gridObject) return;
+
+  const go = window.gridObject;
+  const detail = e?.detail || {};
+
+  const z = detail.zoom ?? go.zoomLevel ?? 1;
+  const minZ = detail.minZoom ?? go.display?.minZoom ?? 0.25;
+  const source = detail.source || '';
+  const eps = 1e-3;
+
+  const atMin = z <= (minZ + eps);
+  const reason = fabFitAll.dataset.fitStateReason || '';
+
+  // If user changes zoom after Fit All (wheel/pinch/button), revert icon back to Fit All
+  const isUserZoom = (source === 'wheel' || source === 'pinch' || source === 'button');
+
+  if (reason === 'fitall' && isUserZoom) {
+    if (atMin) {
+      setFitAllIconDone(true, 'minZoom');
+    } else {
+      setFitAllIconDone(false);
+    }
+  }
+
+  // Your existing min-zoom behavior
+  if (atMin) {
+    if (!fabFitAll.classList.contains('is-fit-done')) {
+      setFitAllIconDone(true, 'minZoom');
+    }
+  } else {
+    if (reason === 'minZoom') {
+      setFitAllIconDone(false);
+    }
+  }
+}
+
+// Listen to zoom changes from Grid.zoom(...)
+document.getElementById('grid')?.addEventListener('grid:zoom', syncFabFitAllOnZoom);
+
 
 fabFitAll?.addEventListener('click', (e) => {
   e.preventDefault();
@@ -5625,7 +5804,7 @@ fabFitAll?.addEventListener('click', (e) => {
   if (!isDone) {
     // 1st click: fit everything into view
     gridObject.fitAll(120);
-    setFitAllIconDone(true);
+    setFitAllIconDone(true, 'fitall');
   } else {
     // 2nd click: return to your configured base zoom (Grid.display.baseZoom)
     if (typeof gridObject.resetZoomToBase === 'function') {
@@ -5644,8 +5823,19 @@ fabFitAll?.addEventListener('click', (e) => {
 // Recalculate counters after any camera/state change
 ;[fabGroup, fabCluster, fabUngroup, fabZoomIn, fabZoomOut].forEach(btn => btn?.addEventListener('click', scheduleOffgridUpdate));
 
-;[fabGroup, fabCluster, fabUngroup, fabZoomIn, fabZoomOut].forEach(btn =>
+// Mode switches always reset the FitAll/ResetZoom affordance
+;[fabGroup, fabCluster, fabUngroup].forEach(btn =>
   btn?.addEventListener('click', () => setFitAllIconDone(false))
+);
+
+// Zoom buttons should only clear the "done" icon if it was set by Fit All,
+// not if it was set automatically because we hit min zoom.
+;[fabZoomIn, fabZoomOut].forEach(btn =>
+  btn?.addEventListener('click', () => {
+    if (fabFitAll?.dataset.fitStateReason === 'fitall') {
+      setFitAllIconDone(false);
+    }
+  })
 );
 
 // Optional: highlight active mode button (purely visual)
