@@ -711,6 +711,11 @@ function closePrepage(afterFn) {
   prepage.classList.add('is-fading');
 
   const finish = () => {
+    if (typeof prepage._bgParallaxCleanup === 'function') {
+      prepage._bgParallaxCleanup();
+      prepage._bgParallaxCleanup = null;
+    }
+
     prepage.classList.add('is-hidden');
     document.body.classList.remove('has-prepage');
     if (typeof afterFn === 'function') afterFn();
@@ -724,11 +729,125 @@ function closePrepage(afterFn) {
 }
 
 // ================= Prepage / Splash Screen =================
+
+const PREPAGE_BG_MOTION_DEFAULTS = {
+  maxTranslatePx: 14,  // element drift
+  maxBgPosPx: 8,       // background drift inside the element
+  maxRotateDeg: 1.2,   // tiny rotation
+  scale: 1.02,         // slightly > 1 avoids visible edges while moving
+  ease: 0.12,          // smoothing (0..1)
+  maxTiltDeg: 6,        // 3D tilt strength
+  perspectivePx: 900,   // matches --prepage-bg-perspective default
+};
+
+// Option 1: subtle parallax using CSS vars (works with the existing .prepage::before background)
+function enablePrepageBgParallax(prepage, cfg) {
+  let rafId = null;
+  let currentX = 0, currentY = 0;
+  let targetX = 0, targetY = 0;
+
+  const setVars = (nx, ny) => {
+    const tx = nx * cfg.maxTranslatePx;
+    const ty = ny * cfg.maxTranslatePx;
+    const px = nx * cfg.maxBgPosPx;
+    const py = ny * cfg.maxBgPosPx;
+    const rot = nx * cfg.maxRotateDeg;
+    const tiltX = -ny * cfg.maxTiltDeg; // invert so moving mouse up tilts "towards you"
+    const tiltY = nx * cfg.maxTiltDeg;
+
+    prepage.style.setProperty('--prepage-bg-translate-x', `${tx.toFixed(2)}px`);
+    prepage.style.setProperty('--prepage-bg-translate-y', `${ty.toFixed(2)}px`);
+    prepage.style.setProperty('--prepage-bg-pos-x', `${px.toFixed(2)}px`);
+    prepage.style.setProperty('--prepage-bg-pos-y', `${py.toFixed(2)}px`);
+    prepage.style.setProperty('--prepage-bg-rotate', `${rot.toFixed(3)}deg`);
+    prepage.style.setProperty('--prepage-bg-scale', String(cfg.scale));
+    prepage.style.setProperty('--prepage-bg-tilt-x', `${tiltX.toFixed(3)}deg`);
+    prepage.style.setProperty('--prepage-bg-tilt-y', `${tiltY.toFixed(3)}deg`);
+    prepage.style.setProperty('--prepage-bg-perspective', `${cfg.perspectivePx}px`);
+  };
+
+  const tick = () => {
+    currentX += (targetX - currentX) * cfg.ease;
+    currentY += (targetY - currentY) * cfg.ease;
+
+    setVars(currentX, currentY);
+
+    const done =
+      Math.abs(targetX - currentX) < 0.002 &&
+      Math.abs(targetY - currentY) < 0.002;
+
+    if (done) {
+      rafId = null;
+      return;
+    }
+    rafId = requestAnimationFrame(tick);
+  };
+
+  const onMove = (e) => {
+    const rect = prepage.getBoundingClientRect();
+    const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;  // -1..1
+    const ny = ((e.clientY - rect.top) / rect.height) * 2 - 1;  // -1..1
+    targetX = Math.max(-1, Math.min(1, nx));
+    targetY = Math.max(-1, Math.min(1, ny));
+
+    if (rafId == null) rafId = requestAnimationFrame(tick);
+  };
+
+  const onLeave = () => {
+    targetX = 0;
+    targetY = 0;
+    if (rafId == null) rafId = requestAnimationFrame(tick);
+  };
+
+  prepage.addEventListener('pointermove', onMove, { passive: true });
+  prepage.addEventListener('pointerleave', onLeave, { passive: true });
+
+  const cleanup = () => {
+    prepage.removeEventListener('pointermove', onMove);
+    prepage.removeEventListener('pointerleave', onLeave);
+    if (rafId != null) cancelAnimationFrame(rafId);
+    rafId = null;
+
+    // Reset vars
+    prepage.style.removeProperty('--prepage-bg-translate-x');
+    prepage.style.removeProperty('--prepage-bg-translate-y');
+    prepage.style.removeProperty('--prepage-bg-pos-x');
+    prepage.style.removeProperty('--prepage-bg-pos-y');
+    prepage.style.removeProperty('--prepage-bg-rotate');
+    prepage.style.removeProperty('--prepage-bg-scale');
+    prepage.style.removeProperty('--prepage-bg-tilt-x');
+    prepage.style.removeProperty('--prepage-bg-tilt-y');
+    prepage.style.removeProperty('--prepage-bg-perspective');
+  };
+
+  // store cleanup on the element so closePrepage can stop it cleanly
+  prepage._bgParallaxCleanup = cleanup;
+
+  // initialize at rest
+  setVars(0, 0);
+
+  return cleanup;
+}
+
 function initPrepage() {
   const prepage = document.getElementById('prepage');
   if (!prepage) return;
 
   document.body.classList.add('has-prepage');
+
+  // Enable subtle SVG background motion (option 1)
+  const prefersReducedMotion =
+    window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  const finePointer =
+    window.matchMedia?.('(pointer: fine)')?.matches;
+
+  if (!prefersReducedMotion && finePointer) {
+    const cfg = {
+      ...PREPAGE_BG_MOTION_DEFAULTS,
+      ...(window.PREPAGE_BG_MOTION_CONFIG || {}),
+    };
+    enablePrepageBgParallax(prepage, cfg);
+  }
 
   const exploreBtn = document.getElementById('prepage-explore');
   if (exploreBtn) {
