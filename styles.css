@@ -131,6 +131,10 @@
     overflow: hidden;
   }
 
+  body.has-preload {
+    overflow: hidden;
+  }
+
   /* Top row: "funded by" + logos centered together */
   .prepage-top {
     display: flex;
