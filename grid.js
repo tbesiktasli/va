@@ -803,7 +803,8 @@ export class Grid {
         prev: {
           width: obj.width,
           height: obj.height,
-          bg: el.style.backgroundImage || '',
+          // media state (image tiles now use <img> instead of background-image)
+          imgHidden: !!el.querySelector('img')?.classList.contains('detail-hide'),
           transform: el.style.transform || '',
           className: el.className
         }
@@ -811,7 +812,10 @@ export class Grid {
     
       // Lift above others & fade small content
       el.classList.add('is-detail', 'detail-fade-out');
-      if (obj.type === 'image') el.style.backgroundImage = 'none';
+      if (obj.type === 'image') {
+        const imgEl = el.querySelector('img');
+        if (imgEl) imgEl.classList.add('detail-hide');
+      }      
       this.pauseAllVideos?.();
     
       // Start the tile expansion on next frame
@@ -959,7 +963,8 @@ export class Grid {
         prev: {
           width: obj.width,
           height: obj.height,
-          bg: el.style.backgroundImage || '',
+          // media state (image tiles now use <img> instead of background-image)
+          imgHidden: !!el.querySelector('img')?.classList.contains('detail-hide'),
           transform: el.style.transform || '',
           className: el.className
         }
@@ -967,7 +972,10 @@ export class Grid {
     
       // Lift above others & fade small content
       el.classList.add('is-detail', 'detail-fade-out');
-      if (obj.type === 'image') el.style.backgroundImage = 'none';
+      if (obj.type === 'image') {
+        const imgEl = el.querySelector('img');
+        if (imgEl) imgEl.classList.add('detail-hide');
+      }      
       this.pauseAllVideos?.();
     
       // ---------- Push neighbors outward (same group only) ----------
@@ -1072,7 +1080,10 @@ export class Grid {
       el.style.height = `${prev.height * z}px`;
       el.style.transform = prev.transform || '';
 
-      if (focusObj?.type === 'image') el.style.backgroundImage = prev.bg;
+      if (focusObj?.type === 'image') {
+        const imgEl = el.querySelector('img');
+        if (imgEl) imgEl.classList.remove('detail-hide');
+      }      
       el.className = prev.className || el.className; // remove is-detail/fade
     
       //this._detail = { active: false };
@@ -1296,22 +1307,27 @@ export class Grid {
         objectDiv.style.width = `${object.width}px`;
         objectDiv.style.height = `${object.height}px`;
         if (object.type === 'image') {
+          objectDiv.dataset.type = 'image';
           objectDiv.classList.add('image');
+        
           const url = String(object.image || '');
-          const img = new Image();
-          img.onload = () => {
-            objectDiv.style.backgroundImage = `url("${url.replace(/"/g, '%22')}")`;
-            window.DEBUG_MEDIA && console.debug('[grid:image-set]', { id: object.id, cssW: object.width, cssH: object.height, url });
-          };
+        
+          // IMPORTANT: do NOT set img.src here (would eagerly download hundreds of images).
+          // We only set data-src and let the shared IntersectionObserver in script.js
+          // lazy-load the actual src when the tile becomes visible.
+          const img = document.createElement('img');
+          img.alt = object.name || '';
+          img.decoding = 'async';
+          img.loading = 'lazy';
+          img.dataset.src = url;
+        
+          // Lightweight error marker (keeps tile layout stable)
           img.onerror = () => {
-            // Fallback: show an <img> so you at least see a broken icon (useful for debugging 404/CORS)
-            img.style.width = '100%';
-            img.style.height = '100%';
-            img.style.objectFit = 'cover';
-            objectDiv.appendChild(img);
+            objectDiv.classList.add('media-error');
           };
-          img.src = url;
-        }
+        
+          objectDiv.appendChild(img);
+        }        
 
         if (object.type === 'text') {
           objectDiv.dataset.type = 'text';
@@ -1380,26 +1396,56 @@ export class Grid {
 
         if (object.type === 'video') {
           objectDiv.classList.add('video');
-          const v = document.createElement("video");
-          v.src = object.video;
-          v.muted = true;            // required for autoplay policies
+        
+          const v = document.createElement('video');
+        
+          // ✅ store real URL without triggering any fetch
+          v.dataset.src = object.video || '';
+          v.preload = 'none';                 // ensures no metadata fetch before we set src
+        
+          // ✅ SVG poster while unloaded
+          v.poster = (window.getVideoPlaceholderPoster?.() || '');
+        
+          v.muted = true;                     // required for hover/autoplay
           v.playsInline = true;
-          v.preload = "metadata";
           v.loop = true;
-          v.style.width = "100%";
-          v.style.height = "100%";
-          v.style.objectFit = "cover";
+        
+          v.style.width = '100%';
+          v.style.height = '100%';
+          v.style.objectFit = 'cover';
+        
           objectDiv.appendChild(v);
         
+          const ensureVideoSrc = () => {
+            if (v.dataset.loaded === '1') return;
+            const src = v.dataset.src;
+            if (!src) return;
+            v.src = src;                      // 🔥 this is where the network request starts
+            v.preload = 'metadata';
+            v.dataset.loaded = '1';
+            try { v.load(); } catch {}
+          };
+        
           // hover play outside grouped
-          objectDiv.addEventListener("mouseenter", () => {
-            if (this.currentState !== "grouped") v.play().catch(()=>{});
+          objectDiv.addEventListener('mouseenter', () => {
+            if (this.currentState === 'grouped') return;
+            if (objectDiv.classList.contains('is-detail')) return; // mirror your audio guard
+            ensureVideoSrc();
+            v.play().catch(() => {});
           });
-          objectDiv.addEventListener("mouseleave", () => {
-            v.pause();
-            v.currentTime = 0;
+        
+          objectDiv.addEventListener('mouseleave', () => {
+            try { v.pause(); } catch {}
+            try { v.currentTime = 0; } catch {}
+        
+            // Optional: unload to free memory / stop buffering
+            if (window.VIDEO_UNLOAD_ON_LEAVE) {
+              v.removeAttribute('src');
+              v.dataset.loaded = '0';
+              try { v.load(); } catch {}
+            }
           });
-        }
+        }        
 
         // === AUDIO TILE ===
         if (object.type === 'audio') {
