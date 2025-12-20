@@ -37,6 +37,133 @@ const VIEW = {
   SUBPAGE: 'subpage',
 };
 
+// ================= Loading Screen (progress -> fade to prepage) =================
+const LOADING = (() => {
+  const weights = { groups: 0.15, objects: 0.45, media: 0.25, init: 0.15 };
+  const phase = { groups: 0, objects: 0, media: 0, init: 0 };
+
+  let ui = null;
+
+  const clamp01 = (x) => Math.max(0, Math.min(1, Number(x) || 0));
+
+  function ensureUI() {
+    if (ui) return ui;
+
+    const root = document.getElementById('preload');
+    const fill = document.getElementById('preload-bar-fill');
+    const pct  = document.getElementById('preload-percent');
+
+    // If markup is missing, use a no-op controller (won't crash loaders)
+    if (!root || !fill || !pct) {
+      ui = {
+        setTarget() {},
+        hardSet() {},
+        fadeOut(after) { after?.(); },
+      };
+      return ui;
+    }
+
+    let target = 0;
+    let shown  = 0;
+    let raf = 0;
+
+    const paint = (v) => {
+      const p = Math.max(0, Math.min(100, v));
+      fill.style.width = `${p}%`;
+      pct.textContent = `${Math.round(p)}%`;
+      root.querySelector('.preload-bar')?.setAttribute('aria-valuenow', String(Math.round(p)));
+    };
+
+    const tick = () => {
+      // Smoothly approach target, never overshoot.
+      const delta = target - shown;
+      if (Math.abs(delta) < 0.05) {
+        shown = target;
+        paint(shown);
+        raf = 0;
+        return;
+      }
+      // easing with a minimum step so it doesn't stall near the end
+      const step = Math.sign(delta) * Math.max(0.25, Math.abs(delta) * 0.12);
+      shown = Math.min(target, shown + step);
+      paint(shown);
+      raf = requestAnimationFrame(tick);
+    };
+
+    ui = {
+      setTarget(p) {
+        const next = Math.max(target, Math.min(100, Number(p) || 0)); // monotonic
+        target = next;
+        if (!raf) raf = requestAnimationFrame(tick);
+      },
+      hardSet(p) {
+        target = shown = Math.max(0, Math.min(100, Number(p) || 0));
+        paint(shown);
+      },
+      fadeOut(after) {
+        // Reuse the exact fade pattern you already use for #prepage
+        root.classList.add('is-fading');
+
+        const finish = () => {
+          root.classList.add('is-hidden');
+          after?.();
+        };
+
+        const to = setTimeout(finish, 450);
+        root.addEventListener('transitionend', () => {
+          clearTimeout(to);
+          finish();
+        }, { once: true });
+      }
+    };
+
+    // Ensure initial paint
+    paint(0);
+    return ui;
+  }
+
+  function totalPercent() {
+    const t =
+      clamp01(phase.groups)  * weights.groups +
+      clamp01(phase.objects) * weights.objects +
+      clamp01(phase.media)   * weights.media +
+      clamp01(phase.init)    * weights.init;
+    return Math.max(0, Math.min(100, t * 100));
+  }
+
+  return {
+    start() {
+      // reset phases
+      phase.groups = phase.objects = phase.media = phase.init = 0;
+      ensureUI().hardSet(0);
+    },
+    setPhase(name, frac01) {
+      if (!(name in phase)) return;
+      phase[name] = clamp01(frac01);
+      ensureUI().setTarget(totalPercent());
+    },
+    // Use Strapi pagination meta if present; otherwise do a “soft” ramp that still feels good.
+    setPhaseFromPage(name, info) {
+      const page = Number(info?.page) || 1;
+      const pageCount = Number(info?.pageCount) || 0;
+
+      if (pageCount > 0) {
+        this.setPhase(name, Math.min(0.98, page / pageCount));
+      } else {
+        // soft ramp: 1/3, 2/4, 3/5 ... approaching 1
+        this.setPhase(name, Math.min(0.9, page / (page + 2)));
+      }
+    },
+    finishToPrepage() {
+      const u = ensureUI();
+      u.setTarget(100);
+      // small delay so UI reaches 100 visually before fade
+      setTimeout(() => u.fadeOut(), 180);
+    }
+  };
+})();
+// ===============================================================================
+
 /**
  * Push a new logical view into browser history.
  * `payload` can carry extra info (e.g. sectionId, objectId, gid).
@@ -48,13 +175,119 @@ function pushViewState(view, payload = {}, hash) {
 
     // Very simple dedupe by view type; you can refine later if needed
     if (!current || current.view !== view) {
-      const base = location.pathname + location.search;
+      // Always anchor "normal" views to site root so we don't keep /objects/... around
+      const base = '/' + location.search;
       const url = hash ? (base + hash) : base;
       history.pushState(next, '', url);
     }
   } catch (err) {
     console.warn('[view] pushViewState failed', err);
   }
+}
+
+// === URL routing for object details (/objects/<slug|id>) ===
+const OBJECT_DETAIL_PREFIX = '/objects/';
+
+function getStrapiNumericIdFromAppObject(obj) {
+  if (!obj) return null;
+  if (obj.strapiId != null && obj.strapiId !== '') return Number(obj.strapiId);
+
+  // fallback: parse from app id like "sobj_123"
+  const m = String(obj.id || '').match(/^sobj_(\d+)$/);
+  if (m) return Number(m[1]);
+
+  // fallback: if obj.id itself is numeric-ish
+  if (/^\d+$/.test(String(obj.id || ''))) return Number(obj.id);
+
+  return null;
+}
+
+function getObjectUrlToken(obj) {
+  const slug = (obj?.slug ?? obj?.Slug ?? '').toString().trim();
+  if (slug) return slug;
+
+  const sid = getStrapiNumericIdFromAppObject(obj);
+  return sid != null ? String(sid) : '';
+}
+
+function buildObjectDetailPath(obj) {
+  const token = getObjectUrlToken(obj);
+  // If for some reason we can’t build a token, fall back to home
+  if (!token) return '/#home';
+  return `${OBJECT_DETAIL_PREFIX}${encodeURIComponent(token)}`;
+}
+
+function parseObjectTokenFromPathname(pathname = location.pathname) {
+  if (!pathname || !pathname.startsWith(OBJECT_DETAIL_PREFIX)) return null;
+  const token = pathname.slice(OBJECT_DETAIL_PREFIX.length);
+  if (!token) return null;
+
+  try {
+    return decodeURIComponent(token);
+  } catch {
+    return token; // if malformed encoding, still try
+  }
+}
+
+function isObjectDetailPath(pathname = location.pathname) {
+  return !!parseObjectTokenFromPathname(pathname);
+}
+
+function resolveObjectByToken(token, allObjects) {
+  if (!token || !Array.isArray(allObjects)) return null;
+
+  const t = String(token).trim();
+  if (!t) return null;
+
+  // 1) slug match (case-insensitive)
+  const bySlug = allObjects.find(o => String(o.slug || o.Slug || '').trim().toLowerCase() === t.toLowerCase());
+  if (bySlug) return bySlug;
+
+  // 2) numeric Strapi id match
+  if (/^\d+$/.test(t)) {
+    const n = Number(t);
+    const byStrapiId = allObjects.find(o => getStrapiNumericIdFromAppObject(o) === n);
+    if (byStrapiId) return byStrapiId;
+  }
+
+  return null;
+}
+
+// Called once after data init; it retries until grid + openObjectDetail exist.
+function handleInitialObjectRoute() {
+  const token = parseObjectTokenFromPathname(location.pathname);
+  if (!token) return;
+
+  const MAX_TRIES = 180; // ~3 seconds at 60fps
+  let tries = 0;
+
+  const tick = () => {
+    const allObjects = (window.gridObject?.objects || window.objects || []);
+    const opener = window.openObjectDetail;
+
+    if (!allObjects.length || typeof opener !== 'function') {
+      if (++tries < MAX_TRIES) return requestAnimationFrame(tick);
+      console.warn('[route] /objects/... detected but app not ready');
+      return;
+    }
+
+    const obj = resolveObjectByToken(token, allObjects);
+    if (!obj) {
+      console.warn('[route] object not found for token:', token);
+      return;
+    }
+
+    // Open detail without creating an in-app "back" entry (direct URL load)
+    opener({
+      objectId: obj.id,
+      from: 'url',
+      gid: obj.groupId ?? null,
+      historyMode: 'replace',
+      detailStacked: false,
+    });
+  };
+
+  tick();
 }
 
 /**
@@ -238,6 +471,24 @@ const WS_DEFAULTS = {
   cursorWidth: 1,
 };
 
+// --- Media IO defaults (single source of truth for lazy-loading + KB init) ---
+// You can override these without touching code by adding a tiny inline script BEFORE script.js:
+//
+//   <script>
+//     window.MEDIA_IO_CONFIG = { rootMargin: '600px', threshold: 0.2 };
+//   </script>
+//   <script type="module" src="script.js"></script>
+//
+const MEDIA_IO = {
+  threshold: 0.25,
+  root: null,
+  rootMargin: '400px',
+  unloadOnExit: false,
+  ...(typeof window !== 'undefined' && window.MEDIA_IO_CONFIG && typeof window.MEDIA_IO_CONFIG === 'object'
+    ? window.MEDIA_IO_CONFIG
+    : {})
+};
+
 // Small helper so creation looks the same everywhere
 function createWave(container, src, overrides = {}) {
   const ws = WaveSurfer.create({ ...WS_DEFAULTS, ...overrides, container });
@@ -295,6 +546,26 @@ function __getWsAudioState(ws) {
   }
   return s;
 }
+
+// Inline SVG for videos (simple "play" inside a rectangle)
+window.VIDEO_PLACEHOLDER_SVG ??= `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+  <rect x="6" y="14" width="52" height="36" rx="6" ry="6" fill="currentColor" opacity="0.18"/>
+  <polygon points="28,24 28,40 42,32" fill="currentColor" opacity="0.55"/>
+</svg>
+`.trim();
+
+// Turn SVG into a data-poster URL (no network request)
+function getVideoPlaceholderPoster() {
+  const svg = String(window.VIDEO_PLACEHOLDER_SVG || '').trim();
+  if (!svg) return '';
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+window.getVideoPlaceholderPoster ??= getVideoPlaceholderPoster;
+
+// Optional: if true, we unload the video src on mouseleave (like freeing memory)
+window.VIDEO_UNLOAD_ON_LEAVE ??= false;
 
 /**
  * Ensure the MP3 is loaded for a WaveSurfer instance (once), optionally reusing already-fetched peaks/duration.
@@ -1172,7 +1443,7 @@ async function strapiFetch(path, params = {}) {
 // Fetch ALL pages robustly, using the server-reported effective page size
 // Fetch ALL pages robustly: keep paging until the API returns an empty page.
 // Also break if a page doesn't add anything new (safety against servers that ignore page).
-async function strapiFetchAll(path, baseParams = {}) {
+async function strapiFetchAll(path, baseParams = {}, opts = {}) {
   let page = 1;
   const acc = [];
   const seenIds = new Set();   // dedupe and detect no-progress pages
@@ -1187,6 +1458,21 @@ async function strapiFetchAll(path, baseParams = {}) {
     });
 
     const arr = (data && data.data) || [];
+
+    // Optional progress hook (page-by-page)
+    try {
+      const pg = data?.meta?.pagination || {};
+      if (typeof opts.onPage === 'function') {
+        opts.onPage({
+          page,
+          pageCount: pg.pageCount,
+          total: pg.total,
+          pageSize: pg.pageSize
+        });
+      }
+    } catch {}
+  
+
     slog('PAGE:items', arr.length);
 
     // Append only new items (by Strapi entity id)
@@ -1221,7 +1507,10 @@ async function loadStrapiAllGroupsAndObjects() {
     'populate[about_the_fieldsite][populate]': '*',
     'populate[about_the_research_project][populate]': '*',
     'populate[about_viral_atmosphere][populate]': '*',
+  }, {
+    onPage: (info) => LOADING.setPhaseFromPage('groups', info)
   });
+  LOADING.setPhase('groups', 1);
   
   slog('groups.count', groups.length);
   slog('groups.sample', groups.slice(0, 5).map(g => ({
@@ -1242,12 +1531,17 @@ async function loadStrapiAllGroupsAndObjects() {
     // Try 1: OR of equality checks (very stable in v5)
     const qp = { publicationState: 'preview', populate: '*' };
     groupIds.forEach((id, i) => { qp[`filters[$or][${i}][group][id][$eq]`] = String(id); });
-    objects = await strapiFetchAll('live', qp);
+    //objects = await strapiFetchAll('objects', qp);
+    objects = await strapiFetchAll('live', qp, {
+      onPage: (info) => LOADING.setPhaseFromPage('objects', info)
+    });
+    LOADING.setPhase('objects', 1);
   } catch (err1) {
     console.warn('[strapi:objects] $or[$eq] failed, falling back per-group', err1);
     // Try 2: Query per group id, then de-duplicate
     const seen = new Set();
-    for (const gid of groupIds) {
+    for (let i = 0; i < groupIds.length; i++) {
+      const gid = groupIds[i];
       try {
         const part = await strapiFetchAll('objects', {
           'filters[group][id][$eq]': String(gid),
@@ -1255,10 +1549,13 @@ async function loadStrapiAllGroupsAndObjects() {
           'populate': '*'
         });
         part.forEach(o => { if (!seen.has(o.id)) { seen.add(o.id); objects.push(o); } });
+        // fallback progress: per-group fetch
+        LOADING.setPhase('objects', Math.min(0.98, (i + 1) / groupIds.length));
       } catch (err2) {
         console.error('[strapi:objects] per-group fetch failed for', gid, err2);
       }
     }
+    LOADING.setPhase('objects', 1);
   }
   slog('objects.count', objects.length);
 
@@ -1304,8 +1601,14 @@ async function resolveUploadUrlsForObjects(objs) {
     hints.set(o, want);
   }
 
-  // 2) batch fetch all filenames once
-  await batchFetchUploadFilesByNames([...new Set(needed)]);
+  // 2) batch fetch all filenames once (report chunk progress)
+  await batchFetchUploadFilesByNames([...new Set(needed)], {
+    onChunk: ({ done, total }) => {
+      const frac = total ? (done / total) : 1;
+      LOADING.setPhase('media', frac);
+    }
+  });
+  LOADING.setPhase('media', 1);
 
   // 3) choose best match per object+field (prefer folderPath that contains the hint dir)
   const pickBest = (name, dir) => {
@@ -1353,7 +1656,8 @@ async function resolveUploadUrlsForObjects(objs) {
   
         // const dpr = window.devicePixelRatio || 1;
         const dpr = 1;
-        const best = pickImageVariant(o._imageMeta, o.width || 200, dpr);
+        //const best = pickImageVariant(o._imageMeta, o.width || 200, dpr);
+        const best = pickImageVariant(o._imageMeta, o.width || 200, { dpr, headroom: 1.0 });
         o.image = best.url || cand.url;
         if (window.DEBUG_MEDIA) {
           console.log('[assign]',
@@ -1544,6 +1848,39 @@ async function seedAuthorsFromStrapi() {
   }
 }
 
+// Lazily load + render authors to avoid downloading Team images before the Team page is opened.
+function ensureAuthorsLoaded() {
+  // Share a single in-flight request across callers.
+  if (window.__authorsLoadPromise) return window.__authorsLoadPromise;
+
+  // If we've already completed a load attempt, don't repeat it (keeps navigation cheap).
+  if (window.__authorsLoadedOnce) return Promise.resolve();
+
+  // In non-Strapi mode, treat as "loaded" (render will show placeholders / nothing).
+  if (!SHOULD_USE_STRAPI) {
+    window.__authorsLoadedOnce = true;
+    return Promise.resolve();
+  }
+
+  window.__authorsLoadPromise = (async () => {
+    await seedAuthorsFromStrapi();
+    window.__authorsLoadedOnce = true;
+  })().finally(() => {
+    window.__authorsLoadPromise = null;
+  });
+
+  return window.__authorsLoadPromise;
+}
+
+function ensureAuthorsRendered() {
+  if (window.__authorsRenderedOnce) return Promise.resolve();
+  return (async () => {
+    await ensureAuthorsLoaded();
+    renderAuthorsSubpage();
+    window.__authorsRenderedOnce = true;
+  })();
+}
+
 function renderAuthorsSubpage() {
   const host = document.getElementById('authors-accordion');
   if (!host) return;
@@ -1619,7 +1956,7 @@ function renderAuthorsSubpage() {
               ${!hasMeta ? '<h3>Biography</h3>' : ''}
               <div class="author-photo-wrap">
                 ${a.imageUrl
-                  ? `<img class="author-photo" src="${a.imageUrl}" alt="${escapeHtml(a.name)}">`
+                  ? `<img class="author-photo" src="${a.imageUrl}" alt="${escapeHtml(a.name)}" loading="lazy" decoding="async">`
                   : `<div class="author-photo placeholder"></div>`
                 }
               </div>
@@ -1671,6 +2008,15 @@ function openAuthorSubpageForName(name) {
     const acc = root._accordion;
     if (!acc) {
       if (attempt < 6) requestAnimationFrame(() => tryExpand(attempt + 1));
+      return;
+    }
+
+    // If the Team page was opened via a deep-link (e.g. clicking an author name elsewhere),
+    // make sure authors are rendered before we try to locate + expand the section.
+    if (!window.__authorsRenderedOnce) {
+      ensureAuthorsRendered()
+        .then(() => requestAnimationFrame(() => tryExpand(attempt + 1)))
+        .catch(() => requestAnimationFrame(() => tryExpand(attempt + 1)));
       return;
     }
 
@@ -2075,6 +2421,8 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
     // ---- push normalized object
     out.push({
       id: `sobj_${entry.id}`,
+      strapiId: entry.id,                 // NEW: numeric Strapi id for URLs
+      slug: pick(a, 'slug', 'Slug') || '', // NEW: future-friendly (empty => fallback to strapiId)
       type,
       groupId: appGroupId,
       groupLocation: groupMeta[appGroupId]?.location || '',
@@ -2124,12 +2472,24 @@ function splitPathHint(pathStr) {
 const __uploadCache = new Map();
 
 // Fetch many upload files by name using $in (with a safe fallback syntax)
-async function batchFetchUploadFilesByNames(names) {
+async function batchFetchUploadFilesByNames(names, opts = {}) {
   if (!names.length) return;
   const want = names.filter(n => !__uploadCache.has(n));
   if (!want.length) return;
 
   const CHUNK = 40;
+
+  const totalChunks = Math.ceil(want.length / CHUNK);
+  let doneChunks = 0;
+
+  const report = () => {
+    if (typeof opts.onChunk === 'function') {
+      opts.onChunk({ done: doneChunks, total: totalChunks });
+    }
+  };
+
+  report(); // initial
+
   for (let i = 0; i < want.length; i += CHUNK) {
     const chunk = want.slice(i, i + CHUNK);
 
@@ -2198,7 +2558,11 @@ async function batchFetchUploadFilesByNames(names) {
         dgrpEnd();
       }
 
-    });    
+    });  
+    
+    doneChunks++;
+    report();
+
   }
 }
 
@@ -2232,6 +2596,8 @@ window.gridObject = null;
 
 (async () => {
   try {
+    LOADING.start();
+    LOADING.setPhase('init', 0);
     const loaded = await loadData(DATA_MODE);
     // Use the chosen data source
     objects = loaded.objects;
@@ -2251,6 +2617,8 @@ window.gridObject = null;
     console.log('[data] mode=', DATA_MODE, 'groups=', Object.keys(loaded.groupMeta).length, 'objects=', loaded.objects.length);
     gridObject = new Grid('grid', objects, {});
     window.gridObject = gridObject;
+    LOADING.setPhase('init', 1);
+    LOADING.finishToPrepage();
     // wire header + set initial copy
     window.__wireHeaderToGrid?.();
     window.__dispatchViewChange?.();
@@ -2258,6 +2626,9 @@ window.gridObject = null;
     if (typeof renderDiscoverProjectsFromGroups === 'function') {
       renderDiscoverProjectsFromGroups();
     }
+
+    // NEW: if user loaded /objects/<slug|id> directly, open that detail now
+    handleInitialObjectRoute();
 
   } catch (err) {
     console.error('Failed to load data / init grid:', err);
@@ -2982,12 +3353,12 @@ function initMobileSlideInsToggle() {
     // 3) Bind fade-ins, counters, WaveSurfer (IO attaches to what's in the DOM now)
     window.__galleryIO__?.onOpen?.();
     window.__galleryVideos__?.onOpen?.();
-    window.__galleryImages__?.onOpen?.();
+    //window.__galleryImages__?.onOpen?.();
   
     // 4) Push a history state so browser Back closes the gallery
     try {
       if (!history.state || !history.state.gallery) {
-        history.pushState({ gallery: true, gid: String(gid ?? '') }, '', '#group-gallery');
+        history.pushState({ gallery: true, gid: String(gid ?? '') }, '', '/#group-gallery');
       }
     } catch {}
   
@@ -3024,7 +3395,7 @@ function initMobileSlideInsToggle() {
       pageEl.classList.add('active');
       try {
         if (!history.state || !history.state.research) {
-          history.pushState({ research: true }, '', '#research');
+          history.pushState({ research: true }, '', '/#research');
         }
       } catch {}
       window.__dispatchViewChange?.();
@@ -3077,10 +3448,10 @@ function initMobileSlideInsToggle() {
     // Attach observers and push a gallery history state
     window.__galleryIO__?.onOpen?.();
     window.__galleryVideos__?.onOpen?.();
-    window.__galleryImages__?.onOpen?.();
+    //window.__galleryImages__?.onOpen?.();
     try {
       if (!history.state || !history.state.gallery) {
-        history.pushState({ gallery: true, adhoc: true }, '', '#group-gallery');
+        history.pushState({ gallery: true, adhoc: true }, '', '/#group-gallery');
       }
     } catch {}
 
@@ -3210,7 +3581,7 @@ function initMobileSlideInsToggle() {
     // 3) Re-attach observers (same as openTagsGallery did)
     window.__galleryIO__?.onOpen?.();
     window.__galleryVideos__?.onOpen?.();
-    window.__galleryImages__?.onOpen?.();
+    //window.__galleryImages__?.onOpen?.();
   };
 
   // Allow removing tags directly from the ad-hoc gallery title (X on each tag).
@@ -3243,7 +3614,7 @@ function initMobileSlideInsToggle() {
     // Detach gallery observers / media behaviors
     window.__galleryIO__?.onClose?.();
     window.__galleryVideos__?.onClose?.();
-    window.__galleryImages__?.onClose?.();
+    //window.__galleryImages__?.onClose?.();
   
     // Clear gallery DOM
     const box = groupGalleryEl?.querySelector('.gallery-box');
@@ -3290,7 +3661,7 @@ function initMobileSlideInsToggle() {
         let newHash = location.hash;
         if (newHash === '#group-gallery' || newHash === '#gallery') newHash = '';
   
-        history.replaceState(nextState, '', location.pathname + location.search + newHash);
+        history.replaceState(nextState, '', '/' + location.search + newHash);
       } catch {}
     }
   
@@ -3458,6 +3829,31 @@ function initMobileSlideInsToggle() {
       }
     }    
 
+    // Detail-page hero image: prefer a specific Strapi format.
+    // Keep grid/inline detail thumbnails unchanged (those use obj.image elsewhere).
+    const DETAIL_HERO_IMAGE_FORMAT = 'medium';
+
+    function getDetailHeroImageUrl(obj) {
+      // 1) Prefer resolved upload meta (available when ImagePath was used)
+      const formats = obj?._imageMeta?.formats || null;
+
+      const preferred =
+        formats?.[DETAIL_HERO_IMAGE_FORMAT]?.url ||
+        null;
+
+      if (preferred) return preferred;
+
+      // 2) Fallback order (still from formats if present)
+      const fallback =
+        formats?.small?.url ||
+        formats?.thumbnail?.url ||
+        obj?._imageMeta?.url ||
+        obj?.image || // last resort (often thumbnail today)
+        '';
+
+      return fallback;
+    }
+
     // Render ONLY the primary slot (title or hero media) in the detail view
     function renderDetailPrimary(obj) {
       if (!detailEl || !obj) return;
@@ -3479,16 +3875,19 @@ function initMobileSlideInsToggle() {
       // Replace the slot content according to object type
       switch (obj.type) {
         case 'image': {
-          slot.innerHTML = obj.image
+          const heroUrl = getDetailHeroImageUrl(obj);
+        
+          slot.innerHTML = heroUrl
             ? `<figure class="detail-media image">
-                 <img class="hero-media" src="${esc(obj.image)}" alt="${esc(obj.text || 'Image')}">
+                 <img class="hero-media" src="${esc(heroUrl)}" alt="${esc(obj.text || 'Image')}">
                </figure>`
             : `<h1>${esc(obj.text || 'Untitled image')}</h1>`;
+        
           const fig = slot.querySelector('figure.detail-media.image');
           const img = fig?.querySelector('img.hero-media');
           if (fig && img) setMediaOrientation(fig, 'image', img);
           break;
-        }
+        }        
 
         case 'video': {
           slot.innerHTML = obj.video
@@ -4257,7 +4656,9 @@ function initMobileSlideInsToggle() {
       });
     })();
 
-    window.openObjectDetail = function ({ objectId, from, gid } = {}) {
+    window.openObjectDetail = function ({ objectId, from, gid, historyMode, detailStacked } = {}) {
+      console.log('[detail] openObjectDetail (NEW ROUTER VERSION)', { objectId, from, gid });
+
       if (!detailEl) return;
 
       // pause any grid waves so we don't hear two audios at once
@@ -4334,15 +4735,34 @@ function initMobileSlideInsToggle() {
       // Notify the header updater
       window.__dispatchViewChange?.();
 
-      // Push a state so browser Back closes detail
+      // Push/replace a state so browser Back closes detail, and URL is /objects/<slug|id>
       try {
-        if (!history.state || !history.state.detail) {
-          history.pushState(
-            { detail: true, from: String(from || ''), gid: String(gid || ''), objectId: String(objectId || '') },
-            '',
-            '#detail'
-          );
-        }
+        const detailPath = buildObjectDetailPath(obj);
+        const current = history.state || {};
+        const alreadyDetailState = !!current.detail;
+
+        // default behavior:
+        // - first open from grid/gallery => push (so back returns)
+        // - switching object while already in detail => replace (no history spam)
+        const mode = historyMode || (alreadyDetailState ? 'replace' : 'push');
+
+        // whether there is an in-app back entry behind this detail
+        const stacked =
+          (typeof detailStacked === 'boolean')
+            ? detailStacked
+            : (mode === 'push' ? true : (current.detailStacked ?? false));
+
+        const nextState = {
+          ...current,
+          detail: true,
+          detailStacked: stacked,
+          from: String(from || ''),
+          gid: String((gid ?? obj.groupId ?? '') || ''),
+          objectId: String(obj.id || objectId || ''),
+        };
+
+        if (mode === 'push') history.pushState(nextState, '', detailPath);
+        else history.replaceState(nextState, '', detailPath);
       } catch {}
 
       refreshSlideInsVisibility();
@@ -4435,21 +4855,51 @@ function initMobileSlideInsToggle() {
       e.preventDefault();
       e.stopImmediatePropagation();
 
-      if (history.state?.detail) {
+      if (history.state?.detail && history.state.detailStacked) {
+        // Opened from inside the app (grid/gallery) => normal back
         history.back();
       } else {
+        // Direct URL entry or "replace" detail => close to grid and move URL to home
         window.closeObjectDetail();
+        if (isObjectDetailPath(location.pathname)) {
+          try { history.pushState({ view: VIEW.HOME }, '', '/#home'); } catch {}
+        }
       }
+      
     }, true); // capture, so we run before the gallery back handler
 
-    // Popstate: close detail if we navigated away from its state
+    // Popstate: close detail when leaving; open the right object when entering
     window.addEventListener('popstate', () => {
       const wasInDetail = isInDetailView();
-      const stillInDetail =
-        !!history.state?.detail || location.hash === '#detail';
+      const isDetailState =
+        !!history.state?.detail || isObjectDetailPath(location.pathname);
 
-      if (wasInDetail && !stillInDetail) {
+      if (wasInDetail && !isDetailState) {
         window.closeObjectDetail({ viaPopstate: true });
+        return;
+      }
+
+      // Navigated INTO a detail state (forward/back) -> open the right object
+      if (!wasInDetail && isDetailState) {
+        const allObjects = (window.gridObject?.objects || window.objects || []);
+        const stateObjId = history.state?.objectId;
+        let targetId = stateObjId;
+
+        if (!targetId) {
+          const token = parseObjectTokenFromPathname(location.pathname);
+          const obj = token ? resolveObjectByToken(token, allObjects) : null;
+          targetId = obj?.id;
+        }
+
+        if (targetId && typeof window.openObjectDetail === 'function') {
+          window.openObjectDetail({
+            objectId: targetId,
+            from: history.state?.from || 'history',
+            gid: history.state?.gid || null,
+            historyMode: 'replace',
+            detailStacked: history.state?.detailStacked ?? true,
+          });
+        }
       }
     });
   })();
@@ -5018,7 +5468,9 @@ function initMobileSlideInsToggle() {
       vid.setAttribute('playsinline', '');
       vid.setAttribute('muted', '');
       vid.setAttribute('loop', '');
-      vid.src = o.video || o.src || o.url || '';
+      vid.dataset.src = o.video || o.src || o.url || '';
+      vid.preload = 'none';
+      vid.poster = window.getVideoPlaceholderPoster?.() || '';
       vid.style.width  = `${randItemWidth()}px`;   // ← random width
       vid.style.height = 'auto';                   // ← auto height
       vid.style.display = 'block';
@@ -5465,17 +5917,27 @@ window.renderAdhocGallery = function(objs = []) {
     v.addEventListener('mouseleave', () => { v.muted = true;  }, { passive: true });
   }
 
-  function onIO(entries) {
-    entries.forEach(en => {
+  function onIO(entries){
+    for(const en of entries){
       const v = en.target;
-      if (en.isIntersecting) {
-        v.muted = true;                // ensure autoplay is allowed
-        v.play().catch(() => {});      // ignore user-gesture errors
+      if(en.isIntersecting){
+  
+        // ✅ Lazy-load: only set src when the video becomes visible
+        if (v.dataset.loaded !== '1' && v.dataset.src) {
+          v.src = v.dataset.src;
+          v.preload = 'metadata';
+          v.dataset.loaded = '1';
+          try { v.load(); } catch {}
+        }
+  
+        // existing behavior
+        v.play().catch(()=>{});
       } else {
         v.pause();
+        v.currentTime = 0;
       }
-    });
-  }
+    }
+  }  
 
   window.__galleryVideos__ = {
     onOpen() {
@@ -5496,132 +5958,13 @@ window.renderAdhocGallery = function(objs = []) {
   };
 })();
 
-// === Gallery images: Ken Burns (randomized pan+zoom, only while visible) ===
-(() => {
-  const gg = document.getElementById('group-gallery');
-  if (!gg) return;
-
-  // Pick one of several gentle pan directions + zoom combo
-  function randomKBVars() {
-    const dirs = [
-      { x0: '-4%', y0: '-3%', x1: ' 4%', y1: ' 3%' }, // TL -> BR
-      { x0: ' 4%', y0: ' 3%', x1: '-4%', y1: '-3%' }, // BR -> TL
-      { x0: ' 0%', y0: '-4%', x1: ' 0%', y1: ' 4%' }, // T -> B
-      { x0: ' 0%', y0: ' 4%', x1: ' 0%', y1: '-4%' }, // B -> T
-      { x0: '-4%', y0: ' 0%', x1: ' 4%', y1: ' 0%' }, // L -> R
-      { x0: ' 4%', y0: ' 0%', x1: '-4%', y1: ' 0%' }, // R -> L
-      { x0: '-3%', y0: ' 3%', x1: ' 3%', y1: '-3%' }, // BL <-> TR
-    ];
-    const d = dirs[Math.floor(Math.random() * dirs.length)];
-    const s0 = 1.06 + Math.random() * 0.02; // 1.06–1.08
-    const s1 = s0 + 0.04;                    // +0.04 zoom
-    const base = 11 + Math.random() * 3;           // was ~11–14s
-    return { ...d, s0, s1, duration: (base / 2).toFixed(2) + 's' }; // now ~5.5–7s
-  }
-
-  // Ensure each image has a cropping viewport (.kb-wrap) and mark img as .kb-img
-  function ensureKB(itemOrImg) {
-    let item = itemOrImg;
-    let img = itemOrImg;
-
-    // If a DIV.item.image contains an IMG
-    if (item.tagName !== 'IMG') {
-      img = item.querySelector('img');
-      if (!img) return null;
-    }
-
-    // If already wrapped, ensure wrapper has the right classes/data
-    const existing = img.closest('.kb-wrap');
-    if (existing) {
-      existing.classList.add('item', 'image');     // make wrapper the flex item
-      if (img.dataset.oid) existing.dataset.oid = img.dataset.oid; // move data to wrapper
-      img.classList.add('kb-img');                 // keep animation class on IMG
-      img.classList.remove('item', 'image');       // avoid duplicate .item on child
-      return img;
-    }
-
-    // Insert a .kb-wrap right above the img; make wrapper the flex item
-    const wrap = document.createElement('div');
-    wrap.className = 'kb-wrap';
-    img.parentNode.insertBefore(wrap, img);
-    wrap.appendChild(img);
-
-    // make the WRAPPER the gallery item
-    wrap.classList.add('item', 'image');
-
-    // move data attributes needed by delegation (e.g., data-oid) to wrapper
-    if (img.dataset.oid) wrap.dataset.oid = img.dataset.oid;
-
-    // the IMG keeps only the animation class (and any intrinsic classes), not .item
-    img.classList.add('kb-img');
-    img.classList.remove('item', 'image');
-
-    return img;
-
-  }
-
-  // Toggle animation only when visible
-  let io = null;
-  let bound = false;
-
-  function bindAll() {
-    if (bound) return;
-    bound = true;
-
-    const root = gg.querySelector('.gallery-box') || gg;
-    io = new IntersectionObserver((entries) => {
-      entries.forEach(en => {
-        // We observe the ITEM (.item.image), but animate the IMG (.kb-img)
-        const item = en.target;
-        const img  = item.tagName === 'IMG' ? item : item.querySelector('img');
-        if (!img) return;
-
-        const kbImg = ensureKB(item); // wrap if needed
-        if (!kbImg) return;
-
-        if (en.isIntersecting) {
-          // Randomize per-image variables only once
-          if (!kbImg.__kbInit) {
-            const vars = randomKBVars();
-            const wrap = kbImg.closest('.kb-wrap');
-            wrap.style.setProperty('--kb-x0', vars.x0);
-            wrap.style.setProperty('--kb-y0', vars.y0);
-            wrap.style.setProperty('--kb-x1', vars.x1);
-            wrap.style.setProperty('--kb-y1', vars.y1);
-            wrap.style.setProperty('--kb-s0', String(vars.s0));
-            wrap.style.setProperty('--kb-s1', String(vars.s1));
-            wrap.style.setProperty('--kb-duration', vars.duration);
-
-            // PRE-SEED so hover doesn't jump
-            kbImg.style.transform = `translate(${vars.x0}, ${vars.y0}) scale(${vars.s0})`;
-
-            kbImg.__kbInit = true;
-          }
-        }
-      });
-    }, { root, threshold: 0.35 });
-
-    // Observe all current gallery image items (supports either IMG.item.image or DIV.item.image)
-    const items = gg.querySelectorAll('.gallery-box .column .item.image, .gallery-box .column img.item');
-    items.forEach(el => io.observe(el));
-  }
-
-  window.__galleryImages__ = {
-    onOpen() {
-      bindAll();
-    },
-    onClose() {
-      if (io) io.disconnect();
-      gg.querySelectorAll('.kb-img.kb-anim').forEach(img => img.classList.remove('kb-anim'));
-    }
-  };
-})();
-
 // === Grid images: Ken Burns (only while visible; works in clustered/ungrouped) ===
 (() => {
-  // Config: turn this off if you only want Ken Burns in the gallery
-  const ENABLE_GRID_KEN_BURNS = false;
-  if (!ENABLE_GRID_KEN_BURNS) return;
+  // Grid media loader: lazy-load images when visible (Ken Burns is optional)
+  const ENABLE_GRID_MEDIA_IO = true;
+  const ENABLE_GRID_KEN_BURNS = false; // keep false unless you want the animation
+
+  if (!ENABLE_GRID_MEDIA_IO) return;
 
   const grid = document.getElementById('grid');
   if (!grid) return;
@@ -5653,32 +5996,68 @@ window.renderAdhocGallery = function(objs = []) {
     return img;
   }
 
+  // Lazy-load <img data-src="..."> only when it becomes visible.
+  // (Grid tiles now set data-src and rely on this to avoid an eager request storm.)
+  function ensureLazyLoad(img) {
+    if (!img) return;
+    const url = img.dataset && img.dataset.src;
+    if (!url) return;
+    if (img.dataset.loaded === '1') return;
+  
+    img.decoding = 'async';
+    img.loading = 'lazy';
+    img.src = url;
+    img.dataset.loaded = '1';
+  
+    window.DEBUG_MEDIA && console.debug('[grid:lazyload]', url);
+  }  
+
   const io = new IntersectionObserver((entries) => {
     entries.forEach(en => {
       const img = en.target;
+  
+      // ✅ Always lazy-load when visible
+      if (en.isIntersecting) {
+        ensureLazyLoad(img);
+      }
+  
+      // Keep your KB logic (only useful once the image has a src / is loading)
       const kbImg = ensureKB(img);
       if (!kbImg) return;
-
+  
       if (en.isIntersecting) {
         if (!kbImg.__kbInit) {
           const v = randomKBVars();
           const wrap = kbImg.closest('.kb-wrap');
-          wrap.style.setProperty('--kb-x0', v.x0);
-          wrap.style.setProperty('--kb-y0', v.y0);
-          wrap.style.setProperty('--kb-x1', v.x1);
-          wrap.style.setProperty('--kb-y1', v.y1);
-          wrap.style.setProperty('--kb-s0', String(v.s0));
-          wrap.style.setProperty('--kb-s1', String(v.s1));
-          wrap.style.setProperty('--kb-duration', v.duration);
-
+          if (wrap) {
+            wrap.style.setProperty('--kb-x0', v.x0);
+            wrap.style.setProperty('--kb-y0', v.y0);
+            wrap.style.setProperty('--kb-x1', v.x1);
+            wrap.style.setProperty('--kb-y1', v.y1);
+            wrap.style.setProperty('--kb-s0', String(v.s0));
+            wrap.style.setProperty('--kb-s1', String(v.s1));
+            wrap.style.setProperty('--kb-duration', v.duration);
+          }
+  
           // PRE-SEED so hover doesn't jump
           kbImg.style.transform = `translate(${v.x0}, ${v.y0}) scale(${v.s0})`;
-
+  
           kbImg.__kbInit = true;
+        }
+  
+        // ✅ We only need to observe until it becomes visible once
+        if (!MEDIA_IO.unloadOnExit) {
+          io.unobserve(img);
+        }
+      } else if (MEDIA_IO.unloadOnExit) {
+        // Optional: free memory/network (only if you enable unloadOnExit)
+        if (img.dataset && img.dataset.loaded === '1') {
+          img.removeAttribute('src');
+          img.dataset.loaded = '0';
         }
       }
     });
-  }, { root: null, threshold: 0.35 });
+  }, { root: MEDIA_IO.root, threshold: MEDIA_IO.threshold, rootMargin: MEDIA_IO.rootMargin });  
 
   function observeAll() {
     // Images inside grid objects marked as image
@@ -6343,10 +6722,9 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   if (SHOULD_USE_STRAPI) {
     await seedThemesFromStrapi();
-    await seedAuthorsFromStrapi();
+    // NOTE: authors are loaded + rendered lazily when the Team subpage opens.
   }
-  renderThemesUI();
-  renderAuthorsSubpage();
+  renderThemesUI();  
 
   // Remove active underline when the Themes section is closed
   const themesSection = document.querySelector('#discover-connections #themes-section')?.closest('.content-section');
@@ -7791,17 +8169,19 @@ async function initReferencesSubpage(root) {
 }
 
 function initTeamSubpage(root) {
-  // If authors already rendered, this is cheap; if not, it renders now.
-  renderAuthorsSubpage?.();
-
-  // Wire accordion AFTER we are visible
-  requestAnimationFrame(() => {
-    initSlideInAccordion('#subpage-team', {
-      mode: 'accordion',
-      dynamicHeight: false,
-      scrollOnOpen: true
+  // Lazy-load + render authors only when the Team subpage is opened.
+  // IMPORTANT: init the accordion only AFTER the author markup exists.
+  ensureAuthorsRendered()
+    .catch(e => console.warn('[team] ensureAuthorsRendered failed:', e))
+    .finally(() => {
+      requestAnimationFrame(() => {
+        initSlideInAccordion('#subpage-team', {
+          mode: 'accordion',
+          dynamicHeight: false,
+          scrollOnOpen: true
+        });
+      });
     });
-  });
 }
 
 function hideAllTextSubpages() {
@@ -8301,9 +8681,9 @@ function nearestScroller(from) {
 function initScrollUpButtons() {
   document.querySelectorAll('.scroll-up').forEach(btn => {
     // 1) Inline the icon
-    const src = btn.getAttribute('data-icon-src') || 'img/icons/arrow_counter_10x12px.svg';
-    const holder = btn.querySelector('.icon');
-    if (holder) inlineSvgInto(holder, src);
+    //const src = btn.getAttribute('data-icon-src') || 'img/icons/arrow_counter_10x12px.svg';
+    //const holder = btn.querySelector('.icon');
+    //if (holder) inlineSvgInto(holder, src);
 
     // 2) Click & keyboard to scroll to top of the nearest scroller
     const goUp = () => {
