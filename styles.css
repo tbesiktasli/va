@@ -65,6 +65,8 @@
   --prepage-bg-size: 80%;
   --prepage-bg-opacity: 0.05;                      /* tweak to taste */
   --detail-description-max-height: 6rem; /* max height of inline detail text */
+  --prepage-side-w: 220px;      /* smaller side “padding” columns */
+  --prepage-main-max: 900px;    /* wider middle content */  
 }
 
 :root[data-theme="dark"] {
@@ -165,6 +167,112 @@
     gap: 12px;
     margin-top: -4vh; /* slight optical centering */
   }
+
+/* ===========================================================
+   Prepage (intro) expanded layout
+   - scrollable middle area
+   - symmetric left/right spacing with sticky side content
+   =========================================================== */
+
+   #prepage .prepage-center {
+    /* middle section must be scrollable if content grows */
+    flex: 1 1 auto;
+    min-height: 0;                 /* critical for overflow to work in flex parent */
+    width: 100%;
+  
+    /* keep top & bottom fixed; scroll only this area */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable both-edges;
+  
+    /* the old optical centering becomes risky with scroll; remove it here */
+    margin-top: 0;
+  }
+  
+  /* 3-column grid: [left spacer] [main] [right sticky] */
+  #prepage .prepage-center-grid {
+    display: grid;
+    grid-template-columns: var(--prepage-side-w) minmax(0, var(--prepage-main-max)) var(--prepage-side-w);
+    justify-content: center;
+    column-gap: 28px;
+    row-gap: 18px;
+  
+    /* breathing room when scrolling */
+    padding: 8px 0 24px;
+    box-sizing: border-box;
+  }
+  
+  /* headline spans all 3 columns so it stays centered visually */
+  #prepage .prepage-headline {
+    grid-column: 1 / -1;
+    text-align: center;
+  }
+  
+  /* main content sits in the middle column */
+  #prepage .prepage-main {
+    grid-column: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  
+  /* Align subline with the top of the sticky side area (same grid row) */
+  #prepage .prepage-subline {
+    margin-top: 0;     /* override the old +10px; spacing now comes from grid row-gap */
+  }
+  
+  /* NEW paragraph under subline (smaller “normal text”) */
+  #prepage .prepage-paragraph {
+    margin-top: 14px;
+    max-width: 62ch;
+    font-size: 1.05em;     /* smaller than subline, still readable */
+    line-height: 1.7;
+    font-weight: 300;
+    opacity: 0.95;
+  }
+  
+  /* right side sticky content lives in the right “padding” column */
+  #prepage .prepage-side {
+    grid-column: 3;
+    align-self: start;
+  
+    position: sticky;
+    top: 0;                /* stick within the scrollable .prepage-center */
+    text-align: left;
+  }
+  
+  /* optional simple “card” styling for side content */
+  #prepage .prepage-side-card {
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    padding: 0; /* remove “card” feel entirely */
+  }  
+  
+  #prepage .prepage-side-title {
+    font-size: 0.5em;
+    margin: 0 0 10px 0;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  
+  #prepage .prepage-side-text {
+    margin: 0;
+    font-size: 0.5em;
+    line-height: 1.6;
+    color: var(--main-light-font-color);
+  }  
+
+  #prepage .prepage-side-heading {
+    font-size: 0.7em;
+    margin: 0 0 8px 0;   /* space between heading and the paragraph/lines below */
+  }
+  
+  #prepage .prepage-side-lines {
+    font-size: 0.7em;
+    margin: 0 0 18px 0;  /* space after each block (between sections) */
+  }  
 
   /* Use ONLY the font sizes from gallery title box */
   .prepage-headline {
@@ -3631,6 +3739,32 @@ body.menu-open .header-right .header-close { display: inline-grid; }
     .theme-back-button {
       display: inline-flex;
       align-items: center;
+    }
+
+    /* Prepage expanded layout: stack to one column on mobile */
+    #prepage .prepage-center-grid {
+      grid-template-columns: 1fr;
+      row-gap: 16px;
+      column-gap: 0;
+    }
+
+    #prepage .prepage-headline,
+    #prepage .prepage-main,
+    #prepage .prepage-side {
+      grid-column: 1;
+    }
+
+    /* sticky becomes normal flow below on mobile */
+    #prepage .prepage-side {
+      position: static;
+      text-align: center;
+      padding-right: 8px;
+      margin-top: 18px;
+    }
+
+    #prepage .prepage-side-card {
+      margin: 0 auto;
+      max-width: 520px;
     }
   
   }
