@@ -239,6 +239,53 @@
     .prepage-subline  { font-size: 1.3em; }
   }
 
+  /* ================= Loading Screen (prepage copy) ================= */
+
+  /* Keep loading screen above the prepage overlay */
+  .prepage.preload {
+    z-index: 10001;
+  }
+
+  .preload-center {
+    gap: 16px;
+  }
+
+  .preload-bar {
+    width: min(560px, 70vw);
+    height: 3px; /* thin line */
+    border: 0;
+    border-radius: 999px;
+    overflow: hidden;
+  
+    /* unprogressed track */
+    background: var(--main-light-outline-color);
+  }
+  
+  .preload-bar-fill {
+    height: 100%;
+    width: 0%;
+  
+    /* progressed part (keep your current main color) */
+    background: var(--main-font-color);
+  
+    transition: width 120ms linear;
+  }  
+
+  .preload-percent {
+    font-family: "Noto Serif Display", serif;
+    font-optical-sizing: auto;
+    font-weight: 400;
+    font-style: italic;
+    font-variation-settings: "wdth" 100;
+  
+    font-size: 3.6em;
+    line-height: 1;
+  }  
+
+  @media (max-width: 700px) {
+    .preload-percent { font-size: 2.6em; }
+  }
+
   .header-center, h1, h2, h3, object, .wide-content .gallery-box .column .item.text, .vertical-content .topics {
     font-family: "Noto Serif Display", serif;
     font-optical-sizing: auto;
@@ -2691,7 +2738,7 @@ ul.tag-group-switch {
 }
 
 /* === Ken Burns (pan + subtle zoom) === */
-.kb-wrap { position: relative; overflow: hidden; }
+.kb-wrap { position: relative; overflow: hidden; width: 100%; height: 100%; }
 .kb-img  { display:block; width:100%; height:100%; object-fit:cover; transform-origin:center; will-change: transform; }
 
 /* Animate only on hover (or focus for keyboard users) */
@@ -2699,6 +2746,12 @@ ul.tag-group-switch {
 .kb-wrap:focus-within .kb-img {
   animation: kb-pan var(--kb-duration, 12s) linear infinite alternate;
 }
+
+/* Grid image tiles: render via <img> (not background-image) so we can lazy-load via IO */
+.object.image { overflow: hidden; background-color: transparent; }
+.object.image img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.object.image img.detail-hide { opacity: 0; }
+.object.media-error { outline: 1px solid rgba(200,0,0,0.25); }
 
 @keyframes kb-pan {
   from {
@@ -3135,11 +3188,16 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   outline-offset: 4px;
 }
 
-.scroll-up .icon svg {
-  width: 18px;                   /* tweak to taste */
+.scroll-up .icon {
+  width: 18px;
   height: 22px;
   display: block;
-  transform: rotate(-90deg);     /* arrow points UP */
+
+  background: currentColor;
+  -webkit-mask: var(--icon-slidein-closed) no-repeat center / contain;
+          mask: var(--icon-slidein-closed) no-repeat center / contain;
+
+  transform: rotate(-90deg); /* arrow points UP */
 }
 
 .scroll-up .label {
