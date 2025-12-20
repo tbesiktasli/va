@@ -703,6 +703,25 @@ function ensureWaveAudio(ws, src, meta = {}) {
 
 window.ensureWaveAudio ??= ensureWaveAudio;
 
+function closePrepage(afterFn) {
+  const prepage = document.getElementById('prepage');
+  if (!prepage) return;
+
+  // start fade
+  prepage.classList.add('is-fading');
+
+  const finish = () => {
+    prepage.classList.add('is-hidden');
+    document.body.classList.remove('has-prepage');
+    if (typeof afterFn === 'function') afterFn();
+  };
+
+  const to = setTimeout(finish, 450);
+  prepage.addEventListener('transitionend', () => {
+    clearTimeout(to);
+    finish();
+  }, { once: true });
+}
 
 // ================= Prepage / Splash Screen =================
 function initPrepage() {
@@ -710,31 +729,6 @@ function initPrepage() {
   if (!prepage) return;
 
   document.body.classList.add('has-prepage');
-
-  // Shared fade-out helper for Explore + Learn more
-  const closePrepage = (afterFn) => {
-    // start fade
-    prepage.classList.add('is-fading');
-
-    const finish = () => {
-      prepage.classList.add('is-hidden');
-      document.body.classList.remove('has-prepage');
-      if (typeof afterFn === 'function') {
-        afterFn();
-      }
-    };
-
-    // remove after transition ends (with fallback)
-    const to = setTimeout(finish, 450);
-    prepage.addEventListener(
-      'transitionend',
-      () => {
-        clearTimeout(to);
-        finish();
-      },
-      { once: true }
-    );
-  };
 
   const exploreBtn = document.getElementById('prepage-explore');
   if (exploreBtn) {
@@ -774,6 +768,21 @@ function initPrepage() {
         }
       });
     });
+  }
+
+  // Auto-skip the intro when landing directly on an object deep link (/objects/<slug|id>)
+  if (isObjectDetailPath(location.pathname)) {
+    // Mirror the "Explore" behavior so users see progress while Strapi data loads
+    if (typeof LOADING?.show === 'function') {
+      LOADING.show();
+    }
+    if (typeof LOADING?.onComplete === 'function') {
+      LOADING.onComplete(() => {
+        if (typeof LOADING?.hide === 'function') LOADING.hide();
+      });
+    }
+
+    closePrepage();
   }
 }
 
@@ -2709,6 +2718,17 @@ window.gridObject = null;
   try {
     LOADING.start();
     LOADING.setPhase('init', 0);
+
+    // Deep link (/objects/...) should skip intro and show preload until data/grid init completes.
+    if (typeof isObjectDetailPath === 'function' && isObjectDetailPath(location.pathname)) {
+      // Close intro immediately
+      closePrepage();
+
+      // Show preload and auto-hide when the loader completes
+      LOADING.show?.();
+      LOADING.onComplete?.(() => LOADING.hide?.());
+    }
+
     const loaded = await loadData(DATA_MODE);
     // Use the chosen data source
     objects = loaded.objects;
