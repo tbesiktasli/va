@@ -257,6 +257,34 @@ const LOADING = (() => {
 })();
 // ===============================================================================
 
+function getAppBase() {
+  // Prefer the <base> tag (it’s the source of truth for this app)
+  const href = document.querySelector('base')?.getAttribute('href')
+    || window.__APP_BASE__
+    || '/';
+
+  // Normalize to "/something/" form
+  let base = href;
+  // If someone sets a full URL in base href, reduce to pathname
+  try { base = new URL(base, location.origin).pathname; } catch {}
+  if (!base.startsWith('/')) base = '/' + base;
+  if (!base.endsWith('/')) base += '/';
+  return base;
+}
+
+function appUrl(pathOrHash = '') {
+  const base = getAppBase(); // "/va/" or "/"
+  if (!pathOrHash) return base + location.search;
+
+  // Hash-only navigation: appUrl('#home') => "/va/?...#home"
+  if (pathOrHash.startsWith('#')) return base + location.search + pathOrHash;
+
+  // Path navigation: appUrl('objects/123') => "/va/objects/123"
+  let p = pathOrHash;
+  if (p.startsWith('/')) p = p.slice(1);
+  return base + p;
+}
+
 /**
  * Push a new logical view into browser history.
  * `payload` can carry extra info (e.g. sectionId, objectId, gid).
@@ -268,9 +296,8 @@ function pushViewState(view, payload = {}, hash) {
 
     // Very simple dedupe by view type; you can refine later if needed
     if (!current || current.view !== view) {
-      // Always anchor "normal" views to site root so we don't keep /objects/... around
-      const base = '/' + location.search;
-      const url = hash ? (base + hash) : base;
+      // Always anchor "normal" views to app base so we don't keep /objects/... around
+      const url = hash ? appUrl(hash) : appUrl('');
       history.pushState(next, '', url);
     }
   } catch (err) {
@@ -279,7 +306,7 @@ function pushViewState(view, payload = {}, hash) {
 }
 
 // === URL routing for object details (/objects/<slug|id>) ===
-const OBJECT_DETAIL_PREFIX = '/objects/';
+const OBJECT_DETAIL_PREFIX = appUrl('objects/'); // becomes "/objects/" or "/va/objects/"
 
 function getStrapiNumericIdFromAppObject(obj) {
   if (!obj) return null;
@@ -306,7 +333,7 @@ function getObjectUrlToken(obj) {
 function buildObjectDetailPath(obj) {
   const token = getObjectUrlToken(obj);
   // If for some reason we can’t build a token, fall back to home
-  if (!token) return '/#home';
+  if (!token) return appUrl('#home');
   return `${OBJECT_DETAIL_PREFIX}${encodeURIComponent(token)}`;
 }
 
@@ -3608,7 +3635,7 @@ function initMobileSlideInsToggle() {
     // 4) Push a history state so browser Back closes the gallery
     try {
       if (!history.state || !history.state.gallery) {
-        history.pushState({ gallery: true, gid: String(gid ?? '') }, '', '/#group-gallery');
+        history.pushState({ gallery: true, gid: String(gid ?? '') }, '', appUrl('#group-gallery'));
       }
     } catch {}
   
@@ -3645,7 +3672,7 @@ function initMobileSlideInsToggle() {
       pageEl.classList.add('active');
       try {
         if (!history.state || !history.state.research) {
-          history.pushState({ research: true }, '', '/#research');
+          history.pushState({ research: true }, '', appUrl('#research'));
         }
       } catch {}
       window.__dispatchViewChange?.();
@@ -3701,7 +3728,7 @@ function initMobileSlideInsToggle() {
     //window.__galleryImages__?.onOpen?.();
     try {
       if (!history.state || !history.state.gallery) {
-        history.pushState({ gallery: true, adhoc: true }, '', '/#group-gallery');
+        history.pushState({ gallery: true, adhoc: true }, '', appUrl('#group-gallery'));
       }
     } catch {}
 
@@ -3911,7 +3938,7 @@ function initMobileSlideInsToggle() {
         let newHash = location.hash;
         if (newHash === '#group-gallery' || newHash === '#gallery') newHash = '';
   
-        history.replaceState(nextState, '', '/' + location.search + newHash);
+        history.replaceState(nextState, '', appUrl(newHash || ''));
       } catch {}
     }
   
@@ -5113,7 +5140,7 @@ function initMobileSlideInsToggle() {
         // Direct URL entry or "replace" detail => close to grid and move URL to home
         window.closeObjectDetail();
         if (isObjectDetailPath(location.pathname)) {
-          try { history.pushState({ view: VIEW.HOME }, '', '/#home'); } catch {}
+          try { history.pushState({ view: VIEW.HOME }, '', appUrl('#home')); } catch {}
         }
       }
       
