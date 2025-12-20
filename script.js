@@ -38,11 +38,16 @@ const VIEW = {
 };
 
 // ================= Loading Screen (progress -> fade to prepage) =================
+// ================= Loading Screen (background progress; show only on Explore) =================
 const LOADING = (() => {
   const weights = { groups: 0.15, objects: 0.45, media: 0.25, init: 0.15 };
   const phase = { groups: 0, objects: 0, media: 0, init: 0 };
 
   let ui = null;
+
+  // NEW: completion tracking + callbacks (so Explore can wait for "done")
+  let completed = false;
+  const doneListeners = new Set();
 
   const clamp01 = (x) => Math.max(0, Math.min(1, Number(x) || 0));
 
@@ -106,6 +111,8 @@ const LOADING = (() => {
 
         const finish = () => {
           root.classList.add('is-hidden');
+          // important: allow future show() calls
+          root.classList.remove('is-fading');
           after?.();
         };
 
@@ -131,9 +138,87 @@ const LOADING = (() => {
     return Math.max(0, Math.min(100, t * 100));
   }
 
+  function isPreloadVisible() {
+    const root = document.getElementById('preload');
+    return !!root && !root.classList.contains('is-hidden');
+  }
+
+  function show() {
+    const root = document.getElementById('preload');
+    if (!root) return;
+    root.classList.remove('is-hidden');
+    root.classList.remove('is-fading');
+    document.body.classList.add('has-preload');
+  }
+
+  function hide(after) {
+    ensureUI().fadeOut(() => {
+      document.body.classList.remove('has-preload');
+      after?.();
+    });
+  }
+
+  function onComplete(fn) {
+    if (typeof fn !== 'function') return () => {};
+    if (completed) {
+      queueMicrotask(fn);
+      return () => {};
+    }
+    doneListeners.add(fn);
+    return () => doneListeners.delete(fn);
+  }
+
+  function flushDone() {
+    doneListeners.forEach(fn => {
+      try { fn(); } catch (err) { console.warn('[loading] onComplete handler failed', err); }
+    });
+    doneListeners.clear();
+  }
+
+  // If the preload UI is currently visible, ensure it visually reaches 100% before firing onComplete.
+  function waitForVisual100ThenFlush() {
+    if (!isPreloadVisible()) {
+      flushDone();
+      return;
+    }
+
+    const fill = document.getElementById('preload-bar-fill');
+    const start = performance.now();
+    const maxMs = 1400;
+
+    const check = () => {
+      const w = parseFloat(fill?.style?.width || '0');
+      if (w >= 99.5) {
+        flushDone();
+        return;
+      }
+      if ((performance.now() - start) > maxMs) {
+        // guarantee a clean finish even if smoothing would take longer
+        ensureUI().hardSet(100);
+        flushDone();
+        return;
+      }
+      requestAnimationFrame(check);
+    };
+
+    requestAnimationFrame(check);
+  }
+
+  function markComplete() {
+    if (completed) return;
+    completed = true;
+
+    const u = ensureUI();
+    u.setTarget(100);
+
+    waitForVisual100ThenFlush();
+  }
+
   return {
     start() {
-      // reset phases
+      // reset phases + completion
+      completed = false;
+      doneListeners.clear();
       phase.groups = phase.objects = phase.media = phase.init = 0;
       ensureUI().hardSet(0);
     },
@@ -142,7 +227,6 @@ const LOADING = (() => {
       phase[name] = clamp01(frac01);
       ensureUI().setTarget(totalPercent());
     },
-    // Use Strapi pagination meta if present; otherwise do a “soft” ramp that still feels good.
     setPhaseFromPage(name, info) {
       const page = Number(info?.page) || 1;
       const pageCount = Number(info?.pageCount) || 0;
@@ -154,11 +238,20 @@ const LOADING = (() => {
         this.setPhase(name, Math.min(0.9, page / (page + 2)));
       }
     },
+
+    // NEW API used by the prepage Explore button
+    isComplete() { return completed; },
+    onComplete,
+    show,
+    hide,
+    markComplete,
+
+    // Legacy name kept so nothing else breaks if it still exists somewhere.
+    // (Not used anymore in the new flow.)
     finishToPrepage() {
-      const u = ensureUI();
-      u.setTarget(100);
-      // small delay so UI reaches 100 visually before fade
-      setTimeout(() => u.fadeOut(), 180);
+      // old behavior: mark complete and fade out if visible
+      this.onComplete(() => this.hide());
+      markComplete();
     }
   };
 })();
@@ -647,7 +740,25 @@ function initPrepage() {
   if (exploreBtn) {
     exploreBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      // Explore: just close prepage and reveal the home grid behind it
+    
+      // If loading is already finished, skip preload entirely.
+      if (typeof LOADING?.isComplete === 'function' && LOADING.isComplete()) {
+        closePrepage();
+        return;
+      }
+    
+      // Otherwise: show the loading screen, keep loading in the background,
+      // and only hide it once we truly completed (visually reaches 100%).
+      if (typeof LOADING?.show === 'function') {
+        LOADING.show();
+      }
+      if (typeof LOADING?.onComplete === 'function') {
+        LOADING.onComplete(() => {
+          if (typeof LOADING?.hide === 'function') LOADING.hide();
+        });
+      }
+    
+      // Fade out the prepage behind the preload overlay
       closePrepage();
     });
   }
@@ -2618,7 +2729,7 @@ window.gridObject = null;
     gridObject = new Grid('grid', objects, {});
     window.gridObject = gridObject;
     LOADING.setPhase('init', 1);
-    LOADING.finishToPrepage();
+    LOADING.markComplete();
     // wire header + set initial copy
     window.__wireHeaderToGrid?.();
     window.__dispatchViewChange?.();
