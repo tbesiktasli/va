@@ -64,6 +64,16 @@
   --prepage-bg-image: url("img/prescreen-bg.svg"); /* adjust path if needed */
   --prepage-bg-size: 80%;
   --prepage-bg-opacity: 0.05;                      /* tweak to taste */
+  /* Prepage background motion (option 1: subtle parallax) */
+  --prepage-bg-pos-x: 0px;
+  --prepage-bg-pos-y: 0px;
+  --prepage-bg-translate-x: 0px;
+  --prepage-bg-translate-y: 0px;
+  --prepage-bg-rotate: 0deg;
+  --prepage-bg-scale: 1;
+  --prepage-bg-tilt-x: 0deg;
+  --prepage-bg-tilt-y: 0deg;
+  --prepage-bg-perspective: 900px;
   --detail-description-max-height: 6rem; /* max height of inline detail text */
   --prepage-side-w: 220px;      /* smaller side “padding” columns */
   --prepage-main-max: 900px;    /* wider middle content */  
@@ -121,8 +131,23 @@
 
     background-image: var(--prepage-bg-image);
     background-repeat: no-repeat;
-    background-position: center center;
+    background-position:
+      calc(50% + var(--prepage-bg-pos-x, 0px))
+      calc(50% + var(--prepage-bg-pos-y, 0px));
     background-size: contain;
+
+    transform:
+      perspective(var(--prepage-bg-perspective, 900px))
+      translate3d(var(--prepage-bg-translate-x, 0px), var(--prepage-bg-translate-y, 0px), 0)
+      rotateX(var(--prepage-bg-tilt-x, 0deg))
+      rotateY(var(--prepage-bg-tilt-y, 0deg))
+      rotateZ(var(--prepage-bg-rotate, 0deg))
+      scale(var(--prepage-bg-scale, 1));
+
+    will-change: transform, background-position;
+
+    transform-origin: center;
+    backface-visibility: hidden;
 
     opacity: var(--prepage-bg-opacity); /* affects only the SVG layer */
     pointer-events: none;               /* don’t block clicks */
