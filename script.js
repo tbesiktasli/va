@@ -4963,6 +4963,7 @@ function initMobileSlideInsToggle() {
         if (gridShellEl) gridShellEl.style.display = '';
         // Re-check view + tags after the grid shell is visible
         requestAnimationFrame(() => {
+          window.gridObject?._refitAllText?.();
           window.__dispatchViewChange?.();
           window.renderSelectionBar?.();
         });
