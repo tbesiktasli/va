@@ -3,6 +3,10 @@ function fitTextToContainer(container, maxFontSize = 100, minFontSize = 7) {
   const span = container.querySelector('.scaling-text') || container.querySelector('span');
   if (!span) return;
 
+  // If the element (or its parents) is display:none, measurements like scrollWidth/Height
+  // are bogus (often 0) and we'd incorrectly choose the max font size.
+  if (container.offsetParent === null) return;
+
   // Optional: burger icon we added for the fallback state
   const placeholder = container.querySelector('.text-placeholder-icon');
 
