@@ -214,8 +214,38 @@
 
       <!-- Top-left controls -->
       <div id="fab-top-left" class="fab-stack">
+
+        <div id="grid-view-switcher" class="view-switcher" aria-label="Grid view switcher">
+          <button type="button" class="fab fab-lg view-switcher-toggle" aria-label="Change view">
+            <img src="img/icons/change_view.svg" alt="Change view">
+          </button>          
+
+          <div class="view-switcher-options" aria-label="Grid view options">
+            <button
+              class="view-switcher-btn"
+              type="button"
+              data-target-fab="fab-group"
+              aria-label="Group view">
+            </button>
+
+            <button
+              class="view-switcher-btn"
+              type="button"
+              data-target-fab="fab-cluster"
+              aria-label="Cluster view">
+            </button>
+
+            <button
+              class="view-switcher-btn"
+              type="button"
+              data-target-fab="fab-ungroup"
+              aria-label="Ungroup view">
+            </button>
+          </div>
+        </div>
+
         <!-- GROUP -->
-        <button id="fab-group" class="fab fab-lg" title="Group" aria-label="Group">
+        <button id="fab-group" class="fab fab-lg" title="Group" aria-label="Group" hidden>
           <!-- inline of img/icons/link.svg (without XML header) -->
           <!-- BEGIN link.svg -->
           <svg fill="currentColor" stroke="currentColor" viewBox="0 0 30.7 30.6" preserveAspectRatio="xMidYMid meet">
@@ -227,7 +257,7 @@
         </button>
       
         <!-- CLUSTER -->
-        <button id="fab-cluster" class="fab fab-lg" title="Cluster" aria-label="Cluster">
+        <button id="fab-cluster" class="fab fab-lg" title="Cluster" aria-label="Cluster" hidden>
           <!-- inline of img/icons/map-view.svg (without XML header) -->
           <!-- BEGIN map-view.svg -->
           <svg fill="currentColor" stroke="currentColor" viewBox="0 0 33 33" preserveAspectRatio="xMidYMid meet">
@@ -237,7 +267,7 @@
         </button>
       
         <!-- UNGROUP -->
-        <button id="fab-ungroup" class="fab fab-lg" title="Ungroup (Masonry)" aria-label="Ungroup">
+        <button id="fab-ungroup" class="fab fab-lg" title="Ungroup (Masonry)" aria-label="Ungroup" hidden>
           <!-- inline of img/icons/Unlink.svg (without XML header) -->
           <!-- BEGIN Unlink.svg -->
           <svg fill="currentColor" stroke="currentColor" viewBox="0 0 34 34" preserveAspectRatio="xMidYMid meet">
@@ -252,6 +282,7 @@
           </svg>
           <!-- END Unlink.svg -->
         </button>
+        <!-- VIEW SWITCHER (new; keep old buttons above visible) -->
       </div>
 
       <!-- Bottom-left controls -->
