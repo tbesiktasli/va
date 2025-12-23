@@ -154,9 +154,13 @@ const LOADING = (() => {
   function hide(after) {
     ensureUI().fadeOut(() => {
       document.body.classList.remove('has-preload');
+  
+      // ✅ Signal that the loading overlay is truly gone
+      document.dispatchEvent(new CustomEvent('app:preloadhidden'));
+  
       after?.();
     });
-  }
+  }  
 
   function onComplete(fn) {
     if (typeof fn !== 'function') return () => {};
@@ -745,6 +749,7 @@ function closePrepage(afterFn) {
 
     prepage.classList.add('is-hidden');
     document.body.classList.remove('has-prepage');
+    document.dispatchEvent(new CustomEvent('app:prepageclosed'));
     if (typeof afterFn === 'function') afterFn();
   };
 
@@ -985,6 +990,7 @@ function hoverPlay(el, ws, src = null, meta = {}) {
 
 // === MEDIA DEBUG ===
 window.DEBUG_MEDIA = true; // flip to false to mute
+window.DEBUG_GRID_TEASER = true; // flip to false to mute grid switcher teaser logs
 function dlog(...a){ if(window.DEBUG_MEDIA) console.log(...a); }
 function dgrp(label){ if(window.DEBUG_MEDIA) console.groupCollapsed(label); }
 function dgrpEnd(){ if(window.DEBUG_MEDIA) console.groupEnd(); }
@@ -6398,6 +6404,169 @@ fabCluster?.addEventListener('click',(e) => { e.preventDefault(); gridObject.clu
 fabUngroup?.addEventListener('click',(e) => { e.preventDefault(); gridObject.ungroupObjects(); markActive('ungroup'); refreshSlideInsVisibility(); });
 fabZoomIn?.addEventListener('click', (e) => { e.preventDefault(); gridObject.zoomIn(); });
 fabZoomOut?.addEventListener('click',(e) => { e.preventDefault(); gridObject.zoomOut(); });
+
+function runGridViewSwitcherTeaserOnceWhenVisible(switcher) {
+  const DEBUG_TEASER = !!window.DEBUG_GRID_TEASER;
+  const tlog = (...a) => { if (DEBUG_TEASER) console.log('[grid teaser]', ...a); };
+
+  if (!switcher) {
+    tlog('init: switcher not found (null/undefined) -> teaser cannot arm');
+    return;
+  }
+
+  // Allow teaser again on future page loads (no localStorage "seen" gating)
+  // Still run only once per page load.
+  let hasRunThisLoad = false;
+  tlog('init');
+
+  // Respect reduced-motion
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
+
+  // avoid double-arm in one page load
+  if (switcher.dataset.teaserArmed === '1') return;
+  switcher.dataset.teaserArmed = '1';
+
+  const isUserInteracting = () =>
+    switcher.matches(':hover') || switcher.contains(document.activeElement);
+
+  const isLoadingComplete = () =>
+    (typeof LOADING?.isComplete === 'function')
+      ? LOADING.isComplete()
+      : isPreloadGone(); // fallback if LOADING isn't present
+  
+  const isPrepageGone = () => {
+    const prepage = document.getElementById('prepage');
+    return !document.body.classList.contains('has-prepage') &&
+           (!prepage || prepage.classList.contains('is-hidden'));
+  };  
+
+  const isPreloadGone = () => {
+    const preload = document.getElementById('preload');
+    // LOADING.fadeOut() adds .is-hidden and removes body.has-preload after fade
+    return (!preload || preload.classList.contains('is-hidden')) &&
+           !document.body.classList.contains('has-preload');
+  };
+
+  const isSwitcherVisible = () => {
+    const st = getComputedStyle(switcher);
+    if (st.display === 'none' || st.visibility === 'hidden' || Number(st.opacity) === 0) return false;
+    if (switcher.offsetParent === null) return false;
+    return switcher.getClientRects().length > 0;
+  };
+
+  const isInGridState = () => {
+    const gs = window.gridObject?.currentState || null;
+    return ['grouped', 'clustered', 'ungrouped', 'pre-cluster'].includes(gs);
+  };
+
+  const openThenClose = () => {
+    tlog('OPEN');
+  
+    hasRunThisLoad = true;
+    switcher.classList.add('is-demo-open');    
+  
+    setTimeout(() => {
+      if (isUserInteracting()) return;
+      switcher.classList.remove('is-demo-open');
+      tlog('CLOSE');
+    }, 1600);
+  };  
+
+  const tryRun = () => {
+    const status = {
+      hasRunThisLoad,
+      loadingComplete: isLoadingComplete(),
+      preloadGone: isPreloadGone(),
+      prepageGone: isPrepageGone(),
+      inGridState: isInGridState(),
+      switcherVisible: isSwitcherVisible(),
+      userInteracting: isUserInteracting(),
+    };
+    
+    tlog('tryRun()', status);
+    
+    if (hasRunThisLoad) return;    
+    if (!status.loadingComplete) return;
+    if (!status.preloadGone) return;
+    if (!status.prepageGone) return;
+    if (!status.inGridState) return;
+    if (!status.switcherVisible) return;
+    if (status.userInteracting) return;
+  
+    tlog('✅ TRIGGERING teaser now (openThenClose)');
+    openThenClose();
+  };  
+
+  // Run AFTER the DOM/CSS state has actually painted (prevents false "not visible" checks)
+  const afterPaint = (fn) => requestAnimationFrame(() => requestAnimationFrame(fn));
+
+  // Run when the app changes view/state
+  const onViewChange = () => afterPaint(tryRun);
+  document.addEventListener('app:viewchange', onViewChange);
+
+  // Run right after the prepage is fully closed (grid is actually visible)
+  const onPrepageClosed = () => afterPaint(tryRun);
+  document.addEventListener('app:prepageclosed', onPrepageClosed);
+
+  // Run right after the preload overlay is truly gone
+  const onPreloadHidden = () => afterPaint(tryRun);
+  document.addEventListener('app:preloadhidden', onPreloadHidden);
+
+  // Run right after loading completes
+  let unsubLoading = null;
+  if (typeof LOADING?.onComplete === 'function') {
+    unsubLoading = LOADING.onComplete(() => afterPaint(tryRun));
+  }
+
+  // One immediate attempt (covers "no prepage" / already-ready cases)
+  afterPaint(tryRun);
+
+}
+
+function initGridViewSwitcher() {
+  const switcher = document.getElementById('grid-view-switcher');
+  if (!switcher) return;
+
+  const bindings = [
+    { targetId: 'fab-group' },
+    { targetId: 'fab-cluster' },
+    { targetId: 'fab-ungroup' },
+  ];
+
+  bindings.forEach(({ targetId }) => {
+    const targetFab = document.getElementById(targetId);
+    const btn = switcher.querySelector(`.view-switcher-btn[data-target-fab="${targetId}"]`);
+    if (!targetFab || !btn) return;
+
+    // Reuse the existing icon by cloning it (avoids duplicating SVG markup)
+    const iconSource = targetFab.querySelector('svg, img');
+    if (iconSource) {
+      const clone = iconSource.cloneNode(true);
+
+      // Let CSS control sizing
+      if (clone.tagName?.toLowerCase() === 'svg') {
+        clone.removeAttribute('width');
+        clone.removeAttribute('height');
+      } else if (clone.tagName?.toLowerCase() === 'img') {
+        clone.removeAttribute('width');
+        clone.removeAttribute('height');
+      }
+
+      btn.replaceChildren(clone);
+    }
+
+    // Delegate behavior to the original FAB (keeps all existing logic centralized)
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      targetFab.click();
+    });
+  });
+
+  if (window.DEBUG_GRID_TEASER) console.log('[grid teaser] initGridViewSwitcher() calling teaser with switcher=', switcher);
+  runGridViewSwitcherTeaserOnceWhenVisible(switcher);
+}
+
+initGridViewSwitcher();
 
 function setFitAllIconDone(done, reason = '') {
   if (!fabFitAll) return;
