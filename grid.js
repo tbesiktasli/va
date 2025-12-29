@@ -86,6 +86,23 @@ function fitTextToContainer(container, maxFontSize = 100, minFontSize = 7) {
 }
 window.fitTextToContainer = fitTextToContainer;
 
+// Shared tooltip/label rule (used by grid + gallery)
+// text -> Name, others -> Description
+export function getObjectTooltipLabel(obj) {
+  if (!obj) return '';
+
+  const type = String(obj.type || '').toLowerCase();
+  const name = String(obj.name || '').trim();
+  const desc = String(obj.description || '').trim();
+
+  // Per your rule:
+  // - text uses Name
+  // - everything else uses Description
+  // (small safety fallback to avoid empty labels)
+  if (type === 'text') return name || desc || '';
+  return desc || name || '';
+}
+
 export class Grid {
     constructor(gridId='grid', objects, groups) {
       this.gridId = gridId;
@@ -536,16 +553,7 @@ export class Grid {
       const panel = document.createElement('div');
       let wsInline = null;  // ✅ add
       const formattedDate = this._formatDetailDate(obj.date);
-      // text objects → use Name if present, else Description
-      // everything else → always Description
-      let primaryText = '';
-      if (obj.type === 'text') {
-        primaryText = (obj.name && obj.name.trim())
-          ? obj.name.trim()
-          : (obj.description || '').trim();
-      } else {
-        primaryText = (obj.description || '').trim();
-      }
+      let primaryText = getObjectTooltipLabel(obj);
       panel.className = 'detail-panel';
       if (obj.type === 'text') {
         panel.classList.add('detail-text-object');
@@ -1310,6 +1318,20 @@ export class Grid {
         objectDiv.style.left = `${object.grid_x}px`;
         objectDiv.style.width = `${object.width}px`;
         objectDiv.style.height = `${object.height}px`;
+
+        // Cursor label for SINGLE-object modes (clustered / ungrouped)
+        const singleTitle = getObjectTooltipLabel(object);
+        if (singleTitle) {
+          objectDiv.dataset.cursorLabelSingle = singleTitle; // data-cursor-label-single="..."
+        }
+
+        // Cursor label (grouped view): show the group's title near the cursor
+        const groupedLabel = String(object.groupTitle || object.groupName || '').trim();
+        if (groupedLabel) {
+          objectDiv.dataset.cursorLabelGrouped = groupedLabel;
+          // objectDiv.dataset.cursorHide = "true"; // keep cursor visible in grouped view
+        }        
+
         if (object.type === 'image') {
           objectDiv.dataset.type = 'image';
           objectDiv.classList.add('image');
