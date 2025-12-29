@@ -41,7 +41,7 @@
 
 
 </head>
-<body>
+<body data-cursor-label-single-prefix="explore: ">
   <header>
     <div class="header-left" id="header-left"></div>
     <div class="header-center" id="header-center" role="button" tabindex="0">
@@ -204,7 +204,9 @@
 
   <div id="workspace">
     <div id="grid-shell">
-      <div id="grid"></div>
+      <div id="grid"
+     data-cursor-label-grid-empty="drag and pull"
+     data-cursor-label-grouped-prefix="explore episode: "></div>
 
       <!-- Off-grid counters (same visual style as demo-sidebars badges) -->
       <div id="offgrid-top" class="count-invisible-objects top">&uarr; <span class="value">0</span> Elements</div>
@@ -215,7 +217,7 @@
       <!-- Top-left controls -->
       <div id="fab-top-left" class="fab-stack">
 
-        <div id="grid-view-switcher" class="view-switcher" aria-label="Grid view switcher">
+        <div id="grid-view-switcher" class="view-switcher" aria-label="Grid view switcher" data-cursor-label="change logic of exploration">
           <button type="button" class="fab fab-lg view-switcher-toggle" aria-label="Change view">
             <img src="img/icons/change_view.svg" alt="Change view">
           </button>          
@@ -225,21 +227,24 @@
               class="view-switcher-btn"
               type="button"
               data-target-fab="fab-group"
-              aria-label="Group view">
+              aria-label="Group view"
+              data-cursor-label="fieldsite overview">
             </button>
 
             <button
               class="view-switcher-btn"
               type="button"
               data-target-fab="fab-cluster"
-              aria-label="Cluster view">
+              aria-label="Cluster view"
+              data-cursor-label="fieldsite overview &amp; thematic discovery">
             </button>
 
             <button
               class="view-switcher-btn"
               type="button"
               data-target-fab="fab-ungroup"
-              aria-label="Ungroup view">
+              aria-label="Ungroup view"
+              data-cursor-label="thematic discovery">
             </button>
           </div>
         </div>
@@ -308,7 +313,7 @@
         </button>
       
         <!-- ZOOM IN -->
-        <button id="fab-zoom-in" class="fab fab-lg" title="Zoom In" aria-label="Zoom In">
+        <button id="fab-zoom-in" class="fab fab-lg" title="Zoom In" aria-label="Zoom In" data-cursor-label="adjust zoom">
           <!-- BEGIN plus.svg -->
           <svg fill="currentColor" stroke="currentColor" viewBox="0 0 34 34" preserveAspectRatio="xMidYMid meet">
             <path d="M32.15,15.7h-14.95V.75c0-.41-.34-.75-.75-.75s-.75.34-.75.75v14.95H.75c-.41,0-.75.34-.75.75s.34.75.75.75h14.95v14.95c0,.41.34.75.75.75s.75-.34.75-.75v-14.95h14.95c.41,0,.75-.34.75-.75s-.34-.75-.75-.75Z"/>
@@ -317,7 +322,7 @@
         </button>
       
         <!-- ZOOM OUT -->
-        <button id="fab-zoom-out" class="fab fab-lg" title="Zoom Out" aria-label="Zoom Out">
+        <button id="fab-zoom-out" class="fab fab-lg" title="Zoom Out" aria-label="Zoom Out" data-cursor-label="adjust zoom">
           <!-- BEGIN Minus.svg, not the original one anymore, had issues with centering -->
             <svg
             viewBox="0 0 24 24"
@@ -333,7 +338,10 @@
       </div>
     </div>
 
-    <div id="group-gallery" class="scroll-container-horizontal" data-allow-scroll>
+    <div id="group-gallery"
+     class="scroll-container-horizontal"
+     data-allow-scroll
+     data-cursor-label-gallery-empty="scroll horizontally">
       <!-- Back button to return to grid -->
       <div id="content-back-button" class="fab fab-lg gallery-fab" title="Back">
         <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 32" fill="none" aria-hidden="true">
@@ -1171,7 +1179,7 @@
       ></a>
       <!-- data-section-mode one of "accordion", "collapsible", "static" -->
       <div class="slide-in" id="discover-connections" data-mode="menu" data-section-mode="accordion">
-        <div class="slide-in-handle">
+        <div class="slide-in-handle" data-cursor-label="discover connections">
           <button class="close-btn" type="button" aria-label="Toggle Sidebar"></button>
           <span class="vertical-text">Discover Connections</span>
         </div>
