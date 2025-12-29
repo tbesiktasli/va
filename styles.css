@@ -55,6 +55,9 @@
   --icon-slidein-open:            url('img/icons/close.svg');
   --icon-detail-close:            url('img/icons/close.svg');
 
+  /* Cursor (hover) */
+  --cursor-eye: url("img/icons/eye.svg") 16 16, pointer;
+
   /* Mobile “open sidebars” icons */
   --icon-slidein-mobile-open-menu:    url('img/icons/connections.svg'); /* Discover Connections */
   --icon-slidein-mobile-open-content: url('img/icons/context.svg');     /* 3 sidebars (detail/gallery) */
@@ -83,6 +86,14 @@
   --detail-description-max-height: 6rem; /* max height of inline detail text */
   --prepage-side-w: 220px;      /* smaller side “padding” columns */
   --prepage-main-max: 900px;    /* wider middle content */  
+
+  /* Cursor label (tooltip near cursor) */
+  --cursor-label-offset-x: 12;
+  --cursor-label-offset-y: 12;
+  --cursor-label-padding: 6px 8px;
+  --cursor-label-radius: 10px;
+  --cursor-label-font-size: 12px;
+  --cursor-label-viewport-pad: 8;
 }
 
 :root[data-theme="dark"] {
@@ -481,6 +492,12 @@
     user-select: none;
     -webkit-user-select: none; /* Safari */
   }
+
+  /* While dragging, always show grabbing even if hovering an object */
+  #grid.dragging .object,
+  #grid.dragging .object:hover {
+    cursor: grabbing !important;
+  }
   
   #grid.dragging * {
     user-select: none;
@@ -497,6 +514,24 @@
     overflow: visible;
     z-index: 1;
     transition: transform 0.5s ease, width 0.4s ease, height 0.4s ease;
+  }
+
+  /* Eye cursor on hover: only in clustered / ungrouped grid modes */
+  #grid[data-view="clustered"] .object:hover,
+  #grid[data-view="clustered"] .object:hover *,
+  #grid[data-view="pre-cluster"] .object:hover,
+  #grid[data-view="pre-cluster"] .object:hover *,
+  #grid[data-view="ungrouped"] .object:hover,
+  #grid[data-view="ungrouped"] .object:hover * {
+    cursor: pointer;
+    cursor: var(--cursor-eye);
+  }  
+
+  /* Eye cursor on hover: grouped grid mode */
+  #grid[data-view="grouped"] .object:hover,
+  #grid[data-view="grouped"] .object:hover * {
+    cursor: pointer;           /* fallback */
+    cursor: var(--cursor-eye); /* eye cursor */
   }
 
   .object.audio {
@@ -1497,6 +1532,13 @@ body.in-adhoc-gallery #group-gallery .title-box h2 {
   opacity: 0;
   cursor: pointer;
   transition: opacity 3s, transform 3s;
+}
+
+/* Eye cursor on hover in the main gallery view */
+#group-gallery .gallery-box .item:hover,
+#group-gallery .gallery-box .item:hover * {
+  cursor: pointer;
+  cursor: var(--cursor-eye);
 }
 
 .wide-content .gallery-box .column .item.visible, #related-objects .item.visible {
@@ -3958,4 +4000,52 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 
 #fab-fit-all.is-fit-done .fit-icon--done {
   display: block;
+}
+
+/* Cursor label (follows mouse) */
+#cursor-label.cursor-label {
+  position: fixed;
+  top: 0;
+  left: 0;
+  transform: translate(-9999px, -9999px);
+  pointer-events: none;
+  z-index: 999999;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+#cursor-label.cursor-label.is-visible {
+  opacity: 1;
+}
+
+#cursor-label .cursor-label__text {
+  display: inline-block;
+  padding: var(--cursor-label-padding);
+  border-radius: var(--cursor-label-radius);
+  font-size: var(--cursor-label-font-size);
+  line-height: 1.2;
+  white-space: pre-line; /* renders \n as line breaks */  
+
+  /* Intentionally minimal styling — you can fully theme this later */
+  background: rgba(0, 0, 0, 0.75);
+  color: white;
+}
+
+#cursor-label[data-kind="hscroll"] .cursor-label__text::before {
+  content: "← ";
+}
+
+#cursor-label[data-kind="hscroll"] .cursor-label__text::after {
+  content: " →";
+}
+
+/* Only hide cursor when explicitly requested */
+[data-cursor-hide="true"][data-cursor-label]:hover,
+[data-cursor-hide="true"][data-cursor-label]:hover * {
+  cursor: none;
+}
+
+#grid[data-view="grouped"] [data-cursor-hide="true"][data-cursor-label-grouped]:hover,
+#grid[data-view="grouped"] [data-cursor-hide="true"][data-cursor-label-grouped]:hover * {
+  cursor: none;
 }
