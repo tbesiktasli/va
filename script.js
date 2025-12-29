@@ -1,6 +1,6 @@
 import WaveSurfer from 'https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.esm.js';
 window.WaveSurfer ??= WaveSurfer;   // make it available as a global, if not already
-import { Grid } from './grid.js';
+import { Grid, getObjectTooltipLabel } from './grid.js';
 
 // BASIC CONSTANTS AND VARIABLES
 
@@ -947,6 +947,244 @@ if (document.readyState === 'loading') {
 function isGrouped() {
   return window.gridObject?.currentState === 'grouped';
 }
+
+// ============================================================
+// Cursor Label (central, reusable)
+// Usage:
+//  - data-cursor-label="Any text"                  -> always active on hover
+//  - data-cursor-label-grouped="Group title"       -> only active when inside #grid[data-view="grouped"]
+// Style via CSS (#cursor-label, .cursor-label__text, CSS vars)
+// ============================================================
+function initCursorLabel() {
+  if (window.__cursorLabelInit) return;
+  window.__cursorLabelInit = true;
+
+  // Only enable for mouse/trackpad; avoids odd behavior on touch.
+  const finePointer = window.matchMedia?.('(pointer: fine)')?.matches;
+  if (!finePointer) return;
+
+  // Create the single floating label element
+  const el = document.createElement('div');
+  el.id = 'cursor-label';
+  el.className = 'cursor-label';
+  el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = `<span class="cursor-label__text"></span>`;
+  document.body.appendChild(el);
+
+  const textEl = el.querySelector('.cursor-label__text');
+
+  let activeTarget = null;
+
+  const findCandidate = (node) => {
+    if (!node?.closest) return null;
+    return node.closest('[data-cursor-label], [data-cursor-label-grouped], [data-cursor-label-single]');
+  };
+
+  const computeLabel = (target) => {
+    if (!target) return '';
+
+    // If user is dragging the grid, don't show cursor labels.
+    if (target.closest('#grid.dragging')) return '';
+
+    // Highest priority: always-on label
+    const direct = target.getAttribute('data-cursor-label');
+    if (direct && direct.trim()) return direct.trim();
+
+    // Grouped-only label (only when actually in grouped view)
+    const grouped = target.getAttribute('data-cursor-label-grouped');
+    if (grouped && grouped.trim() && target.closest('#grid[data-view="grouped"]')) {
+      const grid = target.closest('#grid');
+      const prefix = grid?.getAttribute('data-cursor-label-grouped-prefix') || '';
+      return `${prefix}${grouped.trim()}`;
+    }
+
+    // Single-object label (clustered / ungrouped grid, and gallery)
+    const single = target.getAttribute('data-cursor-label-single');
+    if (single && single.trim()) {
+      const grid = target.closest('#grid');
+      if (grid) {
+        const view = grid.getAttribute('data-view');
+        const isSingleGridView = (view === 'clustered' || view === 'pre-cluster' || view === 'ungrouped');
+        if (!isSingleGridView) return '';
+      }
+
+      const prefix =
+        target.closest('[data-cursor-label-single-prefix]')?.getAttribute('data-cursor-label-single-prefix') ||
+        document.body?.getAttribute('data-cursor-label-single-prefix') ||
+        '';
+
+      return `${prefix}${single.trim()}`;
+    }
+
+    return '';
+  };
+
+  const gridEl = document.getElementById('grid');
+
+  const computeGridEmptyLabel = (ev) => {
+    if (!gridEl) return '';
+    if (gridEl.classList.contains('dragging')) return '';
+    if (!ev.target?.closest?.('#grid')) return '';
+    if (ev.target.closest('.object')) return ''; // not empty space
+    const label = gridEl.getAttribute('data-cursor-label-grid-empty');
+    return label ? label.trim() : '';
+  };
+
+  const galleryEl = document.getElementById('group-gallery');
+
+  const computeGalleryEmptyLabel = (ev) => {
+    if (!galleryEl) return '';
+    if (!galleryEl.classList.contains('active')) return '';      // only when gallery is shown
+    if (!ev.target?.closest?.('#group-gallery')) return '';
+    if (ev.target.closest('.item')) return '';                   // not empty space (gallery item)
+    if (ev.target.closest('.fab')) return '';                    // don't override FABs in the gallery
+  
+    // Only show if there is actually horizontal overflow
+    const maxScrollLeft = galleryEl.scrollWidth - galleryEl.clientWidth;
+    if (maxScrollLeft <= 1) return '';
+  
+    const label = galleryEl.getAttribute('data-cursor-label-gallery-empty') || '';
+    return label.trim();
+  };  
+
+  const wrapTooltip = (label, maxLen = 30) => {
+    const raw = String(label ?? '');
+    if (raw.length <= maxLen) return raw;
+  
+    const wrapOneLine = (line) => {
+      const words = String(line ?? '').trim().split(/\s+/).filter(Boolean);
+      const out = [];
+      let cur = '';
+  
+      const pushCur = () => {
+        if (cur) out.push(cur);
+        cur = '';
+      };
+  
+      for (let w of words) {
+        // If a "word" itself is longer than maxLen, split it.
+        if (w.length > maxLen) {
+          pushCur();
+          for (let i = 0; i < w.length; i += maxLen) {
+            out.push(w.slice(i, i + maxLen));
+          }
+          continue;
+        }
+  
+        if (!cur) {
+          cur = w;
+        } else if ((cur.length + 1 + w.length) <= maxLen) {
+          cur += ' ' + w;
+        } else {
+          pushCur();
+          cur = w;
+        }
+      }
+  
+      pushCur();
+      return out.join('\n');
+    };
+  
+    // Respect existing newlines (wrap each line separately)
+    return raw
+      .split(/\r?\n/)
+      .map(wrapOneLine)
+      .join('\n');
+  };  
+
+  const show = (label, target, kind = '') => {
+    activeTarget = target;
+  
+    if (kind) el.dataset.kind = kind;
+    else delete el.dataset.kind;
+  
+    // keep your existing wrapping line here:
+    // textEl.textContent = wrapTooltip(label, 30);
+    textEl.textContent = wrapTooltip(label, 30);
+  
+    el.classList.add('is-visible');
+  };  
+
+  const hide = () => {
+    activeTarget = null;
+    delete el.dataset.kind;
+    el.classList.remove('is-visible');
+  };
+
+  document.addEventListener('pointerover', (ev) => {
+    const candidate = findCandidate(ev.target);
+    const label = computeLabel(candidate);
+
+    if (label) {
+      show(label, candidate);
+      return;
+    }
+
+    const emptyLabel = computeGridEmptyLabel(ev);
+    if (emptyLabel) {
+      show(emptyLabel, gridEl);
+      return;
+    }
+
+    const galleryEmptyLabel = computeGalleryEmptyLabel(ev);
+    if (galleryEmptyLabel) {
+      show(galleryEmptyLabel, galleryEl, 'hscroll');
+      return;
+    }
+
+    hide();
+  }, true);
+
+  document.addEventListener('pointerout', (ev) => {
+    if (!activeTarget) return;
+
+    // If we left the active target entirely, hide.
+    const nextCandidate = findCandidate(ev.relatedTarget);
+    if (nextCandidate !== activeTarget) hide();
+  }, true);
+
+  document.addEventListener('pointermove', (ev) => {
+    if (!activeTarget) return;
+
+    const ox = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cursor-label-offset-x')) || 12;
+    const oy = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cursor-label-offset-y')) || 12;
+
+    const pad =
+    parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cursor-label-viewport-pad')) || 8;
+
+    // width/height are what we need (independent of translate position)
+    const r = el.getBoundingClientRect();
+    const w = r.width;
+    const h = r.height;
+
+    let x = ev.clientX + ox;
+    let y = ev.clientY + oy;
+
+    // Flip horizontally if we'd overflow right
+    if (x + w + pad > window.innerWidth) {
+      x = ev.clientX - ox - w;
+    }
+
+    // Flip vertically if we'd overflow bottom
+    if (y + h + pad > window.innerHeight) {
+      y = ev.clientY - oy - h;
+    }
+
+    // Clamp to viewport padding (handles extreme corners)
+    x = Math.max(pad, Math.min(window.innerWidth - w - pad, x));
+    y = Math.max(pad, Math.min(window.innerHeight - h - pad, y));
+
+    el.style.transform = `translate(${x}px, ${y}px)`;
+
+  }, { passive: true });
+
+  // Optional: hide on scroll to avoid “stuck” labels during scroll gestures
+  window.addEventListener('scroll', () => {
+    if (activeTarget) hide();
+  }, true);
+}
+
+initCursorLabel();
 
 function _bindHoverPlay(el, ws, opts = {}) {
   const { guardGrouped = false, src = null, peaks = null, duration = null } = opts;
@@ -2691,6 +2929,8 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
     perGroupCounts.set(appGroupId, prev + 1);
 
     // ---- push normalized object
+    const objTitle = (a.Name || a.name || a.Title || a.title || '').toString().trim();
+
     out.push({
       id: `sobj_${entry.id}`,
       strapiId: entry.id,                 // NEW: numeric Strapi id for URLs
@@ -2701,7 +2941,8 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
       groupTitle:   groupMeta[appGroupId]?.title || '',
       date: a.Date || a.date || a.createdAt || a.updatedAt || '',
       author,
-      name: a.Name || a.name || a.Title || a.title || '',
+      name: objTitle,
+      title: objTitle,
       description: a.Description || a.description || a.Caption || a.caption || '',
       references : a.References || a.references || '',
       footNotes : a.FootNotes || a.footNotes || a.footnotes || a.foot_notes || '',
@@ -5687,6 +5928,7 @@ function initMobileSlideInsToggle() {
   }
 
   function createGalleryItem(o) {
+    const tooltip = getObjectTooltipLabel(o);
     // IMAGE (allow up to 1.5x intrinsic CSS width, DPR-aware)
     // REPLACE the whole image case with this:
     if (o.type === 'image') {
@@ -5742,6 +5984,7 @@ function initMobileSlideInsToggle() {
       }
 
       img.dataset.oid = o.id || '';
+      if (tooltip) img.dataset.cursorLabelSingle = tooltip;
       return img;
     }
 
@@ -5762,6 +6005,7 @@ function initMobileSlideInsToggle() {
       //vid.addEventListener('mouseout',  () => { try { vid.pause(); } catch {} });
 
       vid.dataset.oid = o.id || '';
+      if (tooltip) vid.dataset.cursorLabelSingle = tooltip;
       return vid;
     }
 
@@ -5776,6 +6020,7 @@ function initMobileSlideInsToggle() {
       d.appendChild(span);
 
       d.dataset.oid = o.id || '';
+      if (tooltip) d.dataset.cursorLabelSingle = tooltip;
       return d;
     }
 
@@ -5796,6 +6041,7 @@ function initMobileSlideInsToggle() {
       item.appendChild(wave);
 
       item.dataset.oid = o.id || '';
+      if (tooltip) item.dataset.cursorLabelSingle = tooltip;
       return item;
     }
 
@@ -5809,6 +6055,7 @@ function initMobileSlideInsToggle() {
     d.appendChild(span);
 
     d.dataset.oid = o.id || '';
+    if (tooltip) d.dataset.cursorLabelSingle = tooltip;
     return d;
   }
 
@@ -6844,6 +7091,7 @@ function updateOffgridCounters() {
         seg.title = n > 0
           ? `Show nearest ${dir} item with tag “${t}”`
           : `No ${dir} items with tag “${t}”`;
+        seg.dataset.cursorLabel = 'scroll to nearest item';
         if (!n) seg.classList.add('is-zero');
     
         // number
@@ -6877,6 +7125,7 @@ function updateOffgridCounters() {
         valueEl.title = total > 0
           ? `Show nearest ${dir} item`
           : `No ${dir} items`;
+        valueEl.dataset.cursorLabel = 'scroll to nearest item';
       }
     }    
   };
@@ -8371,6 +8620,26 @@ function initSlideIns() {
   if (!container) return;
   if (container.dataset.inited === '1') return;
   container.dataset.inited = '1';
+
+  // Cursor tooltip labels for slide-in handles
+  container.querySelectorAll('.slide-in').forEach((wrap) => {
+    const handle = wrap.querySelector('.slide-in-handle');
+    if (!handle) return;
+
+    // Respect any label already set in HTML
+    if (handle.dataset.cursorLabel) return;
+
+    // "3-group" content sidebars -> episode context
+    if (wrap.dataset.mode === 'content') {
+      handle.dataset.cursorLabel = 'episode context';
+      return;
+    }
+
+    // Optional: keep this as a fallback in case the HTML label is removed later
+    if (wrap.id === 'discover-connections') {
+      handle.dataset.cursorLabel = 'discover connections';
+    }
+  });
 
   container.addEventListener('click', (e) => {
     const wrap = e.target.closest('.slide-in');
