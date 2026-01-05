@@ -742,6 +742,11 @@ export class Grid {
       const obj = this.objects.find(o => o.id === objectId);
       if (!obj) return;
 
+      // mark as visited (persist + update dot)
+      if (typeof window !== 'undefined' && typeof window.markObjectVisited === 'function') {
+        window.markObjectVisited(obj.id);
+      }
+
       // Stop any hover TTS audio when opening inline detail
       this.stopHoverTts();
 
@@ -914,6 +919,11 @@ export class Grid {
     
       const obj = this.objects.find(o => o.id === objectId);
       if (!obj) return;
+
+      // mark as visited (persist + update dot)
+      if (typeof window !== 'undefined' && typeof window.markObjectVisited === 'function') {
+        window.markObjectVisited(obj.id);
+      }
 
       // Stop any hover TTS audio when opening clustered inline detail
       this.stopHoverTts();
@@ -1314,6 +1324,12 @@ export class Grid {
         const objectDiv = document.createElement("div");
         objectDiv.id = object.id;
         objectDiv.classList.add("object");
+
+        // Visited marker (persisted): add class if this object was opened before
+        if (typeof window !== 'undefined' && typeof window.isObjectVisited === 'function' && window.isObjectVisited(object.id)) {
+          objectDiv.classList.add('is-visited');
+        }
+
         objectDiv.style.top = `${object.grid_y}px`;
         objectDiv.style.left = `${object.grid_x}px`;
         objectDiv.style.width = `${object.width}px`;
