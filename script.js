@@ -1002,19 +1002,24 @@ function initCursorLabel() {
     const single = target.getAttribute('data-cursor-label-single');
     if (single && single.trim()) {
       const grid = target.closest('#grid');
+    
+      // Grid item tooltip (clustered / ungrouped): show a consistent action hint
       if (grid) {
-        const view = grid.getAttribute('data-view');
-        const isSingleGridView = (view === 'clustered' || view === 'pre-cluster' || view === 'ungrouped');
-        if (!isSingleGridView) return '';
+        const view = grid.dataset.view;
+        if (view === 'clustered' || view === 'ungrouped') {
+          return grid.getAttribute('data-cursor-label-grid-item') || 'view';
+        }
+        // In grouped (and any other) grid modes, single labels should not show.
+        return '';
       }
-
+    
       const prefix =
         target.closest('[data-cursor-label-single-prefix]')?.getAttribute('data-cursor-label-single-prefix') ||
         document.body?.getAttribute('data-cursor-label-single-prefix') ||
         '';
-
+    
       return `${prefix}${single.trim()}`;
-    }
+    }    
 
     return '';
   };
@@ -1092,6 +1097,40 @@ function initCursorLabel() {
       .join('\n');
   };  
 
+  const renderGroupedLabel = (prefixLine, groupTitle) => {
+    const prefix = String(prefixLine ?? '').trim() || 'explore episode:';
+    const wrapped = wrapTooltip(String(groupTitle ?? ''), 30);
+
+    const lines = wrapped
+      .split(/\r?\n/)
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    // Build line elements so we can indent + add spacing via CSS
+    textEl.textContent = '';
+
+    const addLine = (text, className) => {
+      const span = document.createElement('span');
+      span.className = className;
+      span.textContent = text;
+      textEl.appendChild(span);
+    };
+
+    addLine(prefix, 'cursor-label__line cursor-label__line--prefix');
+    for (const ln of lines) {
+      addLine(ln, 'cursor-label__line cursor-label__line--indented');
+    }
+  };
+
+  const showGrouped = (prefixLine, groupTitle, target) => {
+    activeTarget = target;
+
+    el.dataset.kind = 'grouped';
+    renderGroupedLabel(prefixLine, groupTitle);
+
+    el.classList.add('is-visible');
+  };
+
   const show = (label, target, kind = '') => {
     activeTarget = target;
   
@@ -1113,6 +1152,21 @@ function initCursorLabel() {
 
   document.addEventListener('pointerover', (ev) => {
     const candidate = findCandidate(ev.target);
+
+    // ✅ Special formatting: grouped grid tooltip
+    if (
+      candidate &&
+      candidate.closest('#grid[data-view="grouped"]') &&
+      candidate.getAttribute('data-cursor-label-grouped')?.trim()
+    ) {
+      const grid = candidate.closest('#grid');
+      const prefixLine = (grid?.getAttribute('data-cursor-label-grouped-prefix') || 'explore episode:').trim();
+      const groupTitle = candidate.getAttribute('data-cursor-label-grouped').trim();
+
+      showGrouped(prefixLine, groupTitle, candidate);
+      return;
+    }
+
     const label = computeLabel(candidate);
 
     if (label) {
@@ -1335,9 +1389,90 @@ TAG_GROUPS.forEach(g => g.tags.forEach(t => tagToGroup.set(t, g.id)));
 
 // Colors for ALL tags (stable per label)
 const ALL_TAGS = TAG_GROUPS.flatMap(g => g.tags);
-function hashHue(str){ let h=0; for(let i=0;i<str.length;i++) h=(h*31+str.charCodeAt(i))|0; return ((h%360)+360)%360; }
-const tagColors = Object.fromEntries(ALL_TAGS.map(t => [t, `hsl(${hashHue(t)} 80% 45%)`]));
+
+// === Tag color assignment (avoid similar colors) ============================
+// Configurable knobs (kept together on purpose)
+const TAG_COLOR_CONFIG = {
+  sat: 80,            // %
+  lightA: 45,         // %
+  lightB: 58,         // % alternate lightness to improve separability
+  candidateTries: 14  // more = better spacing, slightly more CPU at startup
+};
+
+// Deterministic string -> uint32 (FNV-1a)
+function hashInt(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function circDist(a, b) {
+  const d = Math.abs(a - b) % 360;
+  return Math.min(d, 360 - d);
+}
+
+// Pick hue that maximizes distance to already-used hues (best-effort)
+function pickHue(seedHue, usedHues, tries) {
+  if (!usedHues.length) return seedHue;
+  const GOLDEN = 137.50776405003785; // degrees
+  let bestHue = seedHue;
+  let bestScore = -1;
+
+  for (let k = 0; k < tries; k++) {
+    const h = (seedHue + k * GOLDEN) % 360;
+    const score = usedHues.reduce((min, u) => Math.min(min, circDist(h, u)), Infinity);
+    if (score > bestScore) {
+      bestScore = score;
+      bestHue = h;
+    }
+  }
+  return bestHue;
+}
+
+// Build/update tagColors in-place so existing references keep working
+const tagColors = {};
 window.tagColors = tagColors;
+
+function syncTagColorsFromTags(tags) {
+  const uniq = Array.from(new Set(tags)).filter(Boolean);
+
+  // stable order: hash-based (so adding tags later doesn't reshuffle everything)
+  uniq.sort((a, b) => hashInt(a) - hashInt(b));
+
+  // collect already-used hues (from current tagColors)
+  const used = [];
+  const hueRe = /hsl\(\s*([0-9.]+)/i;
+
+  for (const t of uniq) {
+    const c = tagColors[t];
+    if (!c) continue;
+    const m = String(c).match(hueRe);
+    if (m) used.push(((Number(m[1]) % 360) + 360) % 360);
+  }
+
+  // assign missing ones with maximin hue choice
+  uniq.forEach((t, i) => {
+    if (tagColors[t]) return;
+
+    const base = hashInt(t) % 360;
+    const hue = pickHue(base, used, TAG_COLOR_CONFIG.candidateTries);
+    used.push(hue);
+
+    const light = (i % 2 === 0) ? TAG_COLOR_CONFIG.lightA : TAG_COLOR_CONFIG.lightB;
+    tagColors[t] = `hsl(${hue.toFixed(2)} ${TAG_COLOR_CONFIG.sat}% ${light}%)`;
+  });
+
+  // drop colors for tags that no longer exist
+  Object.keys(tagColors).forEach(k => {
+    if (!uniq.includes(k)) delete tagColors[k];
+  });
+}
+
+// Initial build
+syncTagColorsFromTags(ALL_TAGS);
 
 // Helper: extract tag names from a Strapi relation (v4/v5, populated or not)
 function extractTagNamesFromRelation(rel) {
@@ -1455,16 +1590,9 @@ function rebuildTagCachesFromCurrentGroups() {
     (g.tags || []).forEach(t => ALL_TAGS.push(t));
   });
 
-  // 3) colors: remove old ones that no longer exist, add new ones
-  const current = new Set(ALL_TAGS);
-  Object.keys(tagColors).forEach(k => {
-    if (!current.has(k)) delete tagColors[k];
-  });
-  ALL_TAGS.forEach(t => {
-    if (!tagColors[t]) {
-      tagColors[t] = `hsl(${hashHue(t)} 80% 45%)`;
-    }
-  });
+  // 3) colors (same strategy as initial boot)
+  syncTagColorsFromTags(ALL_TAGS);
+
 }
 
 // main entry for dynamic tags
@@ -2507,52 +2635,43 @@ function openAuthorSubpageForName(name) {
     openTeam('subpage-team', 'Meet our Team');
   }
 
-  // 3) Wait until the accordion is initialized, then open the right section
-  const tryExpand = (attempt = 0) => {
+  // 3) Wait until Team is fully initialized (authors rendered + accordion wired), then open the right section
+  const tryExpand = () => {
     const root = document.getElementById('subpage-team');
     if (!root) {
-      if (attempt < 6) requestAnimationFrame(() => tryExpand(attempt + 1));
+      requestAnimationFrame(tryExpand);
       return;
     }
 
-    const acc = root._accordion;
-    if (!acc) {
-      if (attempt < 6) requestAnimationFrame(() => tryExpand(attempt + 1));
-      return;
-    }
+    // Ensure Team init runs (openTextSubpage triggers it, but this makes it robust)
+    const initPromise =
+      root.__initPromise ||
+      (typeof initTeamSubpage === 'function' ? initTeamSubpage(root) : Promise.resolve());
 
-    // If the Team page was opened via a deep-link (e.g. clicking an author name elsewhere),
-    // make sure authors are rendered before we try to locate + expand the section.
-    if (!window.__authorsRenderedOnce) {
-      ensureAuthorsRendered()
-        .then(() => requestAnimationFrame(() => tryExpand(attempt + 1)))
-        .catch(() => requestAnimationFrame(() => tryExpand(attempt + 1)));
-      return;
-    }
+    Promise.resolve(initPromise).then(() => {
+      const acc = root._accordion;
+      if (!acc) return;
 
-    const authors = window.__authorsFromStrapi || [];
-    const found = authors.find(a => String(a.name).trim().toLowerCase() === targetName);
-    const foundId = found?.id;
+      const authors = window.__authorsFromStrapi || [];
+      const found = authors.find(a => String(a.name).trim().toLowerCase() === targetName);
+      const foundId = found?.id;
 
-    let section = null;
+      let section = null;
 
-    // Prefer stable id match when possible
-    if (foundId) {
-      section = root.querySelector(`.author-section[data-author-id="${CSS.escape(foundId)}"]`);
-    }
+      if (foundId) {
+        section = root.querySelector(`.author-section[data-author-id="${CSS.escape(foundId)}"]`);
+      }
 
-    // Fallback: match by visible name in DOM
-    if (!section) {
-      section = Array.from(root.querySelectorAll('.author-section'))
-        .find(sec => sec.querySelector('.author-name')?.textContent?.trim().toLowerCase() === targetName);
-    }
+      if (!section) {
+        section = Array.from(root.querySelectorAll('.author-section'))
+          .find(sec => sec.querySelector('.author-name')?.textContent?.trim().toLowerCase() === targetName);
+      }
 
-    if (section) {
-      acc.openSection(section);
-    }
+      if (section) acc.openSection(section);
+    });
   };
 
-  requestAnimationFrame(() => tryExpand());
+  requestAnimationFrame(tryExpand);
 }
 
 // expose for other modules (detail, future links)
@@ -2710,6 +2829,19 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
       a.Image ||
       a.image ||
       null;
+
+    // Optional author relation (shown under the H1 if present)
+    const authorRel =
+      a.author ||
+      a.Author ||
+      a.authors ||
+      a.Authors ||
+      null;
+
+    const author = unwrapRelList(authorRel)
+      .map(x => (x?.Name || x?.name || '').toString().trim())
+      .filter(Boolean)
+      .join(', ');
   
     // If everything is empty, treat this as "no section"
     if (
@@ -2731,6 +2863,7 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
       footNotes,
       references,
       inlineContentImage,
+      author,
     };
   }  
 
@@ -3141,10 +3274,15 @@ window.gridObject = null;
     console.log('[data] mode=', DATA_MODE, 'groups=', Object.keys(loaded.groupMeta).length, 'objects=', loaded.objects.length);
     gridObject = new Grid('grid', objects, {});
     window.gridObject = gridObject;
+    window.applyVisitedMarkers?.();
     LOADING.setPhase('init', 1);
     LOADING.markComplete();
     // wire header + set initial copy
     window.__wireHeaderToGrid?.();
+
+    // ✅ restore persisted grid mode + update active icon
+    restoreGridModeFromStorage();
+
     window.__dispatchViewChange?.();
     // sidebar "Project" list → now that we have groupMetaById
     if (typeof renderDiscoverProjectsFromGroups === 'function') {
@@ -3272,12 +3410,56 @@ function renderContentSidebar(sidebar, data) {
 
     if (notesRow) notesRow.style.display = 'none';
     if (refsRow)  refsRow.style.display  = 'none';
+
+    const byline = sidebar.querySelector('.content-sidebar-author');
+    if (byline) { byline.innerHTML = ''; byline.hidden = true; }
+
     return;
   }
 
   // 1) Title (normalized in extractAboutSection from the main model's Title field)
   const title = data.title || '';
   titleH1.textContent = title || '';
+
+  // 1b) Optional author byline under the H1 (links to Team subpage)
+  let byline = sidebar.querySelector('.content-sidebar-author');
+  if (!byline) {
+    byline = document.createElement('span');
+    byline.className = 'subpage-author content-sidebar-author';
+    titleH1.insertAdjacentElement('afterend', byline);
+  }
+
+  const esc = (s) =>
+    String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+  const escAttr = (s) =>
+    String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+  const authorStr = (data.author || '').trim();
+
+  if (!authorStr) {
+    byline.innerHTML = '';
+    byline.hidden = true;
+  } else {
+    const names = authorStr
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    const links = names
+      .map(n => `<a href="#subpage-team" data-author-name="${escAttr(n)}">${esc(n)}</a>`)
+      .join(', ');
+
+    byline.innerHTML = `Written by ${links}`;
+    byline.hidden = false;
+  }
 
   // 2) Row 1 right: Content → (optional) InlineContentImage → Content2
   const parts = [];
@@ -3861,6 +4043,15 @@ function initMobileSlideInsToggle() {
           tEl.textContent = meta.title;
         }
         if (sEl) sEl.textContent = meta.subtitle;
+
+        // Location chip (top-right, like detail page)
+        const locChip = document.getElementById('gallery-location-chip');
+        if (locChip) {
+          const loc = meta.location || '';
+          locChip.textContent = loc;
+          locChip.hidden = !loc;
+        }
+
       }      
     }
 
@@ -4244,9 +4435,9 @@ function initMobileSlideInsToggle() {
       const wrap = document.createElement('div');
       wrap.className = 'detail-nav-arrows';
       wrap.innerHTML = `
-        <div class="detail-nav-arrow prev" role="button" tabindex="0" aria-label="Previous object"></div>
-        <div class="detail-nav-arrow next" role="button" tabindex="0" aria-label="Next object"></div>
-      `;
+      <div class="detail-nav-arrow prev" role="button" tabindex="0" aria-label="Previous object" data-cursor-label="previous item"></div>
+      <div class="detail-nav-arrow next" role="button" tabindex="0" aria-label="Next object" data-cursor-label="next item"></div>
+    `;    
       // put arrows at the top *inside* vertical-content
       vc.prepend(wrap);
 
@@ -4577,16 +4768,28 @@ function initMobileSlideInsToggle() {
         if (!table) return;
 
         // Normalize visible labels and attach stable keys so JS does not depend on wording
+        // Visible label for the "researcher" row depends on object type
+        const getResearcherLabel = (type) => {
+          switch (String(type)) {
+            case 'text':  return 'Author';
+            case 'audio':
+            case 'video': return 'Creator';
+            case 'image': return 'Photographer';
+            default:      return 'Author';
+          }
+        };
+
         const LABEL_RENAMES = {
           'research':   { key: 'research',   text: 'Project' },
-          'researcher': { key: 'researcher', text: 'Author' },
+          'researcher': { key: 'researcher', text: getResearcherLabel(obj.type) },
         };
 
         Array.from(table.querySelectorAll('.row')).forEach(row => {
           const labelEl = row.querySelector('.label');
           if (!labelEl) return;
           const current = labelEl.textContent?.trim().toLowerCase();
-          const cfg = LABEL_RENAMES[current];
+          const stableKey = (labelEl.dataset.labelKey || current || '').toLowerCase();
+          const cfg = LABEL_RENAMES[stableKey];          
           if (!cfg) return;
 
           // Change what the user sees
@@ -5184,6 +5387,8 @@ function initMobileSlideInsToggle() {
       console.log('[detail] openObjectDetail (NEW ROUTER VERSION)', { objectId, from, gid });
 
       if (!detailEl) return;
+
+      window.markObjectVisited?.(objectId);
 
       // pause any grid waves so we don't hear two audios at once
       window.__gridWaves?.pauseAll?.();
@@ -6387,34 +6592,6 @@ window.renderAdhocGallery = function(objs = []) {
       }
     }, true);
 
-    // Ungroup control inside GROUP gallery: close gallery + switch grid to ungrouped view
-    document.addEventListener('click', (e) => {
-      const btn = e.target.closest('#gallery-ungroup');
-      if (!btn) return;
-
-      e.preventDefault();
-
-      const body = document.body;
-      const isGroupGallery =
-        body.classList.contains('in-group-gallery') &&
-        !body.classList.contains('in-adhoc-gallery');
-
-      // Only act in the real group gallery, never in the ad-hoc "tags" gallery
-      if (!isGroupGallery) {
-        return;
-      }
-
-      // 1) Close the gallery (we don't use history.back here on purpose)
-      window.closeGallery?.();
-
-      // 2) Reuse the existing grid ungroup behavior by clicking the FAB
-      const fabUngroup = document.getElementById('fab-ungroup');
-      if (fabUngroup) {
-        // Let closeGallery restore the grid before ungrouping
-        setTimeout(() => fabUngroup.click(), 0);
-      }
-    }, true);
-
     // 2) Listen for back/forward to restore the grid when leaving the gallery state
     window.addEventListener('popstate', () => {
       const active = groupGalleryEl?.classList.contains('active');
@@ -6646,9 +6823,149 @@ const fabZoomIn  = document.getElementById('fab-zoom-in');
 const fabZoomOut = document.getElementById('fab-zoom-out');
 const fabFitAll  = document.getElementById('fab-fit-all');
 
-fabGroup?.addEventListener('click',  (e) => { e.preventDefault(); gridObject.groupObjects();   markActive('group'); refreshSlideInsVisibility();  });
-fabCluster?.addEventListener('click',(e) => { e.preventDefault(); gridObject.clusterGroupedObjects(); markActive('cluster'); refreshSlideInsVisibility(); });
-fabUngroup?.addEventListener('click',(e) => { e.preventDefault(); gridObject.ungroupObjects(); markActive('ungroup'); refreshSlideInsVisibility(); });
+// --- Grid mode persistence + unified switching ---
+const GRID_MODE_STORAGE_KEY = 'app:gridMode'; // configurable key (namespaced)
+
+const GRID_MODES = Object.freeze({
+  GROUP: 'group',
+  CLUSTER: 'cluster',
+  UNGROUP: 'ungroup',
+});
+
+// --- Visited objects persistence (for grid dot indicator) ---
+// Optional override without touching code:
+//   window.VISITED_CONFIG = { storageKey: 'app:visitedObjects:v1', max: 2000 };
+const VISITED_CONFIG = {
+  storageKey: 'app:visitedObjects:v1',
+  max: 2000,
+  ...(typeof window !== 'undefined' && window.VISITED_CONFIG && typeof window.VISITED_CONFIG === 'object'
+    ? window.VISITED_CONFIG
+    : {}),
+};
+
+const VISITED = (() => {
+  const key = String(VISITED_CONFIG.storageKey || 'app:visitedObjects:v1');
+  const max = Math.max(1, Number(VISITED_CONFIG.max) || 2000);
+
+  const load = () => {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return new Set();
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return new Set();
+      return new Set(arr.map(v => String(v)));
+    } catch {
+      return new Set();
+    }
+  };
+
+  const save = (set) => {
+    try {
+      localStorage.setItem(key, JSON.stringify([...set]));
+    } catch {}
+  };
+
+  const ids = load();
+
+  const cap = () => {
+    while (ids.size > max) {
+      const oldest = ids.values().next().value; // Set preserves insertion order
+      ids.delete(oldest);
+    }
+  };
+
+  const applyToDom = (id) => {
+    const el = document.getElementById(String(id));
+    if (el) el.classList.add('is-visited');
+  };
+
+  return {
+    has(id) {
+      return ids.has(String(id));
+    },
+    mark(id) {
+      const sid = String(id ?? '').trim();
+      if (!sid) return;
+
+      if (!ids.has(sid)) {
+        ids.add(sid);
+        cap();
+        save(ids);
+      }
+      applyToDom(sid);
+    },
+    applyAllToDom() {
+      for (const id of ids) applyToDom(id);
+    }
+  };
+})();
+
+// small global API for other modules (grid.js) + click paths
+window.isObjectVisited = (id) => VISITED.has(id);
+window.markObjectVisited = (id) => VISITED.mark(id);
+window.applyVisitedMarkers = () => VISITED.applyAllToDom();
+
+// Map Grid.currentState -> our UI modes
+function gridStateToMode(state) {
+  if (state === 'grouped') return GRID_MODES.GROUP;
+  if (state === 'clustered' || state === 'pre-cluster') return GRID_MODES.CLUSTER;
+  if (state === 'ungrouped') return GRID_MODES.UNGROUP;
+  return null;
+}
+
+function getStoredGridMode() {
+  try {
+    const v = localStorage.getItem(GRID_MODE_STORAGE_KEY);
+    return (v === GRID_MODES.GROUP || v === GRID_MODES.CLUSTER || v === GRID_MODES.UNGROUP) ? v : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function setStoredGridMode(mode) {
+  try { localStorage.setItem(GRID_MODE_STORAGE_KEY, mode); } catch (_) {}
+}
+
+// Single entry point for changing modes (used by FAB clicks + restore)
+function applyGridMode(mode, { persist = true } = {}) {
+  if (!window.gridObject) return;
+
+  const m =
+    (mode === 'grouped') ? GRID_MODES.GROUP :
+    (mode === 'clustered' || mode === 'pre-cluster') ? GRID_MODES.CLUSTER :
+    (mode === 'ungrouped') ? GRID_MODES.UNGROUP :
+    mode;
+
+  if (m === GRID_MODES.GROUP)   window.gridObject.groupObjects();
+  if (m === GRID_MODES.CLUSTER) window.gridObject.clusterGroupedObjects();
+  if (m === GRID_MODES.UNGROUP) window.gridObject.ungroupObjects();
+
+  // Keep all UI in sync
+  markActive(m);
+
+  // Mode switches should behave like FAB clicks (keep existing UX consistent)
+  if (typeof setFitAllIconDone === 'function') setFitAllIconDone(false);
+  if (typeof refreshSlideInsVisibility === 'function') refreshSlideInsVisibility();
+  if (typeof scheduleOffgridUpdate === 'function') scheduleOffgridUpdate();
+
+  if (persist) setStoredGridMode(m);
+}
+
+function restoreGridModeFromStorage() {
+  const stored = getStoredGridMode();
+  if (stored) {
+    applyGridMode(stored, { persist: true });
+    return;
+  }
+  // No stored mode: reflect whatever grid is currently in (default is grouped)
+  const current = gridStateToMode(window.gridObject?.currentState) || GRID_MODES.GROUP;
+  markActive(current);
+  setStoredGridMode(current);
+}
+
+fabGroup?.addEventListener('click',  (e) => { e.preventDefault(); applyGridMode(GRID_MODES.GROUP);   });
+fabCluster?.addEventListener('click',(e) => { e.preventDefault(); applyGridMode(GRID_MODES.CLUSTER); });
+fabUngroup?.addEventListener('click',(e) => { e.preventDefault(); applyGridMode(GRID_MODES.UNGROUP); });
 fabZoomIn?.addEventListener('click', (e) => { e.preventDefault(); gridObject.zoomIn(); });
 fabZoomOut?.addEventListener('click',(e) => { e.preventDefault(); gridObject.zoomOut(); });
 
@@ -6770,15 +7087,11 @@ function runGridViewSwitcherTeaserOnceWhenVisible(switcher) {
 
 }
 
-function initGridViewSwitcher() {
-  const switcher = document.getElementById('grid-view-switcher');
+function initViewSwitcher(switcherId, bindings, { onActivate, enableTeaser = false } = {}) {
+  const switcher = document.getElementById(switcherId);
   if (!switcher) return;
 
-  const bindings = [
-    { targetId: 'fab-group' },
-    { targetId: 'fab-cluster' },
-    { targetId: 'fab-ungroup' },
-  ];
+  let closeOnLeaveAfterSelection = false;
 
   bindings.forEach(({ targetId }) => {
     const targetFab = document.getElementById(targetId);
@@ -6791,10 +7104,7 @@ function initGridViewSwitcher() {
       const clone = iconSource.cloneNode(true);
 
       // Let CSS control sizing
-      if (clone.tagName?.toLowerCase() === 'svg') {
-        clone.removeAttribute('width');
-        clone.removeAttribute('height');
-      } else if (clone.tagName?.toLowerCase() === 'img') {
+      if (clone.tagName?.toLowerCase() === 'svg' || clone.tagName?.toLowerCase() === 'img') {
         clone.removeAttribute('width');
         clone.removeAttribute('height');
       }
@@ -6802,18 +7112,109 @@ function initGridViewSwitcher() {
       btn.replaceChildren(clone);
     }
 
-    // Delegate behavior to the original FAB (keeps all existing logic centralized)
     btn.addEventListener('click', (e) => {
       e.preventDefault();
-      targetFab.click();
+      closeOnLeaveAfterSelection = true;
+      onActivate?.(targetFab, targetId);
     });
   });
 
-  if (window.DEBUG_GRID_TEASER) console.log('[grid teaser] initGridViewSwitcher() calling teaser with switcher=', switcher);
-  runGridViewSwitcherTeaserOnceWhenVisible(switcher);
+  // Click main icon again to close the switcher (even if still hovered/focused)
+  const toggleBtn = switcher.querySelector('.view-switcher-toggle');
+  if (toggleBtn) {
+    const isExpanded = () =>
+      switcher.classList.contains('is-demo-open') ||
+      switcher.matches(':hover') ||
+      switcher.contains(document.activeElement);
+
+    toggleBtn.addEventListener('click', (e) => {
+      const forced = switcher.classList.contains('is-force-collapsed');
+
+      if (!forced && isExpanded()) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        switcher.classList.remove('is-demo-open');
+        switcher.classList.add('is-force-collapsed');
+
+        // remove focus so :focus-within won't keep it open
+        toggleBtn.blur();
+        if (switcher.contains(document.activeElement)) {
+          document.activeElement?.blur?.();
+        }
+        return;
+      }
+
+      if (forced) {
+        switcher.classList.remove('is-force-collapsed');
+      }
+    });
+
+    // Close after a selection once the mouse leaves (fixes :focus-within “sticky open”)
+    switcher.addEventListener('mouseleave', () => {
+      switcher.classList.remove('is-force-collapsed');
+
+      if (!closeOnLeaveAfterSelection) return;
+      closeOnLeaveAfterSelection = false;
+
+      switcher.classList.remove('is-demo-open');
+      if (switcher.contains(document.activeElement)) {
+        document.activeElement?.blur?.();
+      }
+    });
+  }
+
+  if (enableTeaser) {
+    if (window.DEBUG_GRID_TEASER) console.log('[grid teaser] initViewSwitcher() calling teaser with switcher=', switcher);
+    runGridViewSwitcherTeaserOnceWhenVisible(switcher);
+  }
+}
+
+function initGridViewSwitcher() {
+  initViewSwitcher(
+    'grid-view-switcher',
+    [
+      { targetId: 'fab-group' },
+      { targetId: 'fab-cluster' },
+      { targetId: 'fab-ungroup' },
+    ],
+    {
+      enableTeaser: true,
+      onActivate: (targetFab) => targetFab.click(),
+    }
+  );
+}
+
+function initGalleryViewSwitcher() {
+  initViewSwitcher(
+    'gallery-view-switcher',
+    [
+      { targetId: 'fab-group' },
+      { targetId: 'fab-cluster' },
+      { targetId: 'fab-ungroup' },
+    ],
+    {
+      onActivate: (targetFab) => {
+        const body = document.body;
+        const isGroupGallery =
+          body.classList.contains('in-group-gallery') &&
+          !body.classList.contains('in-adhoc-gallery');
+
+        // Only act in the real group gallery, never in the ad-hoc "tags" gallery
+        if (!isGroupGallery) return;
+
+        // 1) Close the gallery
+        window.closeGallery?.();
+
+        // 2) Switch the main grid mode (after gallery closes/restores)
+        setTimeout(() => targetFab.click(), 0);
+      },
+    }
+  );
 }
 
 initGridViewSwitcher();
+initGalleryViewSwitcher();
 
 function setFitAllIconDone(done, reason = '') {
   if (!fabFitAll) return;
@@ -6913,10 +7314,27 @@ fabFitAll?.addEventListener('click', (e) => {
 
 // Optional: highlight active mode button (purely visual)
 function markActive(which) {
+  // FABs
   [fabGroup, fabCluster, fabUngroup].forEach(btn => btn?.classList.remove('is-active'));
-  if (which === 'group')   fabGroup?.classList.add('is-active');
-  if (which === 'cluster') fabCluster?.classList.add('is-active');
-  if (which === 'ungroup') fabUngroup?.classList.add('is-active');
+  if (which === GRID_MODES.GROUP)   fabGroup?.classList.add('is-active');
+  if (which === GRID_MODES.CLUSTER) fabCluster?.classList.add('is-active');
+  if (which === GRID_MODES.UNGROUP) fabUngroup?.classList.add('is-active');
+
+  // View switcher icons (data-target-fab comes from index.html)
+  const switcher = document.getElementById('grid-view-switcher');
+  const btns = switcher?.querySelectorAll?.('.view-switcher-btn') || [];
+  btns.forEach((btn) => {
+    const targetId = btn.getAttribute('data-target-fab');
+    const mode =
+      (targetId === 'fab-group') ? GRID_MODES.GROUP :
+      (targetId === 'fab-cluster') ? GRID_MODES.CLUSTER :
+      (targetId === 'fab-ungroup') ? GRID_MODES.UNGROUP :
+      null;
+
+    const on = (mode && mode === which);
+    btn.classList.toggle('is-active', !!on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
 }
 
 document.getElementById('reset-grid')?.addEventListener('click', (e) => {
@@ -7352,12 +7770,6 @@ if (OFFGRID_COUNTERS_ENABLED) {
 // Keep the right badge offset aligned with the current slide-ins width
 const slideInsEl = document.getElementById('slide-ins');
 
-/*
-function updateRightCounterOffset() {
-  const w = slideInsEl ? Math.round(slideInsEl.getBoundingClientRect().width) : 0;
-  workspaceEl?.style.setProperty('--slideins-width', `${w}px`);
-}
-*/
 // Visible width of the slide-in (in px) → used by the grid's RIGHT counter only
 function updateRightCounterOffset() {
   const ws = document.getElementById('workspace') || document.documentElement;
@@ -7372,6 +7784,12 @@ function updateRightCounterOffset() {
 
   // Expose as a CSS var the RIGHT counter can read
   ws.style.setProperty('--slideins-visible', `${Math.round(visible)}px`);
+
+  // NEW: for pinned UI (like gallery location chip):
+  // Only reserve space when ALL sidebars are collapsed.
+  const anyExpanded = !!slideIns?.querySelector('.slide-in.expanded');
+  const collapsedVisible = anyExpanded ? 0 : visible;
+  ws.style.setProperty('--slideins-collapsed-visible', `${Math.round(collapsedVisible)}px`);
 }
 
 // On init and whenever #slide-ins resizes (open/close), update the CSS var
@@ -7661,7 +8079,10 @@ function updateTagAvailability() {
   const required = [...activeTags];
   lis.forEach(li => {
     // if already disabled by group gating, skip the expensive check
-    if (li.classList.contains('disabled')) return;
+
+    // Only skip tags disabled by *group gating*, not tags disabled by AND filtering
+    if (activeGroup && li.dataset.group !== activeGroup) return;
+
     const tag = li.dataset.tag;
     const isActive = li.classList.contains('active');
     if (isActive) { li.classList.remove('disabled'); li.setAttribute('aria-disabled','false'); return; }
@@ -8399,9 +8820,21 @@ function initSlideInAccordion(slideInSelector, opts = {}) {
     });
   });
 
-  // initial: open first, close rest
-  openSection(sections[0]);
-  sections.slice(1).forEach(closeSection);
+  // initial open behavior
+  // default stays the same: open first section (index 0)
+  // set opts.initialOpen to -1 (or null/false) to start fully collapsed
+  const initialOpen = (opts.initialOpen ?? 0);
+
+  if (initialOpen === -1 || initialOpen === null || initialOpen === false) {
+    // all closed
+    sections.forEach(closeSection);
+  } else {
+    const idxToOpen =
+      Math.max(0, Math.min(sections.length - 1, Number(initialOpen) || 0));
+
+    openSection(sections[idxToOpen]);
+    sections.forEach((s, i) => { if (i !== idxToOpen) closeSection(s); });
+  }
 
   // NEW: prevent scroll on the initial auto-open
   initialising = false;
@@ -8885,19 +9318,24 @@ async function initReferencesSubpage(root) {
 }
 
 function initTeamSubpage(root) {
-  // Lazy-load + render authors only when the Team subpage is opened.
-  // IMPORTANT: init the accordion only AFTER the author markup exists.
-  ensureAuthorsRendered()
+  // Don’t start a second async init while the first is in flight
+  if (root.__initPromise) return root.__initPromise;
+
+  root.__initPromise = ensureAuthorsRendered()
     .catch(e => console.warn('[team] ensureAuthorsRendered failed:', e))
-    .finally(() => {
+    .then(() => new Promise(resolve => {
       requestAnimationFrame(() => {
         initSlideInAccordion('#subpage-team', {
           mode: 'accordion',
           dynamicHeight: false,
-          scrollOnOpen: true
+          scrollOnOpen: true,
+          initialOpen: -1 // keep Team collapsed by default
         });
+        resolve();
       });
-    });
+    }));
+
+  return root.__initPromise;
 }
 
 function hideAllTextSubpages() {
@@ -9507,6 +9945,23 @@ const HEADER_COPY = {
   themes: 'Explore by themes'
 };
 
+function resolveGroupTitle(gid, obj = null) {
+  // 1) Prefer what came with the object (Strapi payload)
+  const fromObj = obj?.groupTitle;
+  if (fromObj) return fromObj;
+
+  if (!gid) return '';
+
+  // 2) If group meta exists (dummy or Strapi-provided)
+  const fromMeta = window.groupMetaById?.[gid]?.title;
+  if (fromMeta) return fromMeta;
+
+  // 3) Fallback: find any loaded object from that group carrying a title
+  const all = window.gridObject?.objects || window.objects || [];
+  const any = all.find(o => String(o.groupId) === String(gid) && o.groupTitle);
+  return any?.groupTitle || '';
+}
+
 // Expose the setter in case you want to call it directly
 function setHeaderLeft(mode, ctx = {}) {
   const el = document.getElementById('header-left');
@@ -9557,27 +10012,32 @@ function refreshHeaderLeftFromState() {
     return;
   }
 
-  // Object detail (full page) or Group Gallery → "Research project in <location>"
   // Theme gallery → "Explore by themes"
   if (body.classList.contains('in-theme-gallery')) {
     return setHeaderLeft('themes');
   }
 
-  // Group Gallery → "Research project in <location>"
+  // Group Gallery → show Group Title (top-left header)
   if (body.classList.contains('in-group-gallery')) {
     const gid = body.dataset.currentGroupId;
-    const loc = gid
-      ? (window.groupMetaById?.[gid]?.location || window.GROUP_LABELS?.[gid] || '')
-      : '';
-    return setHeaderLeft('research', { location: loc });
+    const title =
+      resolveGroupTitle(gid) ||
+      window.groupMetaById?.[gid]?.title || // (extra-safe)
+      '';
+    return setHeaderLeft('custom', { text: title });
   }
 
+  // Object Detail → show Group Title (top-left header)
   if (body.classList.contains('in-detail-page')) {
-    // Detail header: use the Group Title (fallback to location if missing)
-    const obj   = window._lastDetailObject || null;
-    const title = obj?.groupTitle || obj?.groupLocation || '';
-  
-    // Use the existing "custom" mode so we don't change HEADER_COPY.research
+    const obj = window._lastDetailObject || null;
+    const gid = obj?.groupId || window.__detailCtx?.gid || null;
+
+    const title =
+      resolveGroupTitle(gid, obj) ||
+      window.groupMetaById?.[gid]?.title || // (extra-safe)
+      obj?.groupLocation ||                 // last fallback (avoid blank)
+      '';
+
     return setHeaderLeft('custom', { text: title });
   }
 
@@ -9652,6 +10112,13 @@ document.addEventListener('app:viewchange', (e) => {
   if (e.detail?.gridState === 'grouped') {
     window.__gridWaves?.pauseAll?.();
   }
+});
+
+document.addEventListener('app:viewchange', (e) => {
+  const mode = gridStateToMode(e?.detail?.gridState);
+  if (!mode) return;
+  markActive(mode);
+  setStoredGridMode(mode);
 });
 
 // Patch grid mode-switch so the header updates automatically
