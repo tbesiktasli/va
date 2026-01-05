@@ -205,8 +205,9 @@
   <div id="workspace">
     <div id="grid-shell">
       <div id="grid"
-     data-cursor-label-grid-empty="drag and pull"
-     data-cursor-label-grouped-prefix="explore episode: "></div>
+      data-cursor-label-grid-empty="drag and pull"
+      data-cursor-label-grid-item="view"
+      data-cursor-label-grouped-prefix="explore episode:"></div>
 
       <!-- Off-grid counters (same visual style as demo-sidebars badges) -->
       <div id="offgrid-top" class="count-invisible-objects top">&uarr; <span class="value">0</span> Elements</div>
@@ -293,7 +294,7 @@
       <!-- Bottom-left controls -->
       <div id="fab-bottom-left" class="fab-stack">
         <!-- FIT ALL -->
-        <button id="fab-fit-all" class="fab fab-lg" title="Fit All" aria-label="Fit All">
+        <button id="fab-fit-all" class="fab fab-lg" title="Fit All" aria-label="Fit All" data-cursor-label="adjust zoom">
           <!-- BEGIN zoom-out_2.svg -->
           <svg fill="currentColor"  class="fit-icon fit-icon--default" stroke="currentColor" viewBox="0 0 33 33" preserveAspectRatio="xMidYMid meet">
             <path d="M11.43,12.13H.69c-.38,0-.69-.31-.69-.69s.31-.69.69-.69h9.08L.21,1.18C-.06.91-.06.47.21.2s.71-.27.98,0l9.56,9.56V.7c0-.38.31-.69.69-.69s.69.31.69.69v10.74c0,.38-.31.69-.69.69Z"/>
@@ -353,21 +354,45 @@
         </svg>
       </div>
 
-      <button id="gallery-ungroup" class="fab fab-lg gallery-fab" type="button" title="Ungroup (Masonry)" aria-label="Ungroup">
-        <!-- inline of img/icons/Unlink.svg (without XML header) -->
-        <!-- BEGIN Unlink.svg -->
-        <svg fill="currentColor" stroke="currentColor" viewBox="0 0 34 34" preserveAspectRatio="xMidYMid meet">
-          <path d="M28.53,11.65l-4.64,4.64c-.29.29-.77.29-1.06,0h0c-.29-.29-.29-.77,0-1.06l4.64-4.64c2.08-2.08,2.14-5.55.13-7.56s-5.48-1.96-7.56.13l-4.64,4.64c-.29.29-.77.29-1.06,0h0c-.29-.29-.29-.77,0-1.06l4.64-4.64c2.66-2.66,7.09-2.72,9.68-.13s2.53,7.02-.13,9.68Z"/>
-          <path d="M16.28,22.84c.29.29.29.77,0,1.06l-4.69,4.69c-2.63,2.63-7.05,2.67-9.64.08s-2.55-7,.08-9.64l4.69-4.69c.29-.29.77-.29,1.06,0h0c.29.29.29.77,0,1.06l-4.69,4.69c-2.06,2.06-2.09,5.5-.08,7.52s5.46,1.98,7.52-.08l4.69-4.69c.29-.29.77-.29,1.06,0h0Z"/>
-          <path d="M3.66,2.6c-.29-.29-.77-.29-1.06,0s-.29.77,0,1.06l3.01,3.01c.29.29.77.29,1.06,0s.29-.77,0-1.06l-3.01-3.01Z"/>
-          <path d="M5.01,8.58H.75c-.41,0-.75.34-.75.75s.34.75.75.75h4.26c.41,0,.75-.34.75-.75s-.34-.75-.75-.75Z"/>
-          <path d="M9.33,0c-.41,0-.75.34-.75.75v4.26c0,.41.34.75.75.75s.75-.34.75-.75V.75c0-.41-.34-.75-.75-.75Z"/>
-          <path d="M25.09,23.91c-.29-.29-.77-.29-1.06,0s-.29.77,0,1.06l3.01,3.01c.29.29.77.29,1.06,0s.29-.77,0-1.06l-3.01-3.01Z"/>
-          <path d="M29.95,20.5h-4.26c-.41,0-.75.34-.75.75s.34.75.75.75h4.26c.41,0,.75-.34.75-.75s-.34-.75-.75-.75Z"/>
-          <path d="M21.37,24.82c-.41,0-.75.34-.75.75v4.26c0,.41.34.75.75.75s.75-.34.75-.75v-4.26c0-.41-.34-.75-.75-.75Z"/>
-        </svg>
-        <!-- END Unlink.svg -->
+      <div
+      id="gallery-view-switcher"
+      class="view-switcher"
+      aria-label="Grid view switcher"
+      data-cursor-label="change logic of exploration">
+    
+      <button type="button" class="fab fab-lg view-switcher-toggle" aria-label="Change view">
+        <img src="img/icons/change_view.svg" alt="Change view">
       </button>
+    
+      <div class="view-switcher-options" aria-label="Grid view options">
+        <button
+          class="view-switcher-btn"
+          type="button"
+          data-target-fab="fab-group"
+          aria-label="Group view"
+          data-cursor-label="fieldsite overview">
+        </button>
+    
+        <button
+          class="view-switcher-btn"
+          type="button"
+          data-target-fab="fab-cluster"
+          aria-label="Cluster view"
+          data-cursor-label="fieldsite overview &amp; thematic discovery">
+        </button>
+    
+        <button
+          class="view-switcher-btn"
+          type="button"
+          data-target-fab="fab-ungroup"
+          aria-label="Ungroup view"
+          data-cursor-label="thematic discovery">
+        </button>
+      </div>
+    </div>    
+
+     <!-- Pinned location chip (matches detail page style) -->
+      <span id="gallery-location-chip" class="location" aria-hidden="true" hidden></span>
     
       <!-- Gallery-specific counters (independent from grid counters) -->
       <div class="count-invisible-objects left"><span class="rot"><span class="value">0</span> Elements ↑</span></div>
@@ -404,6 +429,7 @@
 
       <div id="content-tts-button"
       class="fab fab-lg gallery-fab"
+      data-cursor-label="listen to this story"
       title="Listen"
       aria-label="Listen"
       hidden>
