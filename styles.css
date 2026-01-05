@@ -7,6 +7,8 @@
   --offgrid-right: 8px;   /* base right margin; JS adds slide-in visible width to this */
   --side-gap: 8px;
   --fab-size: 40px;
+  --visited-dot-size: 9px;
+  --visited-dot-inset: 6px;
   --view-switcher-expanded-width: 176px;
   --view-switcher-expand-ms: 200ms;      /* bar expansion duration */
   --view-switcher-stagger-ms: 90ms;      /* delay between icons */
@@ -36,6 +38,8 @@
   --main-button-inactive-font-color-dark: #757575;
   --main-button-inactive-outline-color: #ccc;
   --main-button-inactive-outline-color-dark: #5e5e5e;
+  --detail-meta-color: #817d77;
+  --detail-meta-color-dark: #fff;
 
   /* SIZE: bump this to make the burger larger */
   --burger-width: 34px;               /* ← change this to the size you want */
@@ -91,7 +95,7 @@
   --cursor-label-offset-x: 12;
   --cursor-label-offset-y: 12;
   --cursor-label-padding: 6px 8px;
-  --cursor-label-radius: 10px;
+  --cursor-label-radius: 0px;
   --cursor-label-font-size: 12px;
   --cursor-label-viewport-pad: 8;
 }
@@ -107,6 +111,7 @@
   --main-button-outline-color: var(--main-button-outline-color-dark);
   --main-button-inactive-font-color: var(--main-button-inactive-font-color-dark);
   --main-button-inactive-outline-color: var(--main-button-inactive-outline-color-dark);
+  --detail-meta-color: var(--detail-meta-color-dark);
 }
 
 * {
@@ -325,12 +330,14 @@
   }
 
   .prepage-subline {
+    font-family: "Noto Serif", serif;
     font-size: 1.5em; /* matches .title-box h3 size */
     line-height: 1.3;
     margin: 0;
     margin-top: 10px;
     font-weight: 200;
   }
+  
 
   .prepage-actions {
     display: flex;
@@ -440,8 +447,17 @@
     .preload-percent { font-size: 2.6em; }
   }
 
-  .header-center, h1, h2, h3, object, .wide-content .gallery-box .column .item.text, .vertical-content .topics {
+  .header-center, h1, h2, h3, object, .vertical-content .topics {
     font-family: "Noto Serif Display", serif;
+    font-optical-sizing: auto;
+    font-weight: 400;
+    font-style: normal;
+    font-variation-settings: "wdth" 100;
+  }
+  
+  /* Gallery view: text tiles use Noto Serif (not Display) */
+  #group-gallery .gallery-box .column .item.text {
+    font-family: "Noto Serif", serif;
     font-optical-sizing: auto;
     font-weight: 400;
     font-style: normal;
@@ -514,6 +530,27 @@
     overflow: visible;
     z-index: 1;
     transition: transform 0.5s ease, width 0.4s ease, height 0.4s ease;
+  }
+
+  /* Visited marker: small filled dot (top-left) */
+  .object.is-visited::before {
+    content: '';
+    position: absolute;
+    top: var(--visited-dot-inset);
+    left: var(--visited-dot-inset);
+    width: var(--visited-dot-size);
+    height: var(--visited-dot-size);
+    border-radius: 999px;
+
+    /* "main color" that adapts to theme */
+    background: var(--main-font-color);
+
+    /* halo without shadow (avoids affecting text-fit measurements) */
+    border: 2px solid var(--main-bg-color);
+    box-shadow: none;
+
+    pointer-events: none;
+    z-index: 10;
   }
 
   /* Eye cursor on hover: only in clustered / ungrouped grid modes */
@@ -734,19 +771,19 @@
             mask: var(--icon-detail-close) no-repeat center / contain;
   }
 
-  .detail-date, .detail-group {
+  .detail-date,
+  .detail-group,
+  .detail-date-top,
+  .detail-date-inline {
     text-align: center;
     font-size: 0.6rem;
     font-style: normal;
-    color: var(--main-light-font-color);
+    letter-spacing: 0.12em;
+    color: var(--detail-meta-color);
   }
 
   /* default: non-portrait → top date visible */
   .detail-date-top {
-    text-align: center;
-    font-size: 0.6rem;
-    font-style: normal;
-    color: var(--main-light-font-color);
     margin-bottom: 10px;
   }
 
@@ -762,9 +799,6 @@
   .detail-panel.portrait .detail-date-inline {
     display: block;
     text-align: left;
-    font-size: 0.6rem;
-    font-style: normal;
-    color: var(--main-light-font-color);
     margin-bottom: 8px;
   }
 
@@ -1069,6 +1103,28 @@
   padding-right: 24px;
 }
 
+/* Manual collapse state (lets a click close it even while hovered/focused) */
+.view-switcher.is-force-collapsed,
+.view-switcher.is-force-collapsed:hover,
+.view-switcher.is-force-collapsed:focus-within,
+.view-switcher.is-force-collapsed.is-demo-open {
+  width: var(--fab-size);
+  box-shadow: inset 0 0 0 1px transparent;
+  background: transparent;
+  padding-right: 0;
+}
+
+.view-switcher.is-force-collapsed .view-switcher-options {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.view-switcher.is-force-collapsed .view-switcher-btn {
+  opacity: 0;
+  transform: translateX(-6px);
+  transition-delay: 0ms;
+}
+
 .view-switcher-toggle {
   flex: 0 0 auto;
   margin: 0;
@@ -1142,6 +1198,14 @@
   filter: grayscale(1) opacity(0.35);
   transform: translateX(0);
   transition-delay: calc(var(--view-switcher-expand-ms) - var(--view-switcher-icon-lead-ms));
+}
+
+/* Active view icon (matches current grid mode) */
+.view-switcher:hover .view-switcher-btn.is-active,
+.view-switcher:focus-within .view-switcher-btn.is-active,
+.view-switcher.is-demo-open .view-switcher-btn.is-active {
+  filter: none;
+  opacity: 1;
 }
 
 .view-switcher:hover .view-switcher-btn:nth-child(2),
@@ -1343,18 +1407,17 @@ header {
   display: block;
 }
 
-/* Ungroup button inside the group gallery header */
-#gallery-ungroup {
+/* Grid view switcher inside the group gallery header (replaces #gallery-ungroup) */
+#gallery-view-switcher {
   position: absolute;
-  top: calc(var(--fab-edge-gap) + var(--fab-size) + 9px);      /* under the back button (35px high + gap) */
+  top: calc(var(--fab-edge-gap) + var(--fab-size) + 9px);      /* under the back button */
   left: var(--fab-edge-gap);
   z-index: 1200;
-  display: none;  /* hidden by default, see rule below */
+  display: none; /* hidden by default, see rule below */
 }
 
-/* Only show this control in the GROUP gallery, not the ad-hoc tag gallery */
-body.in-group-gallery:not(.in-adhoc-gallery) #gallery-ungroup {
-  display: grid;  /* same as .fab */
+body.in-group-gallery:not(.in-adhoc-gallery) #gallery-view-switcher {
+  display: flex; /* let .view-switcher keep its flex layout */
 }
 
 .wide-content, .vertical-content {
@@ -2032,6 +2095,27 @@ and pin the expanded panel to the right edge. */
   background-repeat: no-repeat;
   background-position: 6px center;
   background-size: 12px 12px;
+}
+
+/* Group gallery: pinned location chip (avoid collapsed sidebar handles) */
+#gallery-location-chip {
+  position: fixed;
+  top: calc(var(--header-h) + 12px + env(safe-area-inset-top));
+  /* NEW: respect the collapsed sidebar strip width */
+  right: calc(var(--fab-edge-gap) + var(--slideins-collapsed-visible, 0px) + env(safe-area-inset-right));
+  /* NEW: match main background color */
+  background-color: var(--main-bg-color);
+  z-index: 1200;              /* below slide-ins (1400) so expanded sidebars can overlay */
+  max-width: min(60vw, 420px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;       /* acts like a label */
+}
+
+/* Show only in the real group gallery (not theme gallery) */
+body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
+  display: inline-block;
 }
 
 .vertical-content h1 {
@@ -3392,6 +3476,15 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   text-decoration: underline;
 }
 
+/* Content sidebars: author line under the H1 */
+.slide-in[data-mode="content"] .content-sidebar-author {
+  display: block;
+  margin-top: 10px;
+  font-family: "Albert Sans", sans-serif;
+  font-size: 0.9em;
+  color: var(--main-light-font-color);
+}
+
 /* List layout: arrow on left, text on right */
 .further-reading-list {
   list-style: none;
@@ -4031,14 +4124,6 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   color: white;
 }
 
-#cursor-label[data-kind="hscroll"] .cursor-label__text::before {
-  content: "← ";
-}
-
-#cursor-label[data-kind="hscroll"] .cursor-label__text::after {
-  content: " →";
-}
-
 /* Only hide cursor when explicitly requested */
 [data-cursor-hide="true"][data-cursor-label]:hover,
 [data-cursor-hide="true"][data-cursor-label]:hover * {
@@ -4048,4 +4133,29 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 #grid[data-view="grouped"] [data-cursor-hide="true"][data-cursor-label-grouped]:hover,
 #grid[data-view="grouped"] [data-cursor-hide="true"][data-cursor-label-grouped]:hover * {
   cursor: none;
+}
+
+/* Grouped cursor label: render each line as its own pill */
+#cursor-label[data-kind="grouped"] .cursor-label__text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+
+  /* parent becomes transparent so gaps are visible */
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+#cursor-label[data-kind="grouped"] .cursor-label__line {
+  display: inline-block; /* pill fits its content */
+  padding: var(--cursor-label-padding);
+  border-radius: var(--cursor-label-radius);
+  background: rgba(0, 0, 0, 0.75);
+  color: white;
+}
+
+#cursor-label[data-kind="grouped"] .cursor-label__line--indented {
+  margin-left: 50px; /* indent the whole pill without overriding padding */
 }
