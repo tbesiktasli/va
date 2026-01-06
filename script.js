@@ -4408,6 +4408,29 @@ function initMobileSlideInsToggle() {
 
   window.openGroupGallery = openGallery;
 
+  // Open group gallery unless the group only contains 1 object → open that object's detail directly.
+  window.openGroupEntry = function (gid, { from = 'menu' } = {}) {
+    if (gid == null) return false;
+
+    const allObjects = (window.gridObject?.objects || window.objects || []);
+    // If data is not ready, fall back to gallery
+    if (!Array.isArray(allObjects) || allObjects.length === 0) {
+      window.openGroupGallery?.(gid);
+      return true;
+    }
+
+    const members = allObjects.filter(o => String(o.groupId) === String(gid));
+
+    if (members.length === 1 && typeof window.openObjectDetail === 'function') {
+      const only = members[0];
+      window.openObjectDetail({ objectId: only.id, from, gid });
+      return true;
+    }
+
+    window.openGroupGallery?.(gid);
+    return true;
+  };
+
   // === Simple text page (Research Project) ===
   (function simpleTextPage() {
     const gridShellEl    = document.getElementById('grid-shell');
@@ -6138,21 +6161,10 @@ function initMobileSlideInsToggle() {
         const obj = allObjects.find(o => String(o.id) === String(objEl.id));
         const gid = obj?.groupId;
 
-        if (obj && gid != null) {
-          // Count how many objects share this groupId
-          const groupMembers = allObjects.filter(o => String(o.groupId) === String(gid));
-          if (groupMembers.length === 1 && typeof window.openObjectDetail === 'function') {
-            window.openObjectDetail({
-              objectId: obj.id,
-              from: 'grouped',
-              gid
-            });
-            return; // do not open the gallery in this case
-          }
+        if (gid != null) {
+          window.openGroupEntry?.(gid, { from: 'grouped' });
         }
-
-        // Default: multi-object groups still open the gallery
-        openGallery(gid);
+        return;        
       }
     }, true); // capture so we log/handle even if child elements have handlers
   }
@@ -9731,7 +9743,7 @@ function initOverlayMenu() {
       if (!gid) return;
 
       closeOverlay(ev);
-      window.openGroupGallery?.(gid);
+      window.openGroupEntry?.(gid, { from: 'menu' });      
     });
 
     subMenu.appendChild(list);
