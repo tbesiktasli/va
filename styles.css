@@ -9,6 +9,8 @@
   --fab-size: 40px;
   --visited-dot-size: 9px;
   --visited-dot-inset: 6px;
+  --visited-dot-border: 2px;
+  --visited-dot-scale: 1;
   --view-switcher-expanded-width: 176px;
   --view-switcher-expand-ms: 200ms;      /* bar expansion duration */
   --view-switcher-stagger-ms: 90ms;      /* delay between icons */
@@ -60,7 +62,7 @@
   --icon-detail-close:            url('img/icons/close.svg');
 
   /* Cursor (hover) */
-  --cursor-eye: url("img/icons/eye.svg") 16 16, pointer;
+  --cursor-eye: url("img/icons/eye_bg_s.svg") 16 16, pointer;
 
   /* Mobile “open sidebars” icons */
   --icon-slidein-mobile-open-menu:    url('img/icons/connections.svg'); /* Discover Connections */
@@ -97,7 +99,15 @@
   --cursor-label-padding: 6px 8px;
   --cursor-label-radius: 0px;
   --cursor-label-font-size: 12px;
+  --cursor-label-bg: rgba(0, 0, 0, 0.75);
+  --cursor-label-color: #fff;
   --cursor-label-viewport-pad: 8;
+  /* Cursor label reveal animation (grouped pills) */
+  --cursor-label-reveal-speed: 550; /* px per second (higher = faster) */
+  --cursor-label-reveal-min-ms: 120; /* minimum duration per line */
+  /* Cursor label conceal animation (reverse) */
+  --cursor-label-conceal-speed: 1200;   /* px per second (higher = faster close) */
+  --cursor-label-conceal-min-ms: 70;    /* minimum duration per line (close) */
 }
 
 :root[data-theme="dark"] {
@@ -112,6 +122,9 @@
   --main-button-inactive-font-color: var(--main-button-inactive-font-color-dark);
   --main-button-inactive-outline-color: var(--main-button-inactive-outline-color-dark);
   --detail-meta-color: var(--detail-meta-color-dark);
+  --cursor-eye: url("img/icons/eye_bg_w.svg") 16 16, pointer;
+  --cursor-label-bg: rgba(255, 255, 255, 0.85);
+  --cursor-label-color: #111;
 }
 
 * {
@@ -536,17 +549,20 @@
   .object.is-visited::before {
     content: '';
     position: absolute;
-    top: var(--visited-dot-inset);
-    left: var(--visited-dot-inset);
-    width: var(--visited-dot-size);
-    height: var(--visited-dot-size);
+    top: calc(var(--visited-dot-inset) * var(--visited-dot-scale));
+    left: calc(var(--visited-dot-inset) * var(--visited-dot-scale));
+    width: calc(var(--visited-dot-size) * var(--visited-dot-scale));
+    height: calc(var(--visited-dot-size) * var(--visited-dot-scale));
     border-radius: 999px;
 
     /* "main color" that adapts to theme */
     background: var(--main-font-color);
 
     /* halo without shadow (avoids affecting text-fit measurements) */
-    border: 2px solid var(--main-bg-color);
+    border-width: calc(var(--visited-dot-border) * var(--visited-dot-scale));
+    border-style: solid;
+    border-color: var(--main-bg-color);
+
     box-shadow: none;
 
     pointer-events: none;
@@ -976,27 +992,46 @@
     /* knobs */
     --ring: 2px;                 /* ring thickness */
     --glow-opacity: 0.55;        /* ring opacity */
-    --glow-blur: 6px;            /* ring blur */
-    --halo-opacity: 0.8;        /* outer halo opacity */
+  
+    --halo-opacity: 0.8;         /* outer halo opacity */
     --halo-blur: 16px;           /* outer halo blur */
-    mix-blend-mode: screen;      /* “light” the content instead of tinting it */
-    filter: blur(var(--halo-blur));
-    opacity: var(--halo-opacity);
+    --halo-spread: 10px;         /* outer halo spread (new) */
+  
+    /* IMPORTANT:
+       no filter + no mix-blend-mode on the container,
+       otherwise blur will bleed inward again */
   }
   
-  /* soft outer halo */
+  /* Crisp gradient ring (no blur) */
   .object-glow::before {
     content: "";
     position: absolute;
-    inset: -2px;                /* expand beyond the ring */
+    inset: -2px;                 /* ring sits slightly outside */
     border-radius: inherit;
     background: var(--glow);
     pointer-events: none;
-    padding: calc(var(--ring) + 8px);
+  
+    /* ring thickness */
+    padding: var(--ring);
+    opacity: var(--glow-opacity);
+  
+    /* punch out the center so only the ring remains */
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
+  }
+  
+  /* Outer-only halo (box-shadow never draws inward) */
+  .object-glow::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+  
+    opacity: var(--halo-opacity);
+    box-shadow: 0 0 var(--halo-blur) var(--halo-spread) var(--glow-color, transparent);
   }  
 
   /* === Performance: disable expensive glow when not needed === */
@@ -1017,10 +1052,9 @@
     filter: none;
     mix-blend-mode: normal;
     opacity: 1;
-    box-shadow: none;
   
     /* multi-color border from the existing --glow gradient */
-    border: 2px solid transparent;
+    border: var(--ring) solid transparent;
     border-image: var(--glow) 1;
   }
   
@@ -1478,6 +1512,36 @@ body.in-group-gallery:not(.in-adhoc-gallery) #gallery-view-switcher {
   margin-top: 30px;
 }
 
+/* Group gallery: authors line under the subtitle */
+#group-gallery .title-box .gallery-authors {
+  margin-top: 14px;
+  font-family: "Albert Sans", sans-serif;
+  font-size: 1.05em;
+  line-height: 1.4;
+  color: var(--main-light-font-color);
+  text-align: center;
+}
+
+#group-gallery .title-box .gallery-authors a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+/* Group gallery: contributors line under the authors line (smaller) */
+#group-gallery .title-box .gallery-contributors {
+  margin-top: 8px;
+  font-family: "Albert Sans", sans-serif;
+  font-size: 0.9em;   /* smaller than authors */
+  line-height: 1.4;
+  color: var(--main-light-font-color);
+  text-align: center;
+}
+
+#group-gallery .title-box .gallery-contributors a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 /* Ad-hoc tag gallery: title chips with a removable "X" */
 #group-gallery .title-box h2 .adhoc-title-tag {
   position: relative;
@@ -1624,6 +1688,20 @@ body.in-adhoc-gallery #group-gallery .title-box h2 {
   border: 1px solid var(--object-text-border-color);
   padding: 20px;
   background-color: var(--main-bright-bg-color);
+}
+
+/* Gallery: prevent extreme portrait media from blowing up a column */
+:root {
+  --gallery-media-max-h: 320px;
+}
+
+#group-gallery .gallery-box img.item.image,
+#group-gallery .gallery-box video.item {
+  max-height: var(--gallery-media-max-h);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
 }
 
 .wide-content .gallery-box .column .item.text .scaling-text, #related-objects .item .scaling-text {
@@ -2908,7 +2986,11 @@ ul.tag-group-switch {
   z-index: 9999;
   display: none;
   flex-direction: column;
-  padding: 0px 10px 60px 100px;
+  padding: 0px 100px 60px 100px;
+  --overlay-menu-col-gap: clamp(24px, 6vw, 120px);
+  --overlay-submenu-font-size: 2em;
+  --overlay-episodes-font-scale: 0.8; /* Episodes will be 80% of normal submenu size */
+  overflow: hidden;
 }
 
 #overlay-menu.active {
@@ -2916,19 +2998,31 @@ ul.tag-group-switch {
 }
 
 .overlay-content {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); /* true 50:50 */
+  grid-template-rows: minmax(0, 1fr);
+  column-gap: var(--overlay-menu-col-gap);
+  align-items: stretch;
+
   flex: 1;
+  min-height: 0;
   padding: 60px 0;
 }
 
 .main-menu {
-  flex: 2;
   display: flex;
   flex-direction: column;
   gap: 20px;
-  font-size: 4em;
-  margin-top: 100px;
+  font-size: 3.2em;
+  margin-top: 40px;
+}
+
+.main-menu .menu-heading {
+  font-size: 0.8rem;          /* relative to the big 4em menu items */
+  text-transform: uppercase;  /* <-- your “TABLE OF CONTENTS” requirement */
+  letter-spacing: 0.12em;
+  font-weight: 500;
+  opacity: 0.75;
 }
 
 .menu-item {
@@ -2945,50 +3039,172 @@ ul.tag-group-switch {
   position: relative;
 }
 
-/*
-.menu-item.active::before {
+/* Main menu: show dash only for the active main item */
+.main-menu .menu-item.active::before {
   content: "— ";
   margin-right: 10px;
 }
-*/
 
 .sub-menu {
-  flex: 1;
-  font-size: 2em;
+  font-size: var(--overlay-submenu-font-size);
   display: flex;
   flex-direction: column;
   gap: 15px;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable both-edges;
+  overscroll-behavior: contain;
 }
 
-.sub-menu div:hover {
+.sub-menu[hidden] {
+  display: none !important;
+}
+
+.sub-menu .sub-item:hover {
   font-weight: 700;
 }
 
-.sub-menu div {
+.sub-menu .sub-item {
   cursor: pointer;
   font-weight: 200;
 }
 
-.sub-menu div.active {
+.sub-menu .sub-item.active {
   font-weight: 700;
   position: relative;
 }
 
-.sub-menu div.active::before {
+.sub-menu .sub-item.active::before {
   content: "— ";
   margin-right: 10px;
 }
 
+/* Episodes list (Overlay menu → Episodes) */
+.sub-menu .episodes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 28px; /* space between group entries */
+  font-size: 0.6em;
+}
+
+.sub-menu .episode-entry {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr); /* image left, text right */
+  column-gap: 40px;
+  align-items: start;
+}
+
+.sub-menu .episode-thumb {
+  width: 100px;
+  display: block;
+  text-decoration: none;
+
+  background: rgba(255,255,255,0.06);
+  border: none;          /* <-- remove border completely */
+  opacity: 0.9;
+}
+
+/* Episodes thumb: if we have an image, show it edge-to-edge */
+.sub-menu .episode-thumb.has-image {
+  background: none;
+  overflow: hidden; /* crop image to rounded corners */
+  opacity: 1;
+}
+
+.sub-menu .episode-thumb-img {
+  width: 100%;
+  display: block;
+  border-radius: 0;
+}
+
+@supports (background: color-mix(in srgb, currentColor 10%, transparent)) {
+  .sub-menu .episode-thumb {
+    background: color-mix(in srgb, currentColor 12%, transparent);
+  }
+}
+
+.sub-menu .episode-thumb:hover {
+  opacity: 1;
+}
+
+.sub-menu .episode-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sub-menu .episode-title,
+.sub-menu .episode-subtitle {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sub-menu .episode-title:hover,
+.sub-menu .episode-subtitle:hover {
+  text-decoration: underline;
+}
+
+.sub-menu .episode-title {
+  font-weight: 600;
+}
+
+.sub-menu .episode-subtitle {
+  opacity: 0.85;
+}
+
+.sub-menu .episode-authors {
+  font-size: 0.65em;
+  line-height: 1.25;
+}
+
+.sub-menu .episode-contributors {
+  font-size: 0.55em; /* smaller than authors */
+  line-height: 1.25;
+  opacity: 0.9;
+}
+
+.sub-menu .episode-authors a,
+.sub-menu .episode-contributors a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .overlay-footer {
   display: flex;
-  gap: 20px;
-  font-size: 0.9em;
+  flex-direction: column;  /* NEW: theme goes on a new line */
+  gap: 10px;
   justify-content: start;
+
+  font-size: 0.8rem;
+}
+
+/* Overlay footer theme switcher: mobile-only */
+.overlay-footer-theme {
+  display: none;
+}
+
+.overlay-footer-links {
+  display: flex;
+  gap: 20px;
+}
+
+.overlay-footer-theme .theme-toggle {
+  margin-right: 0;
 }
 
 .overlay-footer a {
   color: inherit;
-  text-decoration: underline;
+  text-decoration: none;    /* remove underline */
+  text-transform: uppercase;
+  letter-spacing: 0.08em;   /* optional: makes uppercase nicer */
+  font-weight: 500;         /* optional: makes it read like a footer label */
+}
+
+.overlay-footer a:hover {
+  text-decoration: none;    /* keep it un-underlined on hover too */
+  opacity: 0.8;             /* optional: still gives a hover affordance */
 }
 
 /* END OVERLAY MENU */
@@ -3697,29 +3913,39 @@ body.menu-open .header-right .header-close { display: inline-grid; }
     }
 
     #overlay-menu {
-      padding: 12px 16px 24px 16px;  /* remove large left padding, smaller bottom */
-    }
+      padding: 12px 16px 24px 16px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+    }    
   
     /* Stack main menu and sub-menu vertically instead of side by side */
     .overlay-content {
+      display: flex;
       flex-direction: column;
-      padding: 24px 0 16px 0;        /* less vertical padding */
-      gap: 24px;                     /* space between main-menu and sub-menu */
+      padding: 24px 0 16px 0;
+      gap: 24px;
+
+      flex: 1;          /* <-- critical: constrain height */
+      min-height: 0;    /* <-- critical: allow children to overflow/scroll */
     }
   
     /* Main menu: smaller fonts, less top margin, tighter gaps */
     .main-menu {
       font-size: 2.2em;              /* was 4em on desktop */
-      margin-top: 32px;              /* was 100px */
+      margin-top: 0;              /* was 100px */
       gap: 12px;                     /* was 20px between items */
-      flex: 1;
+      flex: 1 1 auto;   /* <-- critical: take remaining height */
+      min-height: 0;    /* <-- critical: allow #sub-menu to scroll */
     }
   
     /* Sub-menu: smaller fonts and tighter spacing */
     .sub-menu {
-      font-size: 1.2em;              /* was 2em */
+      font-size: 1.2rem;             /* keep mobile submenu small even when injected into .main-menu */
       gap: 8px;                      /* was 15px */
       margin-top: 8px;               /* give a bit of space from main menu */
+      flex: 0 0 auto;
+      min-height: 0;
     }
 
     /* 5. Long-form text pages / subpages (mobile) */
@@ -4067,6 +4293,35 @@ body.menu-open .header-right .header-close { display: inline-grid; }
       margin: 0 auto;
       max-width: 520px;
     }
+
+    .overlay-footer {
+      justify-content: center;
+      width: 100%;
+    }
+
+    .overlay-footer-links {
+      justify-content: center;
+    }
+
+    /* show the footer theme switcher on mobile only */
+    .overlay-footer-theme {
+      display: flex;
+      justify-content: center;
+      width: 100%;
+    }
+
+    /* remove header-oriented spacing and keep it centered */
+    .overlay-footer-theme .theme-toggle {
+      margin-right: 0;
+    }
+
+    /* Submenu is injected inside the main menu on mobile */
+    .main-menu > .sub-menu {
+      flex: 0 0 auto;     /* prevents pushing following main items to the bottom */
+      max-height: 40vh;   /* restrict submenu height */
+      overflow-y: auto;   /* submenu scrolls internally */
+      padding-left: 50px;  /* indentation amount */
+    }
   
   }
 
@@ -4120,8 +4375,19 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   white-space: pre-line; /* renders \n as line breaks */  
 
   /* Intentionally minimal styling — you can fully theme this later */
-  background: rgba(0, 0, 0, 0.75);
-  color: white;
+  background: var(--cursor-label-bg);
+  color: var(--cursor-label-color);  
+}
+
+/* Reveal animation (default tooltip): expands left → right */
+#cursor-label .cursor-label__text.is-reveal {
+  clip-path: inset(0 100% 0 0);
+  transition: clip-path var(--cursor-label-reveal-duration, 240ms) ease;
+  will-change: clip-path;
+}
+
+#cursor-label .cursor-label__text.is-reveal.is-revealed {
+  clip-path: inset(0 0 0 0);
 }
 
 /* Only hide cursor when explicitly requested */
@@ -4152,10 +4418,36 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   display: inline-block; /* pill fits its content */
   padding: var(--cursor-label-padding);
   border-radius: var(--cursor-label-radius);
-  background: rgba(0, 0, 0, 0.75);
-  color: white;
+  background: var(--cursor-label-bg);
+  color: var(--cursor-label-color);  
+}
+
+/* Reveal animation: each pill expands left → right */
+#cursor-label[data-kind="grouped"] .cursor-label__line.is-reveal {
+  /* start hidden (but still measured for width) */
+  clip-path: inset(0 100% 0 0);
+  transition: clip-path var(--cursor-label-reveal-duration, 240ms) ease;
+  will-change: clip-path;
+}
+
+#cursor-label[data-kind="grouped"] .cursor-label__line.is-reveal.is-revealed {
+  clip-path: inset(0 0 0 0);
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  #cursor-label[data-kind="grouped"] .cursor-label__line.is-reveal {
+    transition: none;
+    clip-path: none;
+  }
+
+  /* NEW: default tooltip reveal */
+  #cursor-label .cursor-label__text.is-reveal {
+    transition: none;
+    clip-path: none;
+  }
 }
 
 #cursor-label[data-kind="grouped"] .cursor-label__line--indented {
-  margin-left: 50px; /* indent the whole pill without overriding padding */
+  margin-left: 0; /* no indentation */
 }
