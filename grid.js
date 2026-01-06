@@ -111,6 +111,10 @@ export class Grid {
       this.display = {
         // change this default to make everything appear larger/smaller at start
         baseZoom: 1, // e.g. 1.25 for bigger, 0.85 for smaller
+
+        // NEW: when entering cluster view, zoom out a bit (relative to baseZoom)
+        // 1.0 = no change, 0.9 = 10% zoom out, 0.85 = 15% zoom out
+        clusterViewZoomFactor: 0.6,
       
         // NEW: hard limits for how far you can zoom in/out
         // (tweak these numbers if you want a wider/narrower zoom range)
@@ -119,10 +123,20 @@ export class Grid {
       
         objectScale: 0.8, // NEW: starting size for all objects (1 = keep original)
         detailConnectingTagLimit: null,
-
+      
         textPadBase: 20, // px at zoom = 1
         textPadMin:  6,  // px floor when zooming out
-      };
+      
+        // Pan/drag "rubber band" tuning (lower bounce)
+        pan: {
+          springK: 0.05,                 // was 0.08 (lower = gentler snap-back)
+          damping: 0.78,                 // was 0.85 (lower = more damping / less oscillation)
+          dragResistance: 0.25,          // was 0.35 (lower = stronger resistance past bounds)
+          maxSlack: 120,                 // cap overscroll allowance (px)
+          outOfBoundsVelocityFactor: 0.12, // was 0.2 (less "slingshot" when dragging outside)
+          maxVelocity: 45,               // cap fling speed (px/frame-ish in current model)
+        },
+      };      
       
       this.objects = objects;
       // NEW: pre-scale object widths/heights so initial zoom can remain 1
@@ -470,7 +484,9 @@ export class Grid {
       const needSlack  = Math.max(needSlackX, needSlackY);
     
       if (this._pan && animate) {
-        this._pan.slack = Math.max(this._pan.slack || 0, needSlack);
+        const maxSlack = this.display?.pan?.maxSlack ?? Infinity;
+        this._pan.slack = Math.min(maxSlack, Math.max(this._pan.slack || 0, needSlack));
+
         this._pan.targetX = desiredLeft;
         this._pan.targetY = desiredTop;
         this._pan.vx = 0; this._pan.vy = 0;
@@ -742,10 +758,7 @@ export class Grid {
       const obj = this.objects.find(o => o.id === objectId);
       if (!obj) return;
 
-      // mark as visited (persist + update dot)
-      if (typeof window !== 'undefined' && typeof window.markObjectVisited === 'function') {
-        window.markObjectVisited(obj.id);
-      }
+      // NOTE: visited is only set when opening the full detail view (see script.js -> openObjectDetail)
 
       // Stop any hover TTS audio when opening inline detail
       this.stopHoverTts();
@@ -920,10 +933,7 @@ export class Grid {
       const obj = this.objects.find(o => o.id === objectId);
       if (!obj) return;
 
-      // mark as visited (persist + update dot)
-      if (typeof window !== 'undefined' && typeof window.markObjectVisited === 'function') {
-        window.markObjectVisited(obj.id);
-      }
+      // NOTE: visited is only set when opening the full detail view (see script.js -> openObjectDetail)
 
       // Stop any hover TTS audio when opening clustered inline detail
       this.stopHoverTts();
@@ -1076,13 +1086,18 @@ export class Grid {
       this.currentState = 'detail';
     } 
 
-    exitDetail() {
+    exitDetail({ instant = false, restoreCamera = true } = {}) {
       if (!this._detail?.active) return Promise.resolve();
     
       //const { id, prev } = this._detail;
       const { id, prev, prevState, pushed, cameraPrev } = this._detail;
       const focusObj = this.objects.find(o => o.id === id);
       const el = document.getElementById(id);
+
+      // If we’re collapsing due to zoom/pinch, do it instantly (no animations)
+      if (instant) {
+        this._setObjectTransitionsEnabled?.(false);
+      }
     
       // Remove any inline detail panels that might still be attached
       this._removeAllInlineDetailPanels();
@@ -1107,6 +1122,15 @@ export class Grid {
         if (imgEl) imgEl.classList.remove('detail-hide');
       }      
       el.className = prev.className || el.className; // remove is-detail/fade
+
+      // If this was a text tile, its font-size may have been fit while the tile was expanded.
+      // Refit after width/height transitions settle so the minified tile doesn't keep a huge font.
+      if (focusObj?.type === 'text') {
+        this._waitForObjectSizesToSettle(() => {
+          const el2 = document.getElementById(id);
+          if (el2) fitTextToContainer(el2);
+        }, { quietMs: 56, fallbackMs: 650 });
+      }
     
       //this._detail = { active: false };
       //this.currentState = 'ungrouped';
@@ -1117,12 +1141,20 @@ export class Grid {
       // Remove any temporary overscroll allowance and glide back inside bounds
       if (this._pan) this._pan.slack = 0;
 
-      if (cameraPrev && !this._isMobileViewport?.()) {
-        this._restoreCameraSnapshot(cameraPrev, { animate: true });
-      } else {
-        // fallback behavior (mobile or if no snapshot)
-        this.clampCameraToBounds?.(true, 'exitDetail');
-      }
+      if (restoreCamera) {
+        if (cameraPrev && !this._isMobileViewport?.()) {
+          this._restoreCameraSnapshot(cameraPrev, { animate: !instant });
+        } else {
+          // fallback behavior (mobile or if no snapshot)
+          this.clampCameraToBounds?.(!instant, 'exitDetail');
+        }
+      }     
+      
+      if (instant) {
+        // Restore transitions on next frame
+        requestAnimationFrame(() => this._setObjectTransitionsEnabled?.(true));
+        return Promise.resolve();
+      }      
     
       // Resolve after transitions settle
       return new Promise(resolve => {
@@ -1345,6 +1377,7 @@ export class Grid {
         const groupedLabel = String(object.groupTitle || object.groupName || '').trim();
         if (groupedLabel) {
           objectDiv.dataset.cursorLabelGrouped = groupedLabel;
+          objectDiv.dataset.groupId = object.groupId;
           // objectDiv.dataset.cursorHide = "true"; // keep cursor visible in grouped view
         }        
 
@@ -2078,6 +2111,13 @@ export class Grid {
         document.body.classList.remove('zooming');
         return;
       }
+
+      // If inline detail is open, close it before zooming.
+      // Otherwise zoom will resize the focused tile back to base size
+      // while leaving the “pushed away” space behind.
+      if (this._detail?.active) {
+        this.exitDetail({ instant: true, restoreCamera: false });
+      }
     
       this.zoomLevel = next;
       this._updateGridTextPadding();
@@ -2546,6 +2586,20 @@ export class Grid {
           // (pre-fit uses footprint estimates; post-fit fixes unreachable "outside grid" items)
           this.fitToView('clustered', Math.round(postFitPad * spread), { animateCamera: true, reason: 'cluster-postfit' });
 
+          // NEW: when entering clustered view, zoom out a bit so more of the cluster cloud is visible.
+          // Only zoom OUT (never force a zoom IN).
+          {
+            const baseZ = (this.display?.baseZoom ?? 1);
+            const factor = (this.display?.clusterViewZoomFactor ?? 1);
+            const targetZ = baseZ * factor;
+            const curZ = (this.zoomLevel || 1);
+
+            if (isFinite(targetZ) && targetZ > 0 && targetZ < (curZ - 1e-3)) {
+              // Keep current framing; just pull back a bit.
+              this.setZoomAbsolute?.(targetZ, { center: false, animate: true, source: 'cluster-enter' });
+            }
+          }
+
           // Force paint/layout so the baked transform='' is committed while transitions are OFF
           this._restoreTransitionsNextFrameWithFlush();
         });
@@ -2848,16 +2902,19 @@ export class Grid {
       };
     
       // Bounds that include slack on both sides
+      const panCfg = (this.display && this.display.pan) || {};
+      const MAX_SLACK = panCfg.maxSlack ?? Infinity;
+
       const boundsX = () => {
         const w = parseFloat(this.htmlGridElement.style.width) || (this.gridDimension.width * this.zoomLevel);
         const baseMin = this._vw() - w;   // ≤ 0
-        const s = this._pan.slack || 0;
+        const s = Math.min(this._pan.slack || 0, MAX_SLACK);
         return [Math.min(0, baseMin - s), 0 + s];
       };
       const boundsY = () => {
         const h = parseFloat(this.htmlGridElement.style.height) || (this.gridDimension.height * this.zoomLevel);
         const baseMin = this._vh() - h;
-        const s = this._pan.slack || 0;
+        const s = Math.min(this._pan.slack || 0, MAX_SLACK);
         return [Math.min(0, baseMin - s), 0 + s];
       };
 
@@ -2869,8 +2926,13 @@ export class Grid {
       };
     
       // --- Spring constants ---
-      const SPRING_K = 0.08;
-      const DAMPING  = 0.85;
+      const SPRING_K = panCfg.springK ?? 0.08;
+      const DAMPING  = panCfg.damping  ?? 0.85;
+
+      // --- Velocity tuning ---
+      const MAX_V    = panCfg.maxVelocity ?? Infinity;
+      const OOB_VFAC = panCfg.outOfBoundsVelocityFactor ?? 0.2;
+      const DRAG_RESIST = panCfg.dragResistance ?? 0.35;
     
       // --- Animation tick ---
       const tick = (ts) => {
@@ -2896,6 +2958,10 @@ export class Grid {
       
           p.vx = (p.vx + fx) * DAMPING;
           p.vy = (p.vy + fy) * DAMPING;
+          
+          // Hard cap so rebound can't get extreme
+          p.vx = clamp(p.vx, -MAX_V, MAX_V);
+          p.vy = clamp(p.vy, -MAX_V, MAX_V);          
         }
       
         // LERP the *current* position toward the target (time-corrected)
@@ -2989,16 +3055,19 @@ export class Grid {
     
         let nextX = p.targetX + dx;
         let nextY = p.targetY + dy;
-        nextX = applyResistance(nextX, minX, maxX, 0.35);
-        nextY = applyResistance(nextY, minY, maxY, 0.35);
+        nextX = applyResistance(nextX, minX, maxX, DRAG_RESIST);
+        nextY = applyResistance(nextY, minY, maxY, DRAG_RESIST);        
     
         p.targetX = nextX;
         p.targetY = nextY;
     
         const outsideX = p.targetX < minX || p.targetX > maxX;
         const outsideY = p.targetY < minY || p.targetY > maxY;
-        p.vx = outsideX ? dx * 0.2 : dx;
-        p.vy = outsideY ? dy * 0.2 : dy;
+        const vx = outsideX ? dx * OOB_VFAC : dx;
+        const vy = outsideY ? dy * OOB_VFAC : dy;
+        
+        p.vx = clamp(vx, -MAX_V, MAX_V);
+        p.vy = clamp(vy, -MAX_V, MAX_V);        
     
         // If something ever stopped the loop, make sure it’s running
         this._ensurePanTick();
