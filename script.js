@@ -149,10 +149,18 @@ const LOADING = (() => {
     root.classList.remove('is-hidden');
     root.classList.remove('is-fading');
     document.body.classList.add('has-preload');
+    maybeEnableBgParallax(root, window.PRELOAD_BG_MOTION_CONFIG || window.PREPAGE_BG_MOTION_CONFIG || null);
   }
 
   function hide(after) {
     ensureUI().fadeOut(() => {
+
+      const root = document.getElementById('preload');
+      if (root && typeof root._bgParallaxCleanup === 'function') {
+        root._bgParallaxCleanup();
+        root._bgParallaxCleanup = null;
+      }  
+
       document.body.classList.remove('has-preload');
   
       // ✅ Signal that the loading overlay is truly gone
@@ -772,6 +780,28 @@ const PREPAGE_BG_MOTION_DEFAULTS = {
   perspectivePx: 900,   // matches --prepage-bg-perspective default
 };
 
+function maybeEnableBgParallax(el, cfgOverride = null) {
+  if (!el) return;
+
+  // Prevent double-install
+  if (typeof el._bgParallaxCleanup === 'function') return;
+
+  const prefersReducedMotion =
+    window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  const finePointer =
+    window.matchMedia?.('(pointer: fine)')?.matches;
+
+  if (prefersReducedMotion || !finePointer) return;
+
+  const cfg = {
+    ...PREPAGE_BG_MOTION_DEFAULTS,
+    ...(cfgOverride && typeof cfgOverride === 'object' ? cfgOverride : {}),
+  };
+
+  // Reuse the existing implementation (it stores el._bgParallaxCleanup for us)
+  enablePrepageBgParallax(el, cfg);
+}
+
 // Option 1: subtle parallax using CSS vars (works with the existing .prepage::before background)
 function enablePrepageBgParallax(prepage, cfg) {
   let rafId = null;
@@ -867,19 +897,10 @@ function initPrepage() {
 
   document.body.classList.add('has-prepage');
 
-  // Enable subtle SVG background motion (option 1)
-  const prefersReducedMotion =
-    window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
-  const finePointer =
-    window.matchMedia?.('(pointer: fine)')?.matches;
-
-  if (!prefersReducedMotion && finePointer) {
-    const cfg = {
-      ...PREPAGE_BG_MOTION_DEFAULTS,
-      ...(window.PREPAGE_BG_MOTION_CONFIG || {}),
-    };
-    enablePrepageBgParallax(prepage, cfg);
-  }
+  maybeEnableBgParallax(
+    prepage,
+    window.PREPAGE_BG_MOTION_CONFIG || null
+  );  
 
   const exploreBtn = document.getElementById('prepage-explore');
   if (exploreBtn) {
@@ -974,6 +995,8 @@ function initCursorLabel() {
   const textEl = el.querySelector('.cursor-label__text');
 
   let activeTarget = null;
+  let lastGroupedKey = '';
+  let activeGroupedKey = '';
 
   const findCandidate = (node) => {
     if (!node?.closest) return null;
@@ -1012,13 +1035,20 @@ function initCursorLabel() {
         // In grouped (and any other) grid modes, single labels should not show.
         return '';
       }
-    
+
+      // ✅ Gallery items: always show "View" (no prefix, no per-object label)
+      const gallery = target.closest('#group-gallery');
+      if (gallery && target.classList.contains('item') && gallery.classList.contains('active')) {
+        return gallery.getAttribute('data-cursor-label-gallery-item') || 'View';
+      }
+
       const prefix =
         target.closest('[data-cursor-label-single-prefix]')?.getAttribute('data-cursor-label-single-prefix') ||
         document.body?.getAttribute('data-cursor-label-single-prefix') ||
         '';
-    
+
       return `${prefix}${single.trim()}`;
+
     }    
 
     return '';
@@ -1116,20 +1146,179 @@ function initCursorLabel() {
       textEl.appendChild(span);
     };
 
-    addLine(prefix, 'cursor-label__line cursor-label__line--prefix');
+    addLine(prefix, 'cursor-label__line cursor-label__line--prefix is-reveal');
     for (const ln of lines) {
-      addLine(ln, 'cursor-label__line cursor-label__line--indented');
-    }
+      addLine(ln, 'cursor-label__line cursor-label__line--indented is-reveal');
+    }    
   };
 
-  const showGrouped = (prefixLine, groupTitle, target) => {
-    activeTarget = target;
+  const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
 
+  const getRevealElsForCurrent = () => {
+    // Grouped tooltip: each .cursor-label__line is animated
+    if (el.dataset.kind === 'grouped') {
+      return Array.from(textEl.querySelectorAll('.cursor-label__line.is-reveal'));
+    }
+  
+    // Default tooltip: animate the whole .cursor-label__text span
+    return textEl.classList.contains('is-reveal') ? [textEl] : [];
+  };
+  
+  const applyRevealDurations = (revealEls) => {
+    const rootStyles = getComputedStyle(document.documentElement);
+  
+    const speedPxPerSec =
+      parseFloat(rootStyles.getPropertyValue('--cursor-label-reveal-speed')) || 550;
+  
+    const minMs =
+      parseFloat(rootStyles.getPropertyValue('--cursor-label-reveal-min-ms')) || 120;
+  
+    let maxMs = 0;
+  
+    revealEls.forEach((node) => {
+      const w = node.getBoundingClientRect().width; // clip-path doesn't affect layout size
+      const ms = Math.max(minMs, Math.round((w / Math.max(1, speedPxPerSec)) * 1000));
+      node.style.setProperty('--cursor-label-reveal-duration', `${ms}ms`);
+      if (ms > maxMs) maxMs = ms;
+    });
+  
+    return maxMs;
+  };
+
+  const applyConcealDurations = (revealEls) => {
+    const rootStyles = getComputedStyle(document.documentElement);
+  
+    const speedPxPerSec =
+      parseFloat(rootStyles.getPropertyValue('--cursor-label-conceal-speed')) || 1200;
+  
+    const minMs =
+      parseFloat(rootStyles.getPropertyValue('--cursor-label-conceal-min-ms')) || 70;
+  
+    let maxMs = 0;
+  
+    revealEls.forEach((node) => {
+      const w = node.getBoundingClientRect().width;
+      const ms = Math.max(minMs, Math.round((w / Math.max(1, speedPxPerSec)) * 1000));
+      node.style.setProperty('--cursor-label-reveal-duration', `${ms}ms`);
+      if (ms > maxMs) maxMs = ms;
+    });
+  
+    return maxMs;
+  };  
+  
+  const animateReveal = (revealEls) => {
+    if (!revealEls.length) return;
+  
+    applyRevealDurations(revealEls);
+    revealEls.forEach((n) => n.classList.remove('is-revealed'));
+  
+    // Force the browser to register the initial clip-path before revealing
+    void el.offsetWidth;
+  
+    requestAnimationFrame(() => {
+      revealEls.forEach((n) => n.classList.add('is-revealed'));
+    });
+  };
+  
+  const animateConceal = (revealEls) => {
+    if (!revealEls.length) return Promise.resolve();
+  
+    // Reduced motion: no need to "wait"
+    if (prefersReducedMotion) {
+      revealEls.forEach((n) => n.classList.remove('is-revealed'));
+      return Promise.resolve();
+    }
+  
+    const maxMs = applyConcealDurations(revealEls);
+    revealEls.forEach((n) => n.classList.remove('is-revealed'));
+  
+    // Pure timeout is robust (no transitionend edge cases)
+    return new Promise((resolve) => setTimeout(resolve, maxMs + 30));
+  };
+  
+  // ---- Transition queue: always "close current" then "open next" ----
+  let __tooltipTransitionBusy = false;
+  let __tooltipPending = null;       // function or null
+  let __tooltipHasPending = false;
+  let __tooltipReqId = 0;
+  
+  const requestTooltipTransition = (openFnOrNull) => {
+    __tooltipPending = openFnOrNull; // function or null
+    __tooltipHasPending = true;
+    __tooltipReqId++;
+  
+    if (__tooltipTransitionBusy) return;
+    __tooltipTransitionBusy = true;
+  
+    const pump = () => {
+      if (!__tooltipHasPending) {
+        __tooltipTransitionBusy = false;
+        return;
+      }
+  
+      const myId = __tooltipReqId;
+      const next = __tooltipPending;
+      __tooltipHasPending = false;
+  
+      const wasVisible = el.classList.contains('is-visible');
+      const revealEls = getRevealElsForCurrent();
+  
+      const closePromise = wasVisible
+        ? animateConceal(revealEls).then(() => {
+            // If a newer request arrived mid-close, stop; the next pump will handle it
+            if (myId !== __tooltipReqId) return;
+  
+            el.classList.remove('is-visible');
+            delete el.dataset.kind;
+  
+            // Clear content (safe for both grouped + default)
+            textEl.classList.remove('is-reveal', 'is-revealed');
+            textEl.textContent = '';
+  
+            activeGroupedKey = '';
+            activeTarget = null;
+          })
+        : Promise.resolve();
+  
+      closePromise
+        .then(() => {
+          if (myId !== __tooltipReqId) {
+            // newer request arrived; keep pumping
+            return;
+          }
+          if (typeof next === 'function') next();
+        })
+        .finally(() => {
+          if (__tooltipHasPending) pump();
+          else __tooltipTransitionBusy = false;
+        });
+    };
+  
+    pump();
+  };  
+
+  const showGrouped = (prefixLine, groupTitle, target, key) => {
+    const wasVisible = el.classList.contains('is-visible');
+  
+    // same pile/content → no re-render and no re-animation
+    if (wasVisible && el.dataset.kind === 'grouped' && activeGroupedKey === key) {
+      activeTarget = target; // keep pointerout logic happy
+      return;
+    }
+  
+    activeTarget = target;
+    activeGroupedKey = key;
+  
     el.dataset.kind = 'grouped';
+    // Ensure default tooltip classes don't leak into grouped mode
+    textEl.classList.remove('is-reveal', 'is-revealed');
+
     renderGroupedLabel(prefixLine, groupTitle);
 
     el.classList.add('is-visible');
-  };
+    animateReveal(getRevealElsForCurrent());
+
+  };  
 
   const show = (label, target, kind = '') => {
     activeTarget = target;
@@ -1139,16 +1328,19 @@ function initCursorLabel() {
   
     // keep your existing wrapping line here:
     // textEl.textContent = wrapTooltip(label, 30);
+    // Default tooltip animates the whole text pill
+    textEl.classList.add('is-reveal');
     textEl.textContent = wrapTooltip(label, 30);
-  
+
     el.classList.add('is-visible');
+    animateReveal(getRevealElsForCurrent());
+
   };  
 
   const hide = () => {
-    activeTarget = null;
-    delete el.dataset.kind;
-    el.classList.remove('is-visible');
-  };
+    // Do NOT instantly hide — reverse animate first
+    requestTooltipTransition(null);
+  };  
 
   document.addEventListener('pointerover', (ev) => {
     const candidate = findCandidate(ev.target);
@@ -1163,27 +1355,36 @@ function initCursorLabel() {
       const prefixLine = (grid?.getAttribute('data-cursor-label-grouped-prefix') || 'explore episode:').trim();
       const groupTitle = candidate.getAttribute('data-cursor-label-grouped').trim();
 
-      showGrouped(prefixLine, groupTitle, candidate);
+      const gid = candidate.dataset.groupId || '';
+      const nextKey = `${prefixLine}||${groupTitle}||${gid}`;      
+
+      // Same pile → keep open, don't retrigger, and don't schedule a close/open cycle
+      if (el.classList.contains('is-visible') && el.dataset.kind === 'grouped' && activeGroupedKey === nextKey) {
+        activeTarget = candidate;
+        return;
+      }
+
+      requestTooltipTransition(() => showGrouped(prefixLine, groupTitle, candidate, nextKey));
       return;
     }
 
     const label = computeLabel(candidate);
 
     if (label) {
-      show(label, candidate);
-      return;
+      requestTooltipTransition(() => show(label, candidate));
+      return;      
     }
 
     const emptyLabel = computeGridEmptyLabel(ev);
     if (emptyLabel) {
-      show(emptyLabel, gridEl);
-      return;
+      requestTooltipTransition(() => show(emptyLabel, gridEl));
+      return;      
     }
 
     const galleryEmptyLabel = computeGalleryEmptyLabel(ev);
     if (galleryEmptyLabel) {
-      show(galleryEmptyLabel, galleryEl, 'hscroll');
-      return;
+      requestTooltipTransition(() => show(galleryEmptyLabel, galleryEl, 'hscroll'));
+      return;      
     }
 
     hide();
@@ -1191,11 +1392,27 @@ function initCursorLabel() {
 
   document.addEventListener('pointerout', (ev) => {
     if (!activeTarget) return;
-
-    // If we left the active target entirely, hide.
+  
     const nextCandidate = findCandidate(ev.relatedTarget);
-    if (nextCandidate !== activeTarget) hide();
-  }, true);
+  
+    // In grouped view: moving within the same pile should NOT hide the tooltip
+    if (el.dataset.kind === 'grouped' && nextCandidate) {
+      const grid = nextCandidate.closest('#grid');
+      if (grid?.dataset.view === 'grouped') {
+        const prefixLine = (grid.getAttribute('data-cursor-label-grouped-prefix') || '').trim();
+        const groupTitle = nextCandidate.getAttribute('data-cursor-label-grouped')?.trim() || '';
+        const gid = nextCandidate.dataset.groupId || '';
+        const nextKey = `${prefixLine}||${groupTitle}||${gid}`;
+  
+        if (nextKey === activeGroupedKey) {
+          activeTarget = nextCandidate; // switch active target within pile
+          return;
+        }
+      }
+    }
+  
+    if (nextCandidate !== activeTarget) requestTooltipTransition(null);
+  }, true);  
 
   document.addEventListener('pointermove', (ev) => {
     if (!activeTarget) return;
@@ -1234,7 +1451,7 @@ function initCursorLabel() {
 
   // Optional: hide on scroll to avoid “stuck” labels during scroll gestures
   window.addEventListener('scroll', () => {
-    if (activeTarget) hide();
+    if (activeTarget) requestTooltipTransition(null);
   }, true);
 }
 
@@ -2145,6 +2362,10 @@ async function loadStrapiAllGroupsAndObjects() {
     'populate[about_the_fieldsite][populate]': '*',
     'populate[about_the_research_project][populate]': '*',
     'populate[about_viral_atmosphere][populate]': '*',
+    'populate[authors][fields][0]': 'Name',
+    'populate[contributors][fields][0]': 'Name',
+    // ✅ ADD THIS (so we actually receive menuImage.url / formats / etc.)
+    'populate[menuImage]': true,
   }, {
     onPage: (info) => LOADING.setPhaseFromPage('groups', info)
   });
@@ -2324,6 +2545,49 @@ function strapiAssetUrl(p) {
   root = root.replace(/\/api$/i, ''); // strip trailing /api
   if (p[0] !== '/') p = '/' + p;
   return root + p;
+}
+
+// Unwrap Strapi media field into a plain { url, formats, width, height }-ish object.
+// Supports v4 ({ data: { attributes: ... } }) and v5 (direct object).
+function unwrapUploadMeta(mediaField) {
+  if (!mediaField) return null;
+
+  // Sometimes you may store just a string url
+  if (typeof mediaField === 'string') return { url: mediaField };
+
+  // v4/v5: { data: ... }
+  const d = mediaField.data;
+  if (d) {
+    const node = Array.isArray(d)
+      ? (d[0]?.attributes || d[0])
+      : (d?.attributes || d);
+    return node || null;
+  }
+
+  // v5-ish: already looks like the file object
+  if (mediaField.url || mediaField.formats) return mediaField;
+
+  // fallback
+  return mediaField.attributes || null;
+}
+
+// Ensure url + format urls are absolute (so <img src="..."> always works)
+function toAbsoluteUploadMeta(meta) {
+  if (!meta) return null;
+  const abs = (u) => (u ? strapiAssetUrl(u) : u);
+
+  const out = { ...meta };
+  if (out.url) out.url = abs(out.url);
+
+  if (out.formats && typeof out.formats === 'object') {
+    const fm = {};
+    Object.entries(out.formats).forEach(([k, v]) => {
+      fm[k] = v ? { ...v, url: abs(v.url) } : v;
+    });
+    out.formats = fm;
+  }
+
+  return out;
 }
 
 // === AUTHORS (Team subpage) =====================================
@@ -2697,7 +2961,9 @@ function handleAuthorLinkClick(ev, anchor) {
 function initAuthorBylineLinks() {
   // Delegate clicks for any author byline inside .subpage-author
   document.addEventListener('click', (ev) => {
-    const anchor = ev.target.closest('.subpage-author a');
+    const anchor = ev.target.closest(
+      '.subpage-author a, #group-gallery .gallery-authors a, #group-gallery .gallery-contributors a'
+    );
     if (!anchor) return;
 
     // If someone else already fully handled this event, don't double-trigger
@@ -2772,10 +3038,27 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
       a.aboutViralAtmosphere ||
       a.About_viral_atmosphere;
 
+    const authors = unwrapRelList(a.authors || a.Authors)
+    .map(x => (x?.Name || x?.name || '').toString().trim())
+    .filter(Boolean);    
+
+    const contributors = unwrapRelList(a.contributors || a.Contributors)
+    .map(x => (x?.Name || x?.name || '').toString().trim())
+    .filter(Boolean);  
+
     groupMeta[appGroupId] = {
       title: a.Title || a.title || `Group ${g.id}`,
       subtitle: a.Subtitle || a.subtitle || '',
       location: a.Location || a.location || '',
+
+      // ✅ ADD THIS (store raw Strapi media field; we’ll unwrap it later)
+      menuImage: a.menuImage || a.MenuImage || a.menu_image || null,
+
+      // NEW: gallery byline
+      authors,
+
+      contributors,
+
       // new: 3 optional “About …” sections
       aboutFieldsite:        extractAboutSection(aboutFieldsiteRel),
       aboutResearchProject:  extractAboutSection(aboutResearchRel),
@@ -3274,6 +3557,7 @@ window.gridObject = null;
     console.log('[data] mode=', DATA_MODE, 'groups=', Object.keys(loaded.groupMeta).length, 'objects=', loaded.objects.length);
     gridObject = new Grid('grid', objects, {});
     window.gridObject = gridObject;
+    syncVisitedDotScaleFromZoom(gridObject.zoomLevel ?? 1);
     window.applyVisitedMarkers?.();
     LOADING.setPhase('init', 1);
     LOADING.markComplete();
@@ -3806,6 +4090,40 @@ function initMobileSlideInsToggle() {
     } catch {}
   }
 
+  function setGalleryPeopleLine(elId, names, { prefix = '' } = {}) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+  
+    const list = Array.isArray(names)
+      ? names
+      : String(names || '')
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean);
+  
+    if (!list.length) {
+      el.innerHTML = '';
+      el.hidden = true;
+      return;
+    }
+  
+    el.innerHTML =
+      escapeHtml(prefix) +
+      list
+        .map(n => `<a href="#subpage-team" data-author-name="${escapeHtml(n)}">${escapeHtml(n)}</a>`)
+        .join(', ');
+  
+    el.hidden = false;
+  }
+  
+  function setGalleryAuthorsLine(names) {
+    setGalleryPeopleLine('gallery-authors', names);
+  }
+  
+  function setGalleryContributorsLine(names) {
+    setGalleryPeopleLine('gallery-contributors', names, { prefix: 'with contributions of ' });
+  }  
+
   // Optional: expose for other modules (detail re-entry)
   window.resetGroupGalleryScroll = resetGalleryScrollPositions;
 
@@ -4043,6 +4361,8 @@ function initMobileSlideInsToggle() {
           tEl.textContent = meta.title;
         }
         if (sEl) sEl.textContent = meta.subtitle;
+        setGalleryAuthorsLine(meta.authors);
+        setGalleryContributorsLine(meta.contributors);
 
         // Location chip (top-right, like detail page)
         const locChip = document.getElementById('gallery-location-chip');
@@ -4227,6 +4547,8 @@ function initMobileSlideInsToggle() {
     const sEl = document.querySelector('#group-gallery .title-box h3');
     if (tEl) tEl.textContent = theme.title || theme.name || '';
     if (sEl) sEl.textContent = '';
+    setGalleryAuthorsLine([]);
+    setGalleryContributorsLine([]);
 
     // Fresh content
     const box = groupGalleryEl.querySelector('.gallery-box');
@@ -6132,6 +6454,43 @@ function initMobileSlideInsToggle() {
     return (crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
   }
 
+  // --- Gallery horizontal jitter (left/right offset per item within a column) ---
+  // Override from index.html BEFORE script.js if you want:
+  // window.GALLERY_X_JITTER_CONFIG = { enabled: true, edgeGap: 8, maxFractionOfSlack: 0.95 };
+
+  const GALLERY_X_JITTER = {
+    enabled: true,
+    edgeGap: 6,             // keep a tiny safety margin from the column edges
+    maxFractionOfSlack: 0.9, // use up to 90% of available “slack” space
+    ...(typeof window !== 'undefined' && window.GALLERY_X_JITTER_CONFIG && typeof window.GALLERY_X_JITTER_CONFIG === 'object'
+      ? window.GALLERY_X_JITTER_CONFIG
+      : {})
+  };
+
+  function applyGalleryXJitter(el, colEl) {
+    if (!GALLERY_X_JITTER.enabled || !el) return;
+
+    // Column width (fallback to your CSS column width if it’s not measurable yet)
+    const colW = colEl?.clientWidth || 300;
+
+    // Item width is set inline for all your gallery items (img/video/text/audio/fallback)
+    const itemW = parseFloat(el.style.width) || 150;
+
+    // If items are centered, the max safe translateX is roughly half the remaining space
+    const slack = Math.max(0, colW - itemW);
+    const maxShift =
+      Math.max(0, (slack / 2) * (GALLERY_X_JITTER.maxFractionOfSlack ?? 1) - (GALLERY_X_JITTER.edgeGap ?? 0));
+
+    if (maxShift <= 0) return;
+
+    const dx = (Math.random() * 2 - 1) * maxShift;
+
+    // Preserve any existing transform (unlikely here), and append our translateX
+    const prev = (el.style.transform || '').trim();
+    const cleaned = prev.replace(/translateX\([^)]+\)/g, '').trim();
+    el.style.transform = `${cleaned ? cleaned + ' ' : ''}translateX(${dx.toFixed(1)}px)`;
+  }
+
   function createGalleryItem(o) {
     const tooltip = getObjectTooltipLabel(o);
     // IMAGE (allow up to 1.5x intrinsic CSS width, DPR-aware)
@@ -6304,17 +6663,56 @@ function initMobileSlideInsToggle() {
     return a;
   }
 
-  // Heuristic weight so tall items spread out.
-  // Tune the numbers if needed; lower = "lighter", higher = "taller".
+  // --- Gallery layout config (override via window.GALLERY_LAYOUT_CONFIG before script.js) ---
+  const GALLERY_LAYOUT = {
+    itemsPerCol: 3,              // keeps your old "3 items per column" rule as the baseline
+    maxCols: 28,                 // safety: avoid absurdly many columns
+    heightBudgetRatio: 0.92,     // how much of the visible gallery height we consider "usable"
+    weightUnitPx: 100,           // 1.0 "weight" ≈ 100px (makes viewport budgeting easy)
+    mediaWidthEstimatePx: 200,   // be defensive: assume gallery media might be at the upper random width
+    galleryMediaMaxPx: 320,      // should match the CSS cap we add below
+    ...(window.GALLERY_LAYOUT_CONFIG && typeof window.GALLERY_LAYOUT_CONFIG === 'object'
+      ? window.GALLERY_LAYOUT_CONFIG
+      : {})
+  };
+
+  // Defensive "weight" estimation (in units of ~100px)
   function estimateGalleryWeight(o) {
-    if (o.video) return 3.0;                     // videos tend to be tall in your layout
-    if (o.image) return 2.6;                     // images a bit less
-    if (o.audio) return 1.0;                     // waveform ~60px
-    if (o.text) {
-      const len = (o.text || '').length;
-      return Math.min(3, 0.6 + len / 140);       // longer text = a bit "heavier"
+    const U = GALLERY_LAYOUT.weightUnitPx;
+
+    // TEXT: CSS says 100px fixed height in gallery
+    if (o?.type === 'text' || o?.text) return 100 / U;
+
+    // AUDIO: CSS says 50px wave height
+    if (o?.type === 'audio' || o?.audio) return 60 / U;
+
+    // IMAGE: use aspect ratio if we have it; otherwise assume slightly portrait (defensive)
+    if (o?.type === 'image' || o?.image) {
+      const meta =
+        o?._imageMeta ||
+        (window.__mediaMeta__ && window.__mediaMeta__.get(o.image)) ||
+        o?._mediaMeta ||
+        null;
+
+      const w = meta?.width;
+      const h = meta?.height;
+      const ratio = (w && h) ? (h / w) : 1.25; // unknown → assume portrait-ish
+
+      // estimate height at the "upper" random width (more defensive)
+      const est = GALLERY_LAYOUT.mediaWidthEstimatePx * ratio;
+
+      // don’t let crazy portraits dominate: cap to the CSS max-height we enforce
+      const capped = Math.min(est, GALLERY_LAYOUT.galleryMediaMaxPx);
+
+      // also make sure images never count as "tiny"
+      return Math.max(110, capped) / U;
     }
-    return 1.0;
+
+    // VIDEO: no meta right now → treat as heavier than image
+    if (o?.type === 'video' || o?.video) return 240 / U;
+
+    // fallback
+    return 120 / U;
   }
 
   // Return index of the smallest value in an array
@@ -6327,16 +6725,33 @@ function initMobileSlideInsToggle() {
     return idx;
   }
 
-  // Public: build the gallery for a given group id (3 items per column)
-  window.renderGroupGallery = function(gid) {
-    if (!gid) return;
-    //const objs = groupObjects(gid);
-    const objs = shuffleArray(groupObjects(gid));
+  function clamp(n, lo, hi) {
+    return Math.max(lo, Math.min(hi, n));
+  }
 
-    const itemsPerCol = 3;
-    const colCount = Math.max(1, Math.ceil(objs.length / itemsPerCol));
+  function getMaxColWeight() {
+    // Use the actual visible gallery height if possible
+    const h = gg?.clientHeight || gg?.getBoundingClientRect?.().height || window.innerHeight || 800;
+    const usablePx = h * GALLERY_LAYOUT.heightBudgetRatio;
+    return usablePx / GALLERY_LAYOUT.weightUnitPx;
+  }
 
-    // make fresh columns
+  function computeInitialColCount(list) {
+    const N = Array.isArray(list) ? list.length : 0;
+    if (!N) return 1;
+
+    // Old rule baseline: ceil(N/3)
+    const baseByCount = Math.ceil(N / (GALLERY_LAYOUT.itemsPerCol || 3));
+
+    // New rule: add columns when estimated total height exceeds the per-column budget
+    const maxColW = getMaxColWeight();
+    const totalW = list.reduce((sum, o) => sum + estimateGalleryWeight(o), 0);
+    const byHeight = Math.ceil(totalW / Math.max(0.1, maxColW));
+
+    return clamp(Math.max(baseByCount, byHeight), 1, GALLERY_LAYOUT.maxCols);
+  }
+
+  function makeColumns(colCount) {
     box.innerHTML = '';
     const cols = [];
     for (let i = 0; i < colCount; i++) {
@@ -6345,62 +6760,64 @@ function initMobileSlideInsToggle() {
       cols.push(c);
       box.appendChild(c);
     }
+    return cols;
+  }
 
-    // Greedy placement: always append to the shortest column so far
+  function renderGalleryFromList(list) {
+    const objs = Array.isArray(list) ? list : [];
+    if (!objs.length) {
+      box.innerHTML = '';
+      return;
+    }
+
+    const maxColW = getMaxColWeight();
+    const initialCols = computeInitialColCount(objs);
+
+    const cols = makeColumns(initialCols);
     const colWeights = new Array(cols.length).fill(0);
+
     objs.forEach((o) => {
+      const w = estimateGalleryWeight(o);
+      let idx = pickLightestIndex(colWeights);
+
+      // Safety net: if even the lightest column would exceed the budget, add a new column
+      if ((colWeights[idx] + w) > maxColW && cols.length < GALLERY_LAYOUT.maxCols) {
+        const c = document.createElement('div');
+        c.className = 'column';
+        cols.push(c);
+        box.appendChild(c);
+        colWeights.push(0);
+        idx = cols.length - 1;
+      }
+
       const el = createGalleryItem(o);
-      const idx = pickLightestIndex(colWeights);
+
+      applyGalleryXJitter(el, cols[idx]); // NEW: restore left/right shift
+
       cols[idx].appendChild(el);
-      colWeights[idx] += estimateGalleryWeight(o);
+      colWeights[idx] += w;
+
     });
 
     requestAnimationFrame(() => {
       window.__galleryIO__?._updateCounts?.();
       window.__galleryTextFit?.refresh?.();
     });
-  };
-
-  // Build gallery from an explicit object list (tags selection)
- // Build gallery from an explicit object list (same layout rules as groups)
-window.renderAdhocGallery = function(objs = []) {
-  const gg  = document.getElementById('group-gallery');
-  const box = gg?.querySelector('.gallery-box');
-  if (!gg || !box) return;
-
-  // 1) fresh columns: 3 items per column → ceil(N/3) columns
-  const N = Array.isArray(objs) ? objs.length : 0;
-  const itemsPerCol = 3;
-  const colCount = Math.max(1, Math.ceil(N / itemsPerCol));
-
-  box.innerHTML = '';
-  const cols = [];
-  for (let i = 0; i < colCount; i++) {
-    const c = document.createElement('div');
-    c.className = 'column';
-    cols.push(c);
-    box.appendChild(c);
   }
 
-  // 2) same placement: greedy to the shortest column using the same weights
-  const colWeights = new Array(colCount).fill(0);
+  // Public: build the gallery for a given group id
+  window.renderGroupGallery = function (gid) {
+    if (!gid) return;
+    const objs = shuffleArray(groupObjects(gid));
+    renderGalleryFromList(objs);
+  };
 
-  // Optional: mimic group gallery randomness
-  const list = (typeof shuffleArray === 'function') ? shuffleArray([...objs]) : [...objs];
-
-  list.forEach((o) => {
-    const el = createGalleryItem(o);           // <-- reuse existing builder
-    const idx = pickLightestIndex(colWeights); // <-- reuse existing helper
-    cols[idx].appendChild(el);
-    colWeights[idx] += estimateGalleryWeight(o);
-  });
-
-  // 3) same post-pass as groups (if you call counts/text-fit there)
-  requestAnimationFrame(() => {
-    window.__galleryIO__?._updateCounts?.();
-    window.__galleryTextFit?.refresh?.();
-  });
-};
+  // Public: build the gallery for an explicit object list (tags selection)
+  window.renderAdhocGallery = function (objs = []) {
+    const list = Array.isArray(objs) ? [...objs] : [];
+    const shuffled = (typeof shuffleArray === 'function') ? shuffleArray(list) : list;
+    renderGalleryFromList(shuffled);
+  };
 })();
 
 // === Invisible item counters (left/right) scoped to #group-gallery ===
@@ -7228,13 +7645,23 @@ function setFitAllIconDone(done, reason = '') {
   fabFitAll.setAttribute('aria-label', label);
 }
 
-function syncFabFitAllOnZoom(e) {
-  if (!fabFitAll || !window.gridObject) return;
+function syncVisitedDotScaleFromZoom(z) {
+  const zoom = Number(z);
+  const scale = Number.isFinite(zoom) ? Math.min(1, Math.max(0, zoom)) : 1;
 
+  // scale is unitless (e.g. 1, 0.75, 0.5)
+  document.documentElement.style.setProperty('--visited-dot-scale', String(scale));
+}
+
+function syncFabFitAllOnZoom(e) {
   const go = window.gridObject;
   const detail = e?.detail || {};
 
-  const z = detail.zoom ?? go.zoomLevel ?? 1;
+  const z = detail.zoom ?? go?.zoomLevel ?? 1;
+  syncVisitedDotScaleFromZoom(z);
+
+  if (!fabFitAll || !go) return;
+
   const minZ = detail.minZoom ?? go.display?.minZoom ?? 0.25;
   const source = detail.source || '';
   const eps = 1e-3;
@@ -7964,7 +8391,10 @@ function setTheme(theme) {
 }
 
 function renderThemeToggle(container) {
-  if (!container || renderThemeToggle._rendered) return;
+  if (!container) return;
+
+  // avoid duplicate mount in the same container
+  if (container.querySelector('.theme-toggle')) return;
 
   const wrap = document.createElement('div');
   wrap.className = 'theme-toggle';
@@ -7994,23 +8424,28 @@ function renderThemeToggle(container) {
     setTheme(b.dataset.theme);
   });
 
-  // Insert to the LEFT of the burger
+  // Insert to the LEFT of the burger (header), otherwise append (footer)
   const before = container.querySelector('#menu-button');
   if (before) container.insertBefore(wrap, before);
   else container.appendChild(wrap);
 
-  renderThemeToggle._rendered = true;
-  renderThemeToggle._els = { btnDark, btnLight };
+  // track all instances so syncThemeToggleUI can update all
+  renderThemeToggle._instances = renderThemeToggle._instances || [];
+  renderThemeToggle._instances.push({ btnDark, btnLight });
 }
 
 function syncThemeToggleUI() {
-  const els = renderThemeToggle._els;
-  if (!els) return;
+  const instances = renderThemeToggle._instances;
+  if (!instances || !instances.length) return;
+
   const isDark = document.documentElement.dataset.theme === 'dark';
-  els.btnDark.classList.toggle('is-selected', isDark);
-  els.btnLight.classList.toggle('is-selected', !isDark);
-  els.btnDark.setAttribute('aria-pressed', isDark);
-  els.btnLight.setAttribute('aria-pressed', !isDark);
+
+  for (const els of instances) {
+    els.btnDark.classList.toggle('is-selected', isDark);
+    els.btnLight.classList.toggle('is-selected', !isDark);
+    els.btnDark.setAttribute('aria-pressed', isDark);
+    els.btnLight.setAttribute('aria-pressed', !isDark);
+  }
 }
 // ==========================================================
 
@@ -8549,16 +8984,27 @@ function openMenuSecondary(slideInSelector, { title, paragraphs, showSelectButto
         // 4) Close the secondary pane
         closeMenuSecondary(slideInSelector);
 
-        // 5) Close the sidebar panel (keep the handle visible; do NOT move #slide-ins off-screen)
-        const wrap = document.querySelector(slideInSelector);
-        if (wrap) {
-          wrap.classList.remove('expanded', 'secondary-open');
-          wrap.querySelector('.vertical-content')?.classList.remove('visible');
+        // 5) After selecting a theme:
+        // - mobile: collapse the whole slide-ins strip (removes overlay, shows minimized icon)
+        // - desktop: just close the secondary pane (keep sidebar visible)
+        const isMobile =
+          (typeof isMobileViewportForSlideIns === 'function' && isMobileViewportForSlideIns()) ||
+          (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
+
+        if (isMobile && typeof collapseSlideInsStrip === 'function') {
+          collapseSlideInsStrip();
+        } else {
+          const wrap = document.querySelector(slideInSelector);
+          if (wrap) {
+            wrap.classList.remove('expanded', 'secondary-open');
+            wrap.querySelector('.vertical-content')?.classList.remove('visible');
+          }
+
+          // keep layout math / toggles in sync
+          if (typeof updateRightCounterOffset === 'function') updateRightCounterOffset();
+          if (typeof updateMobileSlideInsToggle === 'function') updateMobileSlideInsToggle();
         }
 
-        // keep layout math / toggles in sync
-        if (typeof updateRightCounterOffset === 'function') updateRightCounterOffset();
-        if (typeof updateMobileSlideInsToggle === 'function') updateMobileSlideInsToggle();
       }, { once: true });
     }
   }
@@ -9145,14 +9591,14 @@ function initOverlayMenu() {
   const mainItems = overlay.querySelectorAll('.menu-item');
   const subMenu   = document.getElementById('sub-menu');
 
+  const overlayContent = overlay.querySelector('.overlay-content');
+  const mainMenuEl     = overlay.querySelector('.main-menu');
+  const mobileMq       = window.matchMedia?.('(max-width: 768px)');  
+
   // 1) Submenu entries
   const subItemsMap = {
     // Viral Atmospheres has three subpages: About (placeholder), Introduction, Archive’s Architecture
     viralatmospheres: ['About', 'Introduction', 'The Archive’s Architecture'],
-
-    // Research Projects and Team have no submenu items
-    projects: [],
-    team: [],
   };
 
 
@@ -9168,11 +9614,162 @@ function initOverlayMenu() {
     'Team':         { id: 'subpage-team',         header: 'Meet our Team' },
   };
 
+  function renderEpisodesMenu() {
+    subMenu.innerHTML = '';
+    
+    const entries = Object.entries(groupMetaById || {})
+    .filter(([gid, meta]) => meta && (meta.title || meta.subtitle));   
+
+    if (!entries.length) {
+      subMenu.innerHTML = `<div class="episodes-empty">No episodes found.</div>`;
+      return;
+    }
+
+    const esc = (s) => escapeHtml(String(s ?? ''));
+
+    const normalizeNames = (val) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val.map(v => String(v).trim()).filter(Boolean);
+      return String(val).split(',').map(s => s.trim()).filter(Boolean);
+    };
+
+    const numericGroupKey = (gid) => {
+      const m = /^s(\d+)$/.exec(String(gid));
+      if (m) return Number(m[1]);
+      const n = Number(gid);
+      return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
+    };
+
+    // Stable order (by Strapi numeric id if gid looks like "s12")
+    entries.sort((a, b) =>
+      numericGroupKey(a[0]) - numericGroupKey(b[0]) ||
+      String(a[1]?.title || '').localeCompare(String(b[1]?.title || ''))
+    );
+
+    const list = document.createElement('div');
+    list.className = 'episodes-list';
+
+    for (const [gid, meta] of entries) {
+      const title = meta?.title || `Group ${gid}`;
+      const subtitle = meta?.subtitle || '';
+
+      const authors = normalizeNames(meta?.authors);
+      const contributors = normalizeNames(meta?.contributors);
+
+      const authorsHtml = authors.length
+        ? `<div class="episode-authors">${
+            authors
+              .map(n => `<a href="#subpage-team" data-author-name="${esc(n)}">${esc(n)}</a>`)
+              .join(', ')
+          }</div>`
+        : '';
+
+      const contributorsHtml = contributors.length
+        ? `<div class="episode-contributors">with contributions by ${
+            contributors
+              .map(n => `<a href="#subpage-team" data-author-name="${esc(n)}">${esc(n)}</a>`)
+              .join(', ')
+          }</div>`
+        : '';
+
+      const row = document.createElement('div');
+      row.className = 'episode-entry';
+      row.dataset.groupId = gid;
+
+      const THUMB_SIZE = 100; // keep in sync with CSS (.episode-thumb width/height)
+
+      const uploadMeta = toAbsoluteUploadMeta(
+        unwrapUploadMeta(meta?.menuImage || meta?.menu_image || meta?.MenuImage)
+      );
+      
+      const best = uploadMeta ? pickImageVariant(uploadMeta, THUMB_SIZE, 1) : { url: undefined };
+      const menuImgUrl = (best?.url || uploadMeta?.url || '').trim();
+      
+      const thumbInner = menuImgUrl
+        ? `<img class="episode-thumb-img" src="${esc(menuImgUrl)}" alt="" loading="lazy" decoding="async">`
+        : '';
+      
+      const thumbClass = menuImgUrl ? 'has-image' : '';
+      
+      row.innerHTML = `
+        <a href="#"
+           class="episode-thumb ${thumbClass} episode-go-gallery"
+           data-group-id="${esc(gid)}"
+           aria-label="Open ${esc(title)}">${thumbInner}</a>
+      
+        <div class="episode-text">
+          <a href="#" class="episode-title episode-go-gallery" data-group-id="${esc(gid)}">${esc(title)}</a>
+          ${subtitle ? `<a href="#" class="episode-subtitle episode-go-gallery" data-group-id="${esc(gid)}">${esc(subtitle)}</a>` : ''}
+          ${authorsHtml}
+          ${contributorsHtml}
+        </div>
+      `;      
+
+      list.appendChild(row);
+    }
+
+    // One delegated handler for the whole Episodes list
+    list.addEventListener('click', (ev) => {
+      // Author / contributor name → Team page (close menu first)
+      const authorLink = ev.target.closest('a[data-author-name]');
+      if (authorLink) {
+        ev.preventDefault();
+        ev.stopPropagation();
+
+        const name = authorLink.dataset.authorName || (authorLink.textContent || '').trim();
+        closeOverlay(ev);
+        window.openAuthorSubpageForName?.(name);
+        return;
+      }
+
+      // Image / title / subtitle → Group gallery (close menu first)
+      const go = ev.target.closest('.episode-go-gallery');
+      if (!go) return;
+
+      ev.preventDefault();
+      const gid = go.dataset.groupId || go.closest('.episode-entry')?.dataset.groupId;
+      if (!gid) return;
+
+      closeOverlay(ev);
+      window.openGroupGallery?.(gid);
+    });
+
+    subMenu.appendChild(list);
+  }
+
+  function placeSubMenuForViewport(target) {
+    if (!subMenu || !overlayContent || !mainMenuEl) return;
+  
+    const isMobile = mobileMq?.matches ?? (window.innerWidth <= 768);
+  
+    if (isMobile && target) {
+      const activeItem = mainMenuEl.querySelector(`.menu-item[data-target="${target}"]`);
+      if (activeItem) {
+        activeItem.insertAdjacentElement('afterend', subMenu);
+        return;
+      }
+    }
+  
+    // Desktop (or no target): keep it as the 2nd column (original placement)
+    overlayContent.appendChild(subMenu);
+  }  
+
   function setActiveMenu(target){
     mainItems.forEach(i => i.classList.remove('active'));
     overlay.querySelector(`.menu-item[data-target="${target}"]`)?.classList.add('active');
-
+  
+    // Move the sub-menu directly under the active item on mobile
+    placeSubMenuForViewport(target);
+  
     subMenu.innerHTML = '';
+    subMenu.hidden = false;  
+
+    if (target === 'episodes') {
+      renderEpisodesMenu();
+      subMenu.hidden = !subMenu.children.length;
+      return;
+    }    
+
     (subItemsMap[target] || []).forEach(text => {
       const div = document.createElement('div');
       div.className = 'sub-item';
@@ -9187,15 +9784,11 @@ function initOverlayMenu() {
           closeOverlay();
           openTextSubpage(route.id, route.header);
         }
-
-        // legacy: open the existing "Research" long page if used
-        if (text === 'The Research Project') {
-          window.openResearchPage?.();
-          closeOverlay();
-        }
       });
       subMenu.appendChild(div);
     });
+
+    subMenu.hidden = !subMenu.children.length;
   }
 
   const openOverlay = (e) => {
@@ -9206,7 +9799,14 @@ function initOverlayMenu() {
 
     // Reset menu state: no active main item, no sub-items visible
     mainItems.forEach((i) => i.classList.remove('active'));
-    if (subMenu) subMenu.innerHTML = '';
+
+    if (subMenu) {
+      subMenu.innerHTML = '';
+      subMenu.hidden = true;
+    }
+
+    // Put sub-menu back to its default placement (esp. if last time we injected it into main-menu)
+    placeSubMenuForViewport(null);
 
     headerClose?.focus?.();
   };
@@ -9232,12 +9832,13 @@ function initOverlayMenu() {
       return;
     }
 
-    // Research Projects: go directly to Home (grid)
-    if (target === 'projects') {
+    // Map: go to grid, then switch to clustered view
+    if (target === 'map') {
       if (typeof goHome === 'function') {
-        goHome();
+        goHome();                 // shows grid + closes overlay + resets view
+        applyGridMode?.('cluster'); // switch to cluster view (and persists it)
       } else {
-        // Fallback: just close the overlay if goHome is not available
+        // Fallback: at least close the overlay
         closeOverlay();
       }
       return;
@@ -9256,6 +9857,13 @@ function initOverlayMenu() {
     // Default behavior (if new menu items are added later)
     setActiveMenu(target);
   }));
+
+  mobileMq?.addEventListener?.('change', () => {
+    if (!overlay.classList.contains('active')) return;
+  
+    const activeTarget = overlay.querySelector('.main-menu .menu-item.active')?.dataset?.target;
+    placeSubMenuForViewport(activeTarget || null);
+  });  
 }
 
 // === Subpage initializers (run when a subpage is opened) ===
@@ -9542,8 +10150,9 @@ document.addEventListener('DOMContentLoaded', () => {
   initIntroObjectLinks();
   initArrowListScrolling();   // ← add this line
   initAuthorBylineLinks();
-  // Insert Dark | Light before the burger
+  // Theme toggle: header + overlay footer
   renderThemeToggle(document.querySelector('.header-right'));
+  renderThemeToggle(document.getElementById('overlay-footer-theme'));
   syncThemeToggleUI();
   refreshSlideInsVisibility();
   initScrollUpButtons();
