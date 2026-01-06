@@ -229,7 +229,7 @@
               type="button"
               data-target-fab="fab-group"
               aria-label="Group view"
-              data-cursor-label="fieldsite overview">
+              data-cursor-label="episode overview">
             </button>
 
             <button
@@ -237,7 +237,7 @@
               type="button"
               data-target-fab="fab-cluster"
               aria-label="Cluster view"
-              data-cursor-label="fieldsite overview &amp; thematic discovery">
+              data-cursor-label="episode overview &amp; thematic discovery">
             </button>
 
             <button
@@ -340,9 +340,10 @@
     </div>
 
     <div id="group-gallery"
-     class="scroll-container-horizontal"
-     data-allow-scroll
-     data-cursor-label-gallery-empty="scroll horizontally">
+    class="scroll-container-horizontal"
+    data-allow-scroll
+    data-cursor-label-gallery-empty="scroll horizontally"
+    data-cursor-label-gallery-item="View">
       <!-- Back button to return to grid -->
       <div id="content-back-button" class="fab fab-lg gallery-fab" title="Back">
         <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 32" fill="none" aria-hidden="true">
@@ -370,7 +371,7 @@
           type="button"
           data-target-fab="fab-group"
           aria-label="Group view"
-          data-cursor-label="fieldsite overview">
+          data-cursor-label="episode overview">
         </button>
     
         <button
@@ -378,7 +379,7 @@
           type="button"
           data-target-fab="fab-cluster"
           aria-label="Cluster view"
-          data-cursor-label="fieldsite overview &amp; thematic discovery">
+          data-cursor-label="episode overview &amp; thematic discovery">
         </button>
     
         <button
@@ -402,6 +403,8 @@
         <div class="title-box">
           <h2>Covid-19<br> in Diepsloot</h2>
           <h3>Paradoxies of State (Un-)Care<br> in Diepsloot, South Africa</h3>
+          <div id="gallery-authors" class="gallery-authors" hidden></div>
+          <div id="gallery-contributors" class="gallery-contributors" hidden></div>
           <a id="scroll-on" class="button" href="#gallery-scroll">
             <span class="text">Explore</span><span class="icon">→</span>
           </a>
@@ -1411,19 +1414,35 @@
   <div id="overlay-menu">
     <div class="overlay-content">
       <div class="main-menu">
+        <div class="menu-heading">Table of contents</div>
         <div class="menu-item" data-target="viralatmospheres">Viral Atmospheres</div>
-        <div class="menu-item" data-target="projects">Research Projects</div>
-        <div class="menu-item" data-target="team">Team</div>
+        <div class="menu-item" data-target="map">Map</div>
+        <div class="menu-item" data-target="episodes">Episodes</div>
+        <div class="menu-item" data-target="team">Our Team</div>
       </div>
       <div class="sub-menu" id="sub-menu"></div>
     </div>
     <div class="overlay-footer">
-      <a href="#" target="_blank">Impress</a>
-      <a href="#" target="_blank">Data Security</a>
-      <!--<a href="#" target="_blank">Contact</a>-->
-    </div>
+      <div class="overlay-footer-links">
+        <a href="#" target="_blank">Impress</a>
+        <a href="#" target="_blank">Data Security</a>
+        <!--<a href="#" target="_blank">Contact</a>-->
+      </div>
+    
+      <!-- new line below the links -->
+      <div class="overlay-footer-theme" id="overlay-footer-theme"></div>
+    </div>    
   </div>
 
+  <script>
+    // Gallery: horizontal left/right jitter for items inside columns
+    window.GALLERY_X_JITTER_CONFIG = {
+      enabled: true,
+      edgeGap: 8,
+      maxFractionOfSlack: 0.95
+    };
+  </script>
+  
   <script type="module" src="script.js"></script>
 </body>
 </html>
