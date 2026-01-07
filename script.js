@@ -995,8 +995,8 @@ function initCursorLabel() {
   const textEl = el.querySelector('.cursor-label__text');
 
   let activeTarget = null;
-  let lastGroupedKey = '';
   let activeGroupedKey = '';
+  let activeDefaultKey = ''; // NEW: dedupe for non-grouped tooltips (same text => no reanimation)
 
   const findCandidate = (node) => {
     if (!node?.closest) return null;
@@ -1007,7 +1007,7 @@ function initCursorLabel() {
     if (!target) return '';
 
     // If user is dragging the grid, don't show cursor labels.
-    if (target.closest('#grid.dragging')) return '';
+    if (target.closest('#grid.dragging, #grid.panning')) return '';
 
     // Highest priority: always-on label
     const direct = target.getAttribute('data-cursor-label');
@@ -1056,9 +1056,12 @@ function initCursorLabel() {
 
   const gridEl = document.getElementById('grid');
 
+  const isGridPanning = () =>
+    !!gridEl && (gridEl.classList.contains('dragging') || gridEl.classList.contains('panning'));  
+
   const computeGridEmptyLabel = (ev) => {
     if (!gridEl) return '';
-    if (gridEl.classList.contains('dragging')) return '';
+    if (isGridPanning()) return '';
     if (!ev.target?.closest?.('#grid')) return '';
     if (ev.target.closest('.object')) return ''; // not empty space
     const label = gridEl.getAttribute('data-cursor-label-grid-empty');
@@ -1129,7 +1132,7 @@ function initCursorLabel() {
 
   const renderGroupedLabel = (prefixLine, groupTitle) => {
     const prefix = String(prefixLine ?? '').trim() || 'explore episode:';
-    const wrapped = wrapTooltip(String(groupTitle ?? ''), 30);
+    const wrapped = wrapTooltip(String(groupTitle ?? ''), 42);
 
     const lines = wrapped
       .split(/\r?\n/)
@@ -1241,6 +1244,20 @@ function initCursorLabel() {
   let __tooltipPending = null;       // function or null
   let __tooltipHasPending = false;
   let __tooltipReqId = 0;
+  let __tooltipClearTimer = null; // NEW: avoids "empty pill" flash during fade-out
+
+  const scheduleTooltipClear = (reqId) => {
+    if (__tooltipClearTimer) clearTimeout(__tooltipClearTimer);
+  
+    const fadeMs = 140; // CSS is 120ms; small buffer
+    __tooltipClearTimer = setTimeout(() => {
+      // Only clear if still hidden and no newer tooltip request happened
+      if (!el.classList.contains('is-visible') && reqId === __tooltipReqId) {
+        textEl.classList.remove('is-reveal', 'is-revealed');
+        textEl.textContent = '';
+      }
+    }, fadeMs);
+  };  
   
   const requestTooltipTransition = (openFnOrNull) => {
     __tooltipPending = openFnOrNull; // function or null
@@ -1270,12 +1287,11 @@ function initCursorLabel() {
   
             el.classList.remove('is-visible');
             delete el.dataset.kind;
-  
-            // Clear content (safe for both grouped + default)
-            textEl.classList.remove('is-reveal', 'is-revealed');
-            textEl.textContent = '';
+
+            scheduleTooltipClear(myId);
   
             activeGroupedKey = '';
+            activeDefaultKey = ''; // NEW
             activeTarget = null;
           })
         : Promise.resolve();
@@ -1321,21 +1337,32 @@ function initCursorLabel() {
   };  
 
   const show = (label, target, kind = '') => {
+    const shown = wrapTooltip(label, 30);
+    const k = kind || '';
+    const nextKey = `${k}||${shown}`;
+    const wasVisible = el.classList.contains('is-visible');
+    const curKind = (el.dataset.kind || '');
+
+    // Same label already visible (same kind) → don't re-render / re-animate
+    if (wasVisible && curKind === k && activeDefaultKey === nextKey) {
+      activeTarget = target; // keep pointerout logic correct
+      return;
+    }
+
     activeTarget = target;
-  
-    if (kind) el.dataset.kind = kind;
+    activeDefaultKey = nextKey;
+
+    if (k) el.dataset.kind = k;
     else delete el.dataset.kind;
-  
-    // keep your existing wrapping line here:
-    // textEl.textContent = wrapTooltip(label, 30);
-    // Default tooltip animates the whole text pill
+
+    // Ensure we start from a clean animation state only when content actually changed
+    textEl.classList.remove('is-reveal', 'is-revealed');
     textEl.classList.add('is-reveal');
-    textEl.textContent = wrapTooltip(label, 30);
+    textEl.textContent = shown;
 
     el.classList.add('is-visible');
     animateReveal(getRevealElsForCurrent());
-
-  };  
+  }; 
 
   const hide = () => {
     // Do NOT instantly hide — reverse animate first
@@ -1348,19 +1375,33 @@ function initCursorLabel() {
     __tooltipHasPending = false;
     __tooltipPending = null;
     __tooltipTransitionBusy = false;
+
+    if (__tooltipClearTimer) {
+      clearTimeout(__tooltipClearTimer);
+      __tooltipClearTimer = null;
+    }
   
     // Hard hide + reset
     el.classList.remove('is-visible');
     delete el.dataset.kind;
-  
+
+    // Keep content during fade-out; clear right after (prevents the tiny empty box flash)
     textEl.classList.remove('is-reveal', 'is-revealed');
-    textEl.textContent = '';
-  
+    scheduleTooltipClear(__tooltipReqId);
+
     activeGroupedKey = '';
+    activeDefaultKey = ''; // NEW
     activeTarget = null;
   };  
 
   document.addEventListener('pointerover', (ev) => {
+    
+    if (isGridPanning()) {
+      // Safari fires pointerover/out while the grid moves under the cursor.
+      // Do NOT hide here, just ignore the spurious event to prevent re-animation loops.
+      return;
+    }
+
     const candidate = findCandidate(ev.target);
 
     // ✅ Special formatting: grouped grid tooltip
@@ -1389,8 +1430,19 @@ function initCursorLabel() {
     const label = computeLabel(candidate);
 
     if (label) {
-      requestTooltipTransition(() => show(label, candidate));
-      return;      
+      const shown = wrapTooltip(label, 30);
+      const k = ''; // default kind
+      const nextKey = `${k}||${shown}`;
+      const curKind = (el.dataset.kind || '');
+
+      // ✅ Same visible label → do nothing (prevents reanimation when hovering sibling elements)
+      if (el.classList.contains('is-visible') && curKind === k && activeDefaultKey === nextKey) {
+        activeTarget = candidate;
+        return;
+      }
+
+      requestTooltipTransition(() => show(shown, candidate, k));
+      return;
     }
 
     // If the element *qualifies* for cursor labels (candidate exists) but the computed label is empty,
@@ -1416,6 +1468,7 @@ function initCursorLabel() {
   }, true);
 
   document.addEventListener('pointerout', (ev) => {
+    if (isGridPanning()) return;
     if (!activeTarget) return;
   
     const nextCandidate = findCandidate(ev.relatedTarget);
@@ -7278,7 +7331,24 @@ const fabZoomOut = document.getElementById('fab-zoom-out');
 const fabFitAll  = document.getElementById('fab-fit-all');
 
 // --- Grid mode persistence + unified switching ---
-const GRID_MODE_STORAGE_KEY = 'app:gridMode'; // configurable key (namespaced)
+// --- Grid mode persistence + unified switching ---
+// Optional override without touching code:
+//   window.GRID_MODE_CONFIG = { persistToLocalStorage: true, storageKey: 'app:gridMode' };
+const GRID_MODE_CONFIG = {
+  persistToLocalStorage: false,      // ✅ disabled for now
+  storageKey: 'app:gridMode',
+  clearStorageWhenDisabled: true,    // remove old stored value so it never “comes back”
+  ...(typeof window !== 'undefined' && window.GRID_MODE_CONFIG && typeof window.GRID_MODE_CONFIG === 'object'
+    ? window.GRID_MODE_CONFIG
+    : {}),
+};
+
+const GRID_MODE_STORAGE_KEY = String(GRID_MODE_CONFIG.storageKey || 'app:gridMode');
+
+// If persistence is disabled, optionally clear any previously stored mode
+if (!GRID_MODE_CONFIG.persistToLocalStorage && GRID_MODE_CONFIG.clearStorageWhenDisabled) {
+  try { localStorage.removeItem(GRID_MODE_STORAGE_KEY); } catch (_) {}
+}
 
 const GRID_MODES = Object.freeze({
   GROUP: 'group',
@@ -7368,6 +7438,7 @@ function gridStateToMode(state) {
 }
 
 function getStoredGridMode() {
+  if (!GRID_MODE_CONFIG.persistToLocalStorage) return null;
   try {
     const v = localStorage.getItem(GRID_MODE_STORAGE_KEY);
     return (v === GRID_MODES.GROUP || v === GRID_MODES.CLUSTER || v === GRID_MODES.UNGROUP) ? v : null;
@@ -7377,11 +7448,12 @@ function getStoredGridMode() {
 }
 
 function setStoredGridMode(mode) {
+  if (!GRID_MODE_CONFIG.persistToLocalStorage) return;
   try { localStorage.setItem(GRID_MODE_STORAGE_KEY, mode); } catch (_) {}
 }
 
 // Single entry point for changing modes (used by FAB clicks + restore)
-function applyGridMode(mode, { persist = true } = {}) {
+function applyGridMode(mode, { persist = GRID_MODE_CONFIG.persistToLocalStorage } = {}) {
   if (!window.gridObject) return;
 
   const m =
@@ -7414,7 +7486,7 @@ function restoreGridModeFromStorage() {
   // No stored mode: reflect whatever grid is currently in (default is grouped)
   const current = gridStateToMode(window.gridObject?.currentState) || GRID_MODES.GROUP;
   markActive(current);
-  setStoredGridMode(current);
+  if (GRID_MODE_CONFIG.persistToLocalStorage) setStoredGridMode(current);  
 }
 
 fabGroup?.addEventListener('click',  (e) => { e.preventDefault(); applyGridMode(GRID_MODES.GROUP);   });
@@ -7630,7 +7702,7 @@ function initViewSwitcher(switcherId, bindings, { onActivate, enableTeaser = fal
   const toggleBtn = switcher.querySelector('.view-switcher-toggle');
   if (toggleBtn) {
     inlineSvgImgToCurrentColor(toggleBtn.querySelector('img'));
-    
+
     const isExpanded = () =>
       switcher.classList.contains('is-demo-open') ||
       switcher.matches(':hover') ||
@@ -7733,7 +7805,7 @@ function setFitAllIconDone(done, reason = '') {
 
   // Make the second-click behavior discoverable
   const label = done ? 'Reset Zoom' : 'Fit All';
-  fabFitAll.title = label;
+  //fabFitAll.title = label;
   fabFitAll.setAttribute('aria-label', label);
 }
 
@@ -9687,10 +9759,78 @@ function initOverlayMenu() {
   const mainMenuEl     = overlay.querySelector('.main-menu');
   const mobileMq       = window.matchMedia?.('(max-width: 768px)');  
 
+  function setSubMenuOpen(isOpen) {
+    if (!subMenu) return;
+  
+    subMenu.classList.toggle('is-open', !!isOpen);
+    subMenu.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+  
+    // Prevent keyboard focus + interactions when collapsed (supported in modern browsers)
+    try { subMenu.inert = !isOpen; } catch (_) {}
+  }
+
+  function openSubMenuAnimated() {
+    if (!subMenu) return;
+  
+    // rAF runs BEFORE paint. We want to open AFTER one paint of the closed state,
+    // so we use a 2nd rAF (next frame).
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setSubMenuOpen(!!subMenu.children.length);
+      });
+    });
+  }  
+
+  const SUBMENU_ANIM_MS = 280; // keep in sync with CSS (~260ms)
+
+  function resetSubMenu({ animate = false } = {}) {
+    if (!subMenu) return;
+  
+    const clear = () => {
+      subMenu.innerHTML = '';
+      // Put sub-menu back to default placement after close
+      placeSubMenuForViewport(null);
+    };
+  
+    if (!animate) {
+      setSubMenuOpen(false);
+      clear();
+      return;
+    }
+  
+    // Animate close: keep content until transition finishes
+    setSubMenuOpen(false);
+  
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      subMenu.removeEventListener('transitionend', onEnd);
+      clear();
+    };
+  
+    const onEnd = (ev) => {
+      if (ev.target !== subMenu) return;
+      // max-height is the “main” close animation; opacity/transform also run
+      if (ev.propertyName !== 'max-height') return;
+      finish();
+    };
+  
+    subMenu.addEventListener('transitionend', onEnd);
+    // Fallback in case transitionend doesn't fire (rare, but happens)
+    window.setTimeout(finish, SUBMENU_ANIM_MS + 80);
+  }  
+  
+  // start collapsed
+  setSubMenuOpen(false);  
+
   // 1) Submenu entries
   const subItemsMap = {
     // Viral Atmospheres has three subpages: About (placeholder), Introduction, Archive’s Architecture
     viralatmospheres: ['About', 'Introduction', 'The Archive’s Architecture'],
+  
+    // Map Modes: same 3 modes as the grid view switcher (see aria-labels in index.html)
+    map: ['Episode Overview', 'Episode Overview & Thematic Discovery', 'Thematic Discovery'],
   };
 
 
@@ -9705,6 +9845,24 @@ function initOverlayMenu() {
     'References':   { id: 'subpage-references',   header: 'References' },
     'Team':         { id: 'subpage-team',         header: 'Meet our Team' },
   };
+
+  // 2b) Submenu labels that should trigger grid mode changes (instead of opening subpages)
+  const GRID_MODE_MENU_ACTIONS = {
+    'Group view':   () => document.getElementById('fab-group')?.click(),
+    'Cluster view': () => document.getElementById('fab-cluster')?.click(),
+    'Ungroup view': () => document.getElementById('fab-ungroup')?.click(),
+  };
+
+  function goToGridThen(fn) {
+    // goHome() already closes the overlay + returns to grid in your app
+    if (typeof goHome === 'function') {
+      goHome();
+    } else {
+      // fallback: at least close the overlay if goHome is unavailable
+      closeOverlay?.();
+    }
+    fn?.();
+  }
 
   function applyEpisodeThumbScale(listEl) {
     const imgs = Array.from(listEl.querySelectorAll('.episode-thumb-img'));
@@ -9891,14 +10049,17 @@ function initOverlayMenu() {
   
     // Move the sub-menu directly under the active item on mobile
     placeSubMenuForViewport(target);
+
+    // NEW: allow mobile CSS to special-case Episodes submenu sizing
+    subMenu.classList.toggle('is-episodes', target === 'episodes');
   
     subMenu.innerHTML = '';
-    subMenu.hidden = false;  
+    setSubMenuOpen(false); // keep collapsed while we fill it       
 
     if (target === 'episodes') {
       renderEpisodesMenu();
-      subMenu.hidden = !subMenu.children.length;
-      return;
+      openSubMenuAnimated();
+      return;         
     }    
 
     (subItemsMap[target] || []).forEach(text => {
@@ -9908,18 +10069,25 @@ function initOverlayMenu() {
       div.addEventListener('click', () => {
         subMenu.querySelectorAll('.sub-item').forEach(i => i.classList.remove('active'));
         div.classList.add('active');
-
-        // route to subpage if mapped
+      
+        // 1) route to subpage if mapped
         const route = SUBPAGE_ROUTES[text];
         if (route) {
           closeOverlay();
           openTextSubpage(route.id, route.header);
+          return;
         }
-      });
+      
+        // 2) otherwise: run a custom action (Map Modes -> grid mode switch)
+        const action = GRID_MODE_MENU_ACTIONS[text];
+        if (action) {
+          goToGridThen(action);
+        }
+      });      
       subMenu.appendChild(div);
     });
 
-    subMenu.hidden = !subMenu.children.length;
+    openSubMenuAnimated();
   }
 
   const openOverlay = (e) => {
@@ -9931,13 +10099,7 @@ function initOverlayMenu() {
     // Reset menu state: no active main item, no sub-items visible
     mainItems.forEach((i) => i.classList.remove('active'));
 
-    if (subMenu) {
-      subMenu.innerHTML = '';
-      subMenu.hidden = true;
-    }
-
-    // Put sub-menu back to its default placement (esp. if last time we injected it into main-menu)
-    placeSubMenuForViewport(null);
+    resetSubMenu({ animate: false });
 
     headerClose?.focus?.();
   };
@@ -9957,23 +10119,17 @@ function initOverlayMenu() {
   mainItems.forEach(i => i.addEventListener('click', () => {
     const target = i.dataset.target;
 
-    // Viral Atmospheres: show its sub-menu (About, Introduction)
-    if (target === 'viralatmospheres') {
-      setActiveMenu(target);
-      return;
-    }
+    // Mobile toggle: clicking an already-open item closes its sub-items
+    const isMobile = mobileMq?.matches;
+    const hasSubItems =
+      target === 'episodes' || (subItemsMap[target] || []).length > 0;
 
-    // Map: go to grid, then switch to clustered view
-    if (target === 'map') {
-      if (typeof goHome === 'function') {
-        goHome();                 // shows grid + closes overlay + resets view
-        applyGridMode?.('cluster'); // switch to cluster view (and persists it)
-      } else {
-        // Fallback: at least close the overlay
-        closeOverlay();
-      }
-      return;
-    }
+      if (isMobile && hasSubItems && i.classList.contains('active')) {
+        // collapse (animated)
+        i.classList.remove('active');
+        resetSubMenu({ animate: true });
+        return;
+      }      
 
     // Team: open Team subpage directly (no sub-menu)
     if (target === 'team') {
