@@ -62,7 +62,7 @@
   --icon-detail-close:            url('img/icons/close.svg');
 
   /* Cursor (hover) */
-  --cursor-eye: url("img/icons/eye_bg_s.svg") 16 16, pointer;
+  --cursor-eye: url("img/icons/eye_bg_w.svg") 16 16, pointer;
 
   /* Mobile “open sidebars” icons */
   --icon-slidein-mobile-open-menu:    url('img/icons/connections.svg'); /* Discover Connections */
@@ -122,7 +122,7 @@
   --main-button-inactive-font-color: var(--main-button-inactive-font-color-dark);
   --main-button-inactive-outline-color: var(--main-button-inactive-outline-color-dark);
   --detail-meta-color: var(--detail-meta-color-dark);
-  --cursor-eye: url("img/icons/eye_bg_w.svg") 16 16, pointer;
+  --cursor-eye: url("img/icons/eye_bg_s.svg") 16 16, pointer;
   --cursor-label-bg: rgba(255, 255, 255, 0.85);
   --cursor-label-color: #111;
 }
@@ -1164,7 +1164,7 @@
   margin: 0;
 }
 
-.view-switcher-toggle img {
+.view-switcher-toggle :is(img, svg) {
   width: 20px;
   height: 20px;
   display: block;
@@ -2986,7 +2986,7 @@ ul.tag-group-switch {
   z-index: 9999;
   display: none;
   flex-direction: column;
-  padding: 0px 100px 60px 100px;
+  padding: 0px 100px 0px 100px;
   --overlay-menu-col-gap: clamp(24px, 6vw, 120px);
   --overlay-submenu-font-size: 2em;
   --overlay-episodes-font-scale: 0.8; /* Episodes will be 80% of normal submenu size */
@@ -2999,14 +2999,31 @@ ul.tag-group-switch {
 
 .overlay-content {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); /* true 50:50 */
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); /* left / right */
+  grid-template-rows: minmax(0, 1fr) auto;             /* content + footer row */
   column-gap: var(--overlay-menu-col-gap);
   align-items: stretch;
 
   flex: 1;
   min-height: 0;
-  padding: 60px 0;
+
+  padding: 60px 0 0 0; /* keep top spacing, avoid shortening the bottom */
+}
+
+/* Desktop overlay layout: footer lives in left column, right column spans full height */
+.overlay-content .main-menu {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.overlay-content .sub-menu {
+  grid-column: 2;
+  grid-row: 1 / span 2; /* <-- key: right column goes to the bottom */
+}
+
+.overlay-content .overlay-footer {
+  grid-column: 1;
+  grid-row: 2;
 }
 
 .main-menu {
@@ -3057,6 +3074,19 @@ ul.tag-group-switch {
   overscroll-behavior: contain;
 }
 
+/* Desktop: different bottom padding per column */
+@media (min-width: 769px) {
+  /* left column keeps the generous bottom spacing */
+  .overlay-content .overlay-footer {
+    padding-bottom: 60px;
+  }
+
+  /* right column (scroll area) gets only a small bottom padding */
+  .overlay-content .sub-menu {
+    padding-bottom: 12px;
+  }
+}
+
 .sub-menu[hidden] {
   display: none !important;
 }
@@ -3084,7 +3114,7 @@ ul.tag-group-switch {
 .sub-menu .episodes-list {
   display: flex;
   flex-direction: column;
-  gap: 28px; /* space between group entries */
+  gap: 90px; /* space between group entries */
   font-size: 0.6em;
 }
 
@@ -3092,7 +3122,7 @@ ul.tag-group-switch {
   display: grid;
   grid-template-columns: 100px minmax(0, 1fr); /* image left, text right */
   column-gap: 40px;
-  align-items: start;
+  align-items: center;
 }
 
 .sub-menu .episode-thumb {
@@ -3110,12 +3140,21 @@ ul.tag-group-switch {
   background: none;
   overflow: hidden; /* crop image to rounded corners */
   opacity: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .sub-menu .episode-thumb-img {
   width: 100%;
+  height: auto;
   display: block;
   border-radius: 0;
+}
+
+/* Not-the-largest thumbs render at 60% width (centered by the flex thumb wrapper) */
+.sub-menu .episode-thumb-img.is-smaller {
+  width: 60%;
 }
 
 @supports (background: color-mix(in srgb, currentColor 10%, transparent)) {
@@ -3141,8 +3180,22 @@ ul.tag-group-switch {
   text-decoration: none;
 }
 
-.sub-menu .episode-title:hover,
-.sub-menu .episode-subtitle:hover {
+/* Make title + subtitle behave like a single stacked link block */
+.sub-menu .episode-link-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px; /* optional spacing between title/subtitle */
+}
+
+.sub-menu .episode-link-block a {
+  display: block; /* forces subtitle to next line */
+}
+
+/* Episodes: title + subtitle hover together (acts like one link) */
+.sub-menu .episode-link-block:hover .episode-title,
+.sub-menu .episode-link-block:hover .episode-subtitle,
+.sub-menu .episode-link-block:focus-within .episode-title,
+.sub-menu .episode-link-block:focus-within .episode-subtitle {
   text-decoration: underline;
 }
 
