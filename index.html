@@ -205,7 +205,7 @@
   <div id="workspace">
     <div id="grid-shell">
       <div id="grid"
-      data-cursor-label-grid-empty="drag and pull"
+      data-cursor-label-grid-empty="click and pull"
       data-cursor-label-grouped-prefix="explore episode:"></div>
 
       <!-- Off-grid counters (same visual style as demo-sidebars badges) -->
@@ -217,10 +217,10 @@
       <!-- Top-left controls -->
       <div id="fab-top-left" class="fab-stack">
 
-        <div id="grid-view-switcher" class="view-switcher" aria-label="Grid view switcher" data-cursor-label="change logic of exploration">
-          <button type="button" class="fab fab-lg view-switcher-toggle" aria-label="Change view">
+        <div id="grid-view-switcher" class="view-switcher" aria-label="Grid view switcher">
+          <button type="button" class="fab fab-lg view-switcher-toggle" aria-label="Change view" data-cursor-label="change logic of exploration">
             <img src="img/icons/change_view.svg" alt="Change view">
-          </button>          
+          </button>         
 
           <div class="view-switcher-options" aria-label="Grid view options">
             <button
@@ -291,9 +291,9 @@
       </div>
 
       <!-- Bottom-left controls -->
-      <div id="fab-bottom-left" class="fab-stack">
+      <div id="fab-bottom-left" class="fab-stack" data-cursor-label="adjust zoom">
         <!-- FIT ALL -->
-        <button id="fab-fit-all" class="fab fab-lg" title="Fit All" aria-label="Fit All" data-cursor-label="adjust zoom">
+        <button id="fab-fit-all" class="fab fab-lg" aria-label="Fit All">
           <!-- BEGIN zoom-out_2.svg -->
           <svg fill="currentColor"  class="fit-icon fit-icon--default" stroke="currentColor" viewBox="0 0 33 33" preserveAspectRatio="xMidYMid meet">
             <path d="M11.43,12.13H.69c-.38,0-.69-.31-.69-.69s.31-.69.69-.69h9.08L.21,1.18C-.06.91-.06.47.21.2s.71-.27.98,0l9.56,9.56V.7c0-.38.31-.69.69-.69s.69.31.69.69v10.74c0,.38-.31.69-.69.69Z"/>
@@ -313,7 +313,7 @@
         </button>
       
         <!-- ZOOM IN -->
-        <button id="fab-zoom-in" class="fab fab-lg" title="Zoom In" aria-label="Zoom In" data-cursor-label="adjust zoom">
+        <button id="fab-zoom-in" class="fab fab-lg" aria-label="Zoom In">
           <!-- BEGIN plus.svg -->
           <svg fill="currentColor" stroke="currentColor" viewBox="0 0 34 34" preserveAspectRatio="xMidYMid meet">
             <path d="M32.15,15.7h-14.95V.75c0-.41-.34-.75-.75-.75s-.75.34-.75.75v14.95H.75c-.41,0-.75.34-.75.75s.34.75.75.75h14.95v14.95c0,.41.34.75.75.75s.75-.34.75-.75v-14.95h14.95c.41,0,.75-.34.75-.75s-.34-.75-.75-.75Z"/>
@@ -322,7 +322,7 @@
         </button>
       
         <!-- ZOOM OUT -->
-        <button id="fab-zoom-out" class="fab fab-lg" title="Zoom Out" aria-label="Zoom Out" data-cursor-label="adjust zoom">
+        <button id="fab-zoom-out" class="fab fab-lg" aria-label="Zoom Out">
           <!-- BEGIN Minus.svg, not the original one anymore, had issues with centering -->
             <svg
             viewBox="0 0 24 24"
@@ -356,10 +356,9 @@
       <div
       id="gallery-view-switcher"
       class="view-switcher"
-      aria-label="Grid view switcher"
-      data-cursor-label="change logic of exploration">
+      aria-label="Grid view switcher">
     
-      <button type="button" class="fab fab-lg view-switcher-toggle" aria-label="Change view">
+      <button type="button" class="fab fab-lg view-switcher-toggle" aria-label="Change view" data-cursor-label="change logic of exploration">
         <img src="img/icons/change_view.svg" alt="Change view">
       </button>
     
@@ -1414,7 +1413,7 @@
       <div class="main-menu">
         <div class="menu-heading">Table of contents</div>
         <div class="menu-item" data-target="viralatmospheres">Viral Atmospheres</div>
-        <div class="menu-item" data-target="map">Map</div>
+        <div class="menu-item" data-target="map">Map Modes</div>
         <div class="menu-item" data-target="episodes">Episodes</div>
         <div class="menu-item" data-target="team">Our Team</div>
       </div>
