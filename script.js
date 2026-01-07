@@ -1030,7 +1030,7 @@ function initCursorLabel() {
       if (grid) {
         const view = grid.dataset.view;
         if (view === 'clustered' || view === 'ungrouped') {
-          return grid.getAttribute('data-cursor-label-grid-item') || 'view';
+          return ''; // ✅ no tooltip on objects
         }
         // In grouped (and any other) grid modes, single labels should not show.
         return '';
@@ -1039,7 +1039,7 @@ function initCursorLabel() {
       // ✅ Gallery items: always show "View" (no prefix, no per-object label)
       const gallery = target.closest('#group-gallery');
       if (gallery && target.classList.contains('item') && gallery.classList.contains('active')) {
-        return gallery.getAttribute('data-cursor-label-gallery-item') || 'View';
+        return ''; // ✅ no tooltip on objects
       }
 
       const prefix =
@@ -1342,6 +1342,24 @@ function initCursorLabel() {
     requestTooltipTransition(null);
   };  
 
+  const hideInstant = () => {
+    // Cancel any in-flight / queued transitions
+    __tooltipReqId++;
+    __tooltipHasPending = false;
+    __tooltipPending = null;
+    __tooltipTransitionBusy = false;
+  
+    // Hard hide + reset
+    el.classList.remove('is-visible');
+    delete el.dataset.kind;
+  
+    textEl.classList.remove('is-reveal', 'is-revealed');
+    textEl.textContent = '';
+  
+    activeGroupedKey = '';
+    activeTarget = null;
+  };  
+
   document.addEventListener('pointerover', (ev) => {
     const candidate = findCandidate(ev.target);
 
@@ -1373,6 +1391,13 @@ function initCursorLabel() {
     if (label) {
       requestTooltipTransition(() => show(label, candidate));
       return;      
+    }
+
+    // If the element *qualifies* for cursor labels (candidate exists) but the computed label is empty,
+    // it means we intentionally disabled tooltips for this case → hide immediately (no "line pop").
+    if (candidate) {
+      hideInstant();
+      return;
     }
 
     const emptyLabel = computeGridEmptyLabel(ev);
@@ -7516,6 +7541,59 @@ function runGridViewSwitcherTeaserOnceWhenVisible(switcher) {
 
 }
 
+// Cache so we fetch/parse the same SVG only once per page load
+const __INLINE_SVG_CACHE = new Map();
+
+async function inlineSvgImgToCurrentColor(img) {
+  if (!img || img.tagName?.toLowerCase() !== 'img') return;
+
+  const src = img.getAttribute('src');
+  if (!src || !src.toLowerCase().endsWith('.svg')) return;
+
+  // Use cached parsed SVG if available
+  const cached = __INLINE_SVG_CACHE.get(src);
+  if (cached) {
+    img.replaceWith(cached.cloneNode(true));
+    return;
+  }
+
+  try {
+    const res = await fetch(src, { cache: 'force-cache' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const text = await res.text();
+    const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+    const svg = doc.querySelector('svg');
+    if (!svg) return;
+
+    // Make the SVG inherit theme color like your other inline icons
+    svg.setAttribute('fill', 'currentColor');
+    svg.setAttribute('stroke', 'currentColor');
+
+    // Normalize child attributes (preserve "none")
+    svg.querySelectorAll('[fill]').forEach(el => {
+      const v = (el.getAttribute('fill') || '').trim().toLowerCase();
+      if (v && v !== 'none') el.setAttribute('fill', 'currentColor');
+    });
+    svg.querySelectorAll('[stroke]').forEach(el => {
+      const v = (el.getAttribute('stroke') || '').trim().toLowerCase();
+      if (v && v !== 'none') el.setAttribute('stroke', 'currentColor');
+    });
+
+    // Let CSS control size (same as your option-icon cloning logic)
+    svg.removeAttribute('width');
+    svg.removeAttribute('height');
+    svg.setAttribute('focusable', 'false');
+
+    // Replace <img> and cache
+    __INLINE_SVG_CACHE.set(src, svg.cloneNode(true));
+    img.replaceWith(svg);
+  } catch (err) {
+    console.warn('[view-switcher] failed to inline svg', src, err);
+    // If it fails, we keep the <img> as-is (no breakage)
+  }
+}
+
 function initViewSwitcher(switcherId, bindings, { onActivate, enableTeaser = false } = {}) {
   const switcher = document.getElementById(switcherId);
   if (!switcher) return;
@@ -7551,6 +7629,8 @@ function initViewSwitcher(switcherId, bindings, { onActivate, enableTeaser = fal
   // Click main icon again to close the switcher (even if still hovered/focused)
   const toggleBtn = switcher.querySelector('.view-switcher-toggle');
   if (toggleBtn) {
+    inlineSvgImgToCurrentColor(toggleBtn.querySelector('img'));
+    
     const isExpanded = () =>
       switcher.classList.contains('is-demo-open') ||
       switcher.matches(':hover') ||
@@ -9626,6 +9706,32 @@ function initOverlayMenu() {
     'Team':         { id: 'subpage-team',         header: 'Meet our Team' },
   };
 
+  function applyEpisodeThumbScale(listEl) {
+    const imgs = Array.from(listEl.querySelectorAll('.episode-thumb-img'));
+    if (!imgs.length) return;
+  
+    // Prefer Strapi intrinsic widths (data-intrinsic-w). Fallback to naturalWidth after load.
+    const readW = (img) => Number(img.dataset.intrinsicW) || img.naturalWidth || 0;
+  
+    const waitLoads = imgs.map(img =>
+      img.complete ? Promise.resolve() : new Promise(res => img.addEventListener('load', res, { once: true }))
+    );
+  
+    Promise.allSettled(waitLoads).then(() => {
+      let maxW = 0;
+      for (const img of imgs) maxW = Math.max(maxW, readW(img));
+
+      const threshold = maxW * 0.7; // 30% smaller than the largest
+
+      for (const img of imgs) {
+        const w = readW(img);
+      
+        // Mark as smaller only if width is <= 70% of the largest width
+        img.classList.toggle('is-smaller', maxW > 0 && w > 0 && w <= threshold);
+      }
+    });
+  }  
+
   function renderEpisodesMenu() {
     subMenu.innerHTML = '';
     
@@ -9652,11 +9758,19 @@ function initOverlayMenu() {
       return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
     };
 
-    // Stable order (by Strapi numeric id if gid looks like "s12")
-    entries.sort((a, b) =>
-      numericGroupKey(a[0]) - numericGroupKey(b[0]) ||
-      String(a[1]?.title || '').localeCompare(String(b[1]?.title || ''))
-    );
+    // Alphabetical order by Title (ascending). Ties fall back to gid for stability.
+    entries.sort((a, b) => {
+      const [gidA, metaA] = a;
+      const [gidB, metaB] = b;
+
+      const titleA = String(metaA?.title || `Group ${gidA}`).trim();
+      const titleB = String(metaB?.title || `Group ${gidB}`).trim();
+
+      const cmp = titleA.localeCompare(titleB, undefined, { sensitivity: 'base' });
+      if (cmp !== 0) return cmp;
+
+      return String(gidA).localeCompare(String(gidB), undefined, { numeric: true });
+    });
 
     const list = document.createElement('div');
     list.className = 'episodes-list';
@@ -9697,9 +9811,11 @@ function initOverlayMenu() {
       const best = uploadMeta ? pickImageVariant(uploadMeta, THUMB_SIZE, 1) : { url: undefined };
       const menuImgUrl = (best?.url || uploadMeta?.url || '').trim();
       
+      const intrinsicW = Number(uploadMeta?.width) || 0;
+
       const thumbInner = menuImgUrl
-        ? `<img class="episode-thumb-img" src="${esc(menuImgUrl)}" alt="" loading="lazy" decoding="async">`
-        : '';
+        ? `<img class="episode-thumb-img" data-intrinsic-w="${intrinsicW}" src="${esc(menuImgUrl)}" alt="" loading="lazy" decoding="async">`
+        : '';      
       
       const thumbClass = menuImgUrl ? 'has-image' : '';
       
@@ -9710,8 +9826,10 @@ function initOverlayMenu() {
            aria-label="Open ${esc(title)}">${thumbInner}</a>
       
         <div class="episode-text">
-          <a href="#" class="episode-title episode-go-gallery" data-group-id="${esc(gid)}">${esc(title)}</a>
-          ${subtitle ? `<a href="#" class="episode-subtitle episode-go-gallery" data-group-id="${esc(gid)}">${esc(subtitle)}</a>` : ''}
+          <div class="episode-link-block">
+            <a href="#" class="episode-title episode-go-gallery" data-group-id="${esc(gid)}">${esc(title)}</a>
+            ${subtitle ? `<a href="#" class="episode-subtitle episode-go-gallery" data-group-id="${esc(gid)}">${esc(subtitle)}</a>` : ''}
+          </div>
           ${authorsHtml}
           ${contributorsHtml}
         </div>
@@ -9747,6 +9865,7 @@ function initOverlayMenu() {
     });
 
     subMenu.appendChild(list);
+    applyEpisodeThumbScale(list);
   }
 
   function placeSubMenuForViewport(target) {
