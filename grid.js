@@ -2201,6 +2201,12 @@ export class Grid {
       if (wasClustered && this.baseGroupCenters) {
         this.movePilesToNewCenters(this.baseGroupCenters, this.GROUPED_SPREAD, this.GROUPED_JITTER);
       }
+
+      // ✅ Leaving cluster/pre-cluster → restore default/base zoom
+      if (wasClustered) {
+        const baseZ = (this.display?.baseZoom ?? 1);
+        this.setZoomAbsolute?.(baseZ, { center: false, animate: true, source: 'cluster-exit' });
+      }
     
       this.fitToView('grouped', 200);
       this._syncPanStateFromDom();
@@ -2612,6 +2618,12 @@ export class Grid {
       if (this._detail?.active) { this.exitDetail(); }
     
       const prev = this.currentState;
+
+      // ✅ Leaving cluster/pre-cluster → restore default/base zoom
+      if (prev === 'clustered' || prev === 'pre-cluster') {
+        const baseZ = (this.display?.baseZoom ?? 1);
+        this.setZoomAbsolute?.(baseZ, { center: false, animate: true, source: 'cluster-exit' });
+      }
     
       // 1) set state + let CSS animate to ungrouped targets
       this._setState('ungrouped');
@@ -2704,6 +2716,7 @@ export class Grid {
           p.vx = panX * 0.2;
           p.vy = panY * 0.2;
     
+          markPanning();
           this._ensurePanTick?.();
           return;
         }
@@ -2803,7 +2816,15 @@ export class Grid {
         raf: 0, lastTs: 0,
         moved2: 0,
         clickCandidateId: null,
+        // NEW: click-vs-drag gating
+        dragging: false,
+        captured: false,
+        pointerId: null,
+        pendingDx: 0,
+        pendingDy: 0,
         slack: 0,
+        // NEW: debounce timer for the .panning class
+        _panningTimer: 0,
       };
 
       // --- Touch pinch state (2-finger zoom) ---
@@ -2838,6 +2859,24 @@ export class Grid {
           p.vx = 0; p.vy = 0;
         }
       };
+
+      const PAN_DEBOUNCE_MS = 260;
+
+      const markPanning = () => {
+        const p = this._pan;
+        if (!p) return;
+      
+        // Keep this class stable so other systems (cursor label guard) can trust it.
+        this.htmlGridElement.classList.add('panning');
+      
+        if (p._panningTimer) clearTimeout(p._panningTimer);
+        p._panningTimer = setTimeout(() => {
+          // Only clear if we’re truly idle (no active drag and no RAF loop running).
+          if (!p.isDown && !p.dragging && !p.raf) {
+            this.htmlGridElement.classList.remove('panning');
+          }
+        }, PAN_DEBOUNCE_MS);
+      };      
 
       const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
       const mid  = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
@@ -2933,6 +2972,8 @@ export class Grid {
       const MAX_V    = panCfg.maxVelocity ?? Infinity;
       const OOB_VFAC = panCfg.outOfBoundsVelocityFactor ?? 0.2;
       const DRAG_RESIST = panCfg.dragResistance ?? 0.35;
+
+      const CLICK_EPS2 = panCfg.clickEps2 ?? 25; // squared pixels (default ~5px slop)
     
       // --- Animation tick ---
       const tick = (ts) => {
@@ -2980,6 +3021,10 @@ export class Grid {
           p.currentX = p.targetX; p.currentY = p.targetY;
           this.htmlGridElement.style.left = `${p.currentX}px`;
           this.htmlGridElement.style.top  = `${p.currentY}px`;
+
+          // Keep .panning briefly after motion stops (Safari hover events can fire in the gap)
+          markPanning();
+
           p.raf = 0; p.lastTs = 0;
           return;
         }
@@ -2991,6 +3036,9 @@ export class Grid {
       const startPanLoop = () => {
         const p = this._pan;
         if (p.raf) { cancelAnimationFrame(p.raf); p.raf = 0; }
+
+        markPanning(); // grid is moving (drag or inertia)
+
         p.lastTs = 0;
         p.raf = requestAnimationFrame(tick);
       };
@@ -2999,8 +3047,13 @@ export class Grid {
       // Allow “poke to wake” when updating targets elsewhere
       this._ensurePanTick = () => {
         const p = this._pan;
-        if (!p.raf) p.raf = requestAnimationFrame(tick);
-      };
+        if (!p.raf) {
+          // Ensure other systems (e.g. Safari tooltip guard) can detect movement
+          markPanning();
+          p.lastTs = 0;
+          p.raf = requestAnimationFrame(tick);
+        }
+      };      
     
       // --- Pointer handlers ---
       this.htmlGridElement.addEventListener('pointerdown', (e) => {
@@ -3014,20 +3067,27 @@ export class Grid {
         }
 
         this._pan.slack = 0;
-    
+
         const card = e.target.closest?.('.object');
         this._pan.clickCandidateId = card ? card.id : null;
-        this._pan.moved2 = 0;
-    
-        this.htmlGridElement.classList.add('dragging');
-        this.htmlGridElement.setPointerCapture?.(e.pointerId);
-    
+        
         const p = this._pan;
+        p.moved2 = 0;
+        
+        // NEW: start as "click candidate", not dragging
+        p.dragging = false;
+        p.captured = false;
+        p.pointerId = e.pointerId;
+        p.pendingDx = 0;
+        p.pendingDy = 0;
+        
         p.isDown = true;
         p.lastX = e.clientX; p.lastY = e.clientY;
         p.vx = 0; p.vy = 0;
-    
-        startPanLoop(); // <- key line: guarantees loop is running now
+        
+        // IMPORTANT: do NOT add .dragging here
+        // IMPORTANT: do NOT setPointerCapture here
+        // IMPORTANT: do NOT startPanLoop() here         
       });
     
       window.addEventListener('pointermove', (e) => {
@@ -3044,11 +3104,36 @@ export class Grid {
 
         if (!p.isDown) return;
     
-        const dx = e.clientX - p.lastX;
-        const dy = e.clientY - p.lastY;
+        let dx = e.clientX - p.lastX;
+        let dy = e.clientY - p.lastY;
         p.lastX = e.clientX; p.lastY = e.clientY;
-    
+        
         p.moved2 += dx*dx + dy*dy;
+        
+        // Accumulate tiny jitters until we know it's a real drag
+        p.pendingDx += dx;
+        p.pendingDy += dy;
+        
+        if (!p.dragging) {
+          // Still a click (or micro-movement) → do not pan, do not capture, do not start loop
+          if (p.moved2 < CLICK_EPS2) return;
+        
+          // Drag starts NOW
+          p.dragging = true;
+          this.htmlGridElement.classList.add('dragging');
+          this.htmlGridElement.setPointerCapture?.(p.pointerId);
+          p.captured = true;
+        
+          startPanLoop();
+        
+          // Apply buffered motion in first drag frame (prevents a jump)
+          dx = p.pendingDx;
+          dy = p.pendingDy;
+        }
+        
+        // once dragging, clear buffers each move
+        p.pendingDx = 0;
+        p.pendingDy = 0;        
     
         const [minX, maxX] = boundsX();
         const [minY, maxY] = boundsY();
@@ -3085,12 +3170,28 @@ export class Grid {
 
         const p = this._pan;
         if (!p.isDown) return;
-    
-        this.htmlGridElement.classList.remove('dragging');
-        this.htmlGridElement.releasePointerCapture?.(e.pointerId);
+
+        // ✅ Capture whether this interaction was actually a pan
+        const endedWithPan = p.dragging || (p.moved2 > CLICK_EPS2);
+
+        // ✅ IMPORTANT (Safari): ensure the tooltip guard is active BEFORE releasing capture / removing dragging,
+        // because WebKit can dispatch synthetic hover events during releasePointerCapture().
+        if (endedWithPan) markPanning();
+
+        if (p.dragging) {
+          this.htmlGridElement.classList.remove('dragging');
+          if (p.captured) this.htmlGridElement.releasePointerCapture?.(p.pointerId);
+        }
+
         p.isDown = false; // inertia + spring-back continue in tick()
-    
-        const CLICK_EPS2 = 25; // keep this
+        p.dragging = false;
+        p.captured = false;
+        p.pointerId = null;
+        p.pendingDx = 0;
+        p.pendingDy = 0;
+
+        // (removed: if (endedWithPan) markPanning();  -- now happens earlier)
+
         if (p.clickCandidateId && p.moved2 <= CLICK_EPS2) {
           const clickedId = p.clickCandidateId;
 
