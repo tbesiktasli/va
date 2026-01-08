@@ -307,11 +307,15 @@ function pushViewState(view, payload = {}, hash) {
     const current = history.state;
 
     // Very simple dedupe by view type; you can refine later if needed
+    const url = hash ? appUrl(hash) : appUrl('');
+
     if (!current || current.view !== view) {
-      // Always anchor "normal" views to app base so we don't keep /objects/... around
-      const url = hash ? appUrl(hash) : appUrl('');
+      // entering a new view -> add a history entry
       history.pushState(next, '', url);
-    }
+    } else {
+      // same view (e.g. SUBPAGE -> SUBPAGE) -> update URL/state without stacking history
+      history.replaceState(next, '', url);
+    }    
   } catch (err) {
     console.warn('[view] pushViewState failed', err);
   }
@@ -384,6 +388,27 @@ function resolveObjectByToken(token, allObjects) {
 
   return null;
 }
+
+// 1) detect early (safe: does NOT touch SUBPAGE_INITS / openTextSubpage)
+function getInitialStaticHashRoute() {
+  // If you’re on an object detail route, let that logic win.
+  if (typeof isObjectDetailPath === 'function' && isObjectDetailPath(location.pathname)) return null;
+
+  const h = (location.hash || '').trim();
+
+  if (h.startsWith('#subpage-')) {
+    return { type: 'subpage', sectionId: h.slice(1) }; // strip '#'
+  }
+
+  if (h === '#research') {
+    return { type: 'research' };
+  }
+
+  return null;
+}
+
+// Store once; we’ll apply it later when everything is initialized
+let INITIAL_STATIC_HASH_ROUTE = getInitialStaticHashRoute();
 
 // Called once after data init; it retries until grid + openObjectDetail exist.
 function handleInitialObjectRoute() {
@@ -3616,6 +3641,12 @@ window.gridObject = null;
       LOADING.onComplete?.(() => LOADING.hide?.());
     }
 
+    // Deep link to static hash pages (#subpage-... / #research) should also skip intro.
+    // No preload needed: these pages can render immediately.
+    if (INITIAL_STATIC_HASH_ROUTE) {
+      closePrepage();
+    }    
+
     const loaded = await loadData(DATA_MODE);
     // Use the chosen data source
     objects = loaded.objects;
@@ -4525,14 +4556,14 @@ function initMobileSlideInsToggle() {
       if (gridShellEl) gridShellEl.style.display = '';
     }
 
-    window.openResearchPage = function() {
+    window.openResearchPage = function(options = {}) {
       if (!pageEl) return;
       hideAllMainViews();
       pageEl.classList.add('active');
       try {
-        if (!history.state || !history.state.research) {
-          history.pushState({ research: true }, '', appUrl('#research'));
-        }
+        if (!options.skipHistory && typeof pushViewState === 'function') {
+          pushViewState(VIEW.RESEARCH, {}, '#research');
+        }        
       } catch {}
       window.__dispatchViewChange?.();
     };
@@ -4543,18 +4574,6 @@ function initMobileSlideInsToggle() {
       window.__dispatchViewChange?.();
     };
 
-    // If user hits BACK after we pushed #research, close the page
-    window.addEventListener('popstate', () => {
-      const isResearchActive = pageEl?.classList.contains('active');
-      const stillOnResearch  = !!history.state?.research;
-
-      // Only when we were actually on the research page and left its state
-      if (isResearchActive && !stillOnResearch) {
-        pageEl?.classList.remove('active');
-        showGrid();
-        window.__dispatchViewChange?.();
-      }
-    });
   })();
 
   // Open gallery for a custom set of objects (e.g., current tag filter)
@@ -10158,6 +10177,9 @@ function initOverlayMenu() {
     previousFocus?.focus?.();
   };  
 
+  // Expose for other handlers (e.g., footer links that open subpages)
+  window.closeOverlayMenu = closeOverlay;
+
   trigger?.addEventListener('click', openOverlay);
   trigger?.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') openOverlay(e); });
   headerClose?.addEventListener('click', closeOverlay);
@@ -10211,6 +10233,30 @@ function runSubpageInit(el, id) {
   const fn = SUBPAGE_INITS[id];
   if (typeof fn === 'function') fn(el);
 }
+
+function applyStaticHashRoute(route) {
+  if (!route) return false;
+
+  if (route.type === 'subpage') {
+    openTextSubpage(route.sectionId, null, { skipHistory: true });
+    return true;
+  }
+
+  if (route.type === 'research') {
+    // If you updated openResearchPage to accept options, this is perfect:
+    window.openResearchPage?.({ skipHistory: true });
+    // If you did NOT update it, use: window.openResearchPage?.();
+    return true;
+  }
+
+  return false;
+}
+
+// Now it’s safe: SUBPAGE_INITS has been initialized
+queueMicrotask(() => {
+  applyStaticHashRoute(INITIAL_STATIC_HASH_ROUTE);
+  INITIAL_STATIC_HASH_ROUTE = null;
+});
 
 // Config for References page (easy to tweak later)
 const REFERENCES_PAGE = {
@@ -10289,6 +10335,16 @@ function hideAllTextSubpages() {
 
 // Show a text sub-page (by id), hide others, and set header-left
 function openTextSubpage(sectionId, headerText, options = {}) {
+
+  // Allow headerText to be omitted (useful for direct URL loads)
+  if (!headerText) {
+    const el0 = document.getElementById(sectionId);
+    headerText =
+      el0?.getAttribute('data-header-left') ||
+      el0?.querySelector('h2')?.textContent?.trim() ||
+      'Information';
+  }
+
   // 0) Hide grid + any other main views (gallery/detail/research)
   const gridShell = document.getElementById('grid-shell');
   if (gridShell) gridShell.style.display = 'none';
@@ -10340,6 +10396,13 @@ function openTextSubpage(sectionId, headerText, options = {}) {
 
 window.openTextSubpage = openTextSubpage;
 
+function closeOverlayMenuIfOpen() {
+  const overlay = document.getElementById('overlay-menu');
+  if (overlay?.classList.contains('active')) {
+    window.closeOverlayMenu?.(); // uses the existing close logic from initOverlayMenu()
+  }
+}
+
 // Generic handler: any element with data-subpage-id will open that text subpage
 function initSubpageLinkShortcuts() {
   document.addEventListener('click', (event) => {
@@ -10357,6 +10420,10 @@ function initSubpageLinkShortcuts() {
     if (typeof openTextSubpage !== 'function') return;
 
     event.preventDefault();
+
+    // If the click comes from the overlay menu (e.g. Impress), close it first
+    closeOverlayMenuIfOpen();
+    
     openTextSubpage(sectionId, headerText);
   });
 }
@@ -10406,7 +10473,11 @@ function initIntroObjectLinks() {
     if (!rawId) return;
 
     event.preventDefault();
-    event.stopPropagation?.();
+
+    // If this click came from the overlay menu, close it using the shared close logic
+    closeOverlayMenuIfOpen();
+    
+    openTextSubpage(sectionId, headerText);       
 
     // Resolve to the actual app-level object ID used in gridObject.objects
     const allObjects = window.gridObject?.objects || window.objects || [];
