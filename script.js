@@ -2455,6 +2455,16 @@ async function strapiFetchAll(path, baseParams = {}, opts = {}) {
   return acc;
 }
 
+// Fetch a single entity (works for Strapi single-types, or "first item" collection responses)
+async function strapiFetchSingle(path, params = {}) {
+  const json = await strapiFetch(path, params);
+  const d = json?.data;
+
+  // Some endpoints might return an array; single-types typically return an object.
+  if (Array.isArray(d)) return d[0] || null;
+  return d || null;
+}
+
 // ==============================
 // STRAPI LOADER (all groups + objects) — with media URL resolution
 // ==============================
@@ -9909,6 +9919,7 @@ function initOverlayMenu() {
 
     // Other existing text pages
     'References':   { id: 'subpage-references',   header: 'References' },
+    'Literature':   { id: 'subpage-references',   header: 'Literature' },
     'Team':         { id: 'subpage-team',         header: 'Meet our Team' },
   };
 
@@ -10200,9 +10211,15 @@ function initOverlayMenu() {
         return;
       }      
 
-    // Team: open Team subpage directly (no sub-menu)
-    if (target === 'team') {
-      const route = SUBPAGE_ROUTES['Team'];
+    // Main-menu items that open a subpage directly (no sub-menu)
+    const DIRECT_MAIN_TARGETS = {
+      team: 'Team',
+      literature: 'Literature',
+    };
+
+    const directLabel = DIRECT_MAIN_TARGETS[target];
+    if (directLabel) {
+      const route = SUBPAGE_ROUTES[directLabel];
       if (route && typeof openTextSubpage === 'function') {
         closeOverlay();
         openTextSubpage(route.id, route.header);
@@ -10224,7 +10241,7 @@ function initOverlayMenu() {
 
 // === Subpage initializers (run when a subpage is opened) ===
 const SUBPAGE_INITS = {
-  'subpage-references': initReferencesSubpage,
+  'subpage-references': initLiteratureSubpage,
   'subpage-team': initTeamSubpage,
 };
 
@@ -10258,50 +10275,43 @@ queueMicrotask(() => {
   INITIAL_STATIC_HASH_ROUTE = null;
 });
 
-// Config for References page (easy to tweak later)
-const REFERENCES_PAGE = {
-  collection: 'literature-references',   // Strapi path for LiteratureReference
-  field: 'Name',                         // field to render
-  sort: 'Name:asc',
-  publicationState: 'preview'
+// Config for Literature page (single type: LiteratureReferencePage)
+const LITERATURE_PAGE = {
+  // Strapi API ID for the single type. If your API route differs, adjust this string.
+  path: 'literature-reference-page',
+  field: 'Content',
+  publicationState: 'preview',
+  populate: '*',
 };
 
-// Loader for #subpage-references
-async function initReferencesSubpage(root) {
+// Loader for #subpage-references (Literature)
+async function initLiteratureSubpage(root) {
   const right = root.querySelector('.two-col-row .right');
   if (!right) return;
 
   right.innerHTML = '<p>Loading…</p>';
 
   try {
-    const rows = await strapiFetchAll(REFERENCES_PAGE.collection, {
-      'publicationState': REFERENCES_PAGE.publicationState,
-      'populate': '*',
-      'sort': REFERENCES_PAGE.sort
-      // optionally: 'fields[0]': REFERENCES_PAGE.field
+    const entity = await strapiFetchSingle(LITERATURE_PAGE.path, {
+      'publicationState': LITERATURE_PAGE.publicationState,
+      'populate': LITERATURE_PAGE.populate,
     });
 
-    right.innerHTML = '';
+    const a = getAttrs(entity);
+    const content = a?.[LITERATURE_PAGE.field] ?? a?.[String(LITERATURE_PAGE.field).toLowerCase()];
 
-    const htmlPieces = [];
-    rows.forEach(it => {
-      const a = (it && (it.attributes || it)) || {};
-      const name = a[REFERENCES_PAGE.field] ?? a[REFERENCES_PAGE.field.toLowerCase()];
-      if (!name) return;
-    
-      const html = toParagraphHtml(name); // returns <p>...</p><p>...</p>...
-      if (html) htmlPieces.push(html);
-    });
-    
-    right.innerHTML = htmlPieces.join('');
-    
-    if (!right.children.length) {
-      right.innerHTML = '<p>No references yet.</p>';
+    // Prefer Strapi rich-text blocks, but gracefully support plain strings too
+    let html = '';
+    if (Array.isArray(content)) {
+      html = renderStrapiBlocks(content);
+    } else if (typeof content === 'string') {
+      html = toParagraphHtml(content);
     }
 
+    right.innerHTML = html || '<p>No literature content yet.</p>';
   } catch (err) {
-    console.error('[references] load failed', err);
-    right.innerHTML = '<p>Failed to load references.</p>';
+    console.error('[literature] load failed', err);
+    right.innerHTML = '<p>Failed to load literature.</p>';
   }
 }
 
