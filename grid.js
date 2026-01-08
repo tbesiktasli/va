@@ -1121,7 +1121,14 @@ export class Grid {
         const imgEl = el.querySelector('img');
         if (imgEl) imgEl.classList.remove('detail-hide');
       }      
-      el.className = prev.className || el.className; // remove is-detail/fade
+      // Remove only transient "detail" classes.
+      // DO NOT overwrite className, otherwise we wipe runtime classes like "is-visited".
+      el.classList.remove('is-detail', 'detail-fade-out');
+
+      // Safety net: if the object is in the visited store, ensure the class is present.
+      if (typeof window !== 'undefined' && typeof window.isObjectVisited === 'function' && window.isObjectVisited(id)) {
+        el.classList.add('is-visited');
+      }
 
       // If this was a text tile, its font-size may have been fit while the tile was expanded.
       // Refit after width/height transitions settle so the minified tile doesn't keep a huge font.
