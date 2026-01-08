@@ -3669,6 +3669,13 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 }
 .text-page .two-col-row .right p:last-child { margin-bottom: 0; }
 
+/* Prevent long URLs / unbroken strings from pushing page width */
+.text-page .two-col-row .right,
+.text-page .two-col-row .right a {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 /* ================= Our Team / Authors subpage ================= */
 
 .text-subpage .authors-accordion {
