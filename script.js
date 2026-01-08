@@ -4804,10 +4804,12 @@ function initMobileSlideInsToggle() {
     }
   
     // Update global view + selection bar once, after state is clean
-    window.__dispatchViewChange?.();
-    if (typeof window.renderSelectionBar === 'function') {
-      window.renderSelectionBar();
-    }
+    requestAnimationFrame(() => {
+      window.applyVisitedMarkers?.();        // ✅ repaint visited dots immediately
+      window.gridObject?._refitAllText?.();  // keep text sizing correct after re-show
+      window.__dispatchViewChange?.();
+      window.renderSelectionBar?.();
+    });
   
     refreshSlideInsVisibility();
   
@@ -5811,7 +5813,7 @@ function initMobileSlideInsToggle() {
 
       if (!detailEl) return;
 
-      window.markObjectVisited?.(objectId);
+      //window.markObjectVisited?.(objectId);
 
       // pause any grid waves so we don't hear two audios at once
       window.__gridWaves?.pauseAll?.();
@@ -5828,8 +5830,14 @@ function initMobileSlideInsToggle() {
 
       // Look up the object from in-memory data and render the primary slot
       const allObjects = (window.gridObject?.objects || window.objects || []);
-      const obj = allObjects.find(o => String(o.id) === String(objectId));
-      if (obj) {
+      const obj =
+        allObjects.find(o => String(o.id) === String(objectId)) ||
+        (typeof resolveObjectByToken === 'function' ? resolveObjectByToken(objectId, allObjects) : null);
+
+      // ✅ Mark visited once, using the grid’s internal id when available
+      window.markObjectVisited?.(obj ? obj.id : objectId);
+      
+      if (obj) {      
         // Sync the 3 content sidebars with this object's group
         const contentGroupId = gid || obj.groupId || null;
         if (contentGroupId && typeof updateContentSidebarsForGroup === 'function') {
@@ -5984,6 +5992,7 @@ function initMobileSlideInsToggle() {
         if (gridShellEl) gridShellEl.style.display = '';
         // Re-check view + tags after the grid shell is visible
         requestAnimationFrame(() => {
+          window.applyVisitedMarkers?.();   // ✅ ADD THIS (repaint visited dots now)
           window.gridObject?._refitAllText?.();
           window.__dispatchViewChange?.();
           window.renderSelectionBar?.();
@@ -7291,6 +7300,13 @@ function initMobileSlideInsToggle() {
     muts.forEach(m => {
       m.addedNodes?.forEach(node => {
         if (node.nodeType !== 1) return;
+        // ✅ Apply visited marker to newly inserted tiles
+        if (node.matches?.('.object') && window.isObjectVisited?.(node.id)) {
+          node.classList.add('is-visited');
+        }
+        node.querySelectorAll?.('.object').forEach(el => {
+          if (window.isObjectVisited?.(el.id)) el.classList.add('is-visited');
+        });
         node.querySelectorAll?.('.object.image img, .object[data-type="image"] img').forEach(img => io.observe(img));
         if (node.matches?.('.object.image img, .object[data-type="image"] img')) io.observe(node);
       });
@@ -7398,10 +7414,36 @@ const VISITED = (() => {
     }
   };
 
-  const applyToDom = (id) => {
-    const el = document.getElementById(String(id));
-    if (el) el.classList.add('is-visited');
+  const findGridTile = (id) => {
+    const sid = String(id);
+  
+    // Prefer the grid tile to avoid accidental id collisions elsewhere
+    const grid = document.getElementById('grid');
+    if (grid && window.CSS?.escape) {
+      const inGrid = grid.querySelector(`.object#${CSS.escape(sid)}`);
+      if (inGrid) return inGrid;
+    }
+  
+    // Fallback (older browsers / no grid yet)
+    return document.getElementById(sid);
   };
+  
+  const applyToDom = (id) => {
+    const el = findGridTile(id);
+    if (el) el.classList.add('is-visited');
+    return !!el;
+  };
+  
+  // Retry a few frames in case tiles are re-mounted right after view transitions
+  const applyToDomEventually = (id, maxFrames = 20) => {
+    let frames = 0;
+    const tick = () => {
+      if (applyToDom(id)) return;
+      if (++frames >= maxFrames) return;
+      requestAnimationFrame(tick);
+    };
+    tick();
+  };  
 
   return {
     has(id) {
@@ -7410,16 +7452,21 @@ const VISITED = (() => {
     mark(id) {
       const sid = String(id ?? '').trim();
       if (!sid) return;
-
+    
       if (!ids.has(sid)) {
         ids.add(sid);
         cap();
         save(ids);
       }
-      applyToDom(sid);
-    },
+    
+      applyToDomEventually(sid);
+    
+      // ✅ Retry once on next frame in case the grid tile is re-created / re-mounted
+      // (e.g., state switches, closing overlays, etc.)
+      requestAnimationFrame(() => applyToDom(sid));
+    },    
     applyAllToDom() {
-      for (const id of ids) applyToDom(id);
+      for (const id of ids) applyToDomEventually(id);
     }
   };
 })();
@@ -11089,6 +11136,7 @@ function goHome(options = {}) {
   // 6) Make sure the grid shell is visible
   if (gridShell) {
     gridShell.style.display = '';
+    requestAnimationFrame(() => window.applyVisitedMarkers?.()); // ✅ ADD
   }
 
   // 7) Force the grid into grouped state
