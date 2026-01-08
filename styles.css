@@ -566,7 +566,7 @@
     box-shadow: none;
 
     pointer-events: none;
-    z-index: 10;
+    z-index: 20; /* above .detail-panel (z-index: 10) */
   }
 
   /* Eye cursor on hover: only in clustered / ungrouped grid modes */
