@@ -1757,7 +1757,7 @@
       <div class="main-menu">
         <div class="menu-heading">Table of contents</div>
         <div class="menu-item" data-target="viralatmospheres">Viral Atmospheres</div>
-        <div class="menu-item" data-target="map">Map Modes</div>
+        <div class="menu-item" data-target="map">Map</div>
         <div class="menu-item" data-target="episodes">Episodes</div>
         <div class="menu-item" data-target="team">Our Team</div>
         <div class="menu-item" data-target="literature">Literature</div>
@@ -1783,6 +1783,10 @@
       edgeGap: 8,
       maxFractionOfSlack: 0.95
     };
+  </script>
+  <script>
+    // Global kill-switch for all Ken Burns behavior
+    window.KEN_BURNS_ENABLED = false;
   </script>
   
   <script type="module" src="script.js"></script>
