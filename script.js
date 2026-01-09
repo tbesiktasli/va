@@ -646,6 +646,9 @@ const MEDIA_IO = {
     : {})
 };
 
+window.KEN_BURNS_ENABLED ??= false;
+document.documentElement.classList.toggle('no-ken-burns', !window.KEN_BURNS_ENABLED);
+
 // Small helper so creation looks the same everywhere
 function createWave(container, src, overrides = {}) {
   const ws = WaveSurfer.create({ ...WS_DEFAULTS, ...overrides, container });
@@ -7215,7 +7218,8 @@ function initMobileSlideInsToggle() {
 (() => {
   // Grid media loader: lazy-load images when visible (Ken Burns is optional)
   const ENABLE_GRID_MEDIA_IO = true;
-  const ENABLE_GRID_KEN_BURNS = false; // keep false unless you want the animation
+  window.KEN_BURNS_ENABLED ??= false; // default OFF
+  const ENABLE_GRID_KEN_BURNS = !!window.KEN_BURNS_ENABLED;
 
   if (!ENABLE_GRID_MEDIA_IO) return;
 
@@ -7274,30 +7278,39 @@ function initMobileSlideInsToggle() {
         ensureLazyLoad(img);
       }
   
-      // Keep your KB logic (only useful once the image has a src / is loading)
-      const kbImg = ensureKB(img);
-      if (!kbImg) return;
-  
+      // Ken Burns only in non-grouped views (and only if enabled)
+      const view = grid.dataset.view || grid.getAttribute('data-view'); // 'grouped'|'clustered'|'ungrouped'|...
+      const kbAllowed = ENABLE_GRID_KEN_BURNS && view !== 'grouped';
+
       if (en.isIntersecting) {
-        if (!kbImg.__kbInit) {
-          const v = randomKBVars();
-          const wrap = kbImg.closest('.kb-wrap');
-          if (wrap) {
-            wrap.style.setProperty('--kb-x0', v.x0);
-            wrap.style.setProperty('--kb-y0', v.y0);
-            wrap.style.setProperty('--kb-x1', v.x1);
-            wrap.style.setProperty('--kb-y1', v.y1);
-            wrap.style.setProperty('--kb-s0', String(v.s0));
-            wrap.style.setProperty('--kb-s1', String(v.s1));
-            wrap.style.setProperty('--kb-duration', v.duration);
+        if (kbAllowed) {
+          const kbImg = ensureKB(img);
+          if (!kbImg) return;
+
+          if (!kbImg.__kbInit) {
+            const v = randomKBVars();
+            const wrap = kbImg.closest('.kb-wrap');
+            if (wrap) {
+              wrap.style.setProperty('--kb-x0', v.x0);
+              wrap.style.setProperty('--kb-y0', v.y0);
+              wrap.style.setProperty('--kb-x1', v.x1);
+              wrap.style.setProperty('--kb-y1', v.y1);
+              wrap.style.setProperty('--kb-s0', String(v.s0));
+              wrap.style.setProperty('--kb-s1', String(v.s1));
+              wrap.style.setProperty('--kb-duration', v.duration);
+            }
+
+            // PRE-SEED so hover doesn't jump
+            kbImg.style.transform = `translate(${v.x0}, ${v.y0}) scale(${v.s0})`;
+            kbImg.__kbInit = true;
           }
-  
-          // PRE-SEED so hover doesn't jump
-          kbImg.style.transform = `translate(${v.x0}, ${v.y0}) scale(${v.s0})`;
-  
-          kbImg.__kbInit = true;
+        } else {
+          // If we came from a KB-enabled mode, clear any pre-seeded transform
+          if (img.classList?.contains('kb-img')) {
+            img.style.transform = '';
+          }
         }
-  
+
         // ✅ We only need to observe until it becomes visible once
         if (!MEDIA_IO.unloadOnExit) {
           io.unobserve(img);
@@ -9906,7 +9919,7 @@ function initOverlayMenu() {
     viralatmospheres: ['About', 'Introduction', 'The Archive’s Architecture'],
   
     // Map Modes: same 3 modes as the grid view switcher (see aria-labels in index.html)
-    map: ['Episode Overview', 'Episode Overview & Thematic Discovery', 'Thematic Discovery'],
+    // map: ['Episode Overview', 'Episode Overview & Thematic Discovery', 'Thematic Discovery'],
   };
 
 
@@ -9925,9 +9938,9 @@ function initOverlayMenu() {
 
   // 2b) Submenu labels that should trigger grid mode changes (instead of opening subpages)
   const GRID_MODE_MENU_ACTIONS = {
-    'Group view':   () => document.getElementById('fab-group')?.click(),
-    'Cluster view': () => document.getElementById('fab-cluster')?.click(),
-    'Ungroup view': () => document.getElementById('fab-ungroup')?.click(),
+    'Episode Overview': () => applyGridMode(GRID_MODES.GROUP),
+    'Episode Overview & Thematic Discovery': () => applyGridMode(GRID_MODES.CLUSTER),
+    'Thematic Discovery': () => applyGridMode(GRID_MODES.UNGROUP),
   };
 
   function goToGridThen(fn) {
@@ -10198,6 +10211,12 @@ function initOverlayMenu() {
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeOverlay(e); });
   mainItems.forEach(i => i.addEventListener('click', () => {
     const target = i.dataset.target;
+
+    // Map should go straight to the grid (no submenu)
+    if (target === 'map') {
+      goHome(); // goHome already closes the overlay menu
+      return;
+    }
 
     // Mobile toggle: clicking an already-open item closes its sub-items
     const isMobile = mobileMq?.matches;
