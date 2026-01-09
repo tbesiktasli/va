@@ -3450,10 +3450,27 @@ ul.tag-group-switch {
 .kb-wrap { position: relative; overflow: hidden; width: 100%; height: 100%; }
 .kb-img  { display:block; width:100%; height:100%; object-fit:cover; transform-origin:center; will-change: transform; }
 
-/* Animate only on hover (or focus for keyboard users) */
-.kb-wrap:hover .kb-img,
-.kb-wrap:focus-within .kb-img {
+/* Animate only when Ken Burns is enabled */
+html:not(.no-ken-burns) .kb-wrap:hover .kb-img,
+html:not(.no-ken-burns) .kb-wrap:focus-within .kb-img {
   animation: kb-pan var(--kb-duration, 12s) linear infinite alternate;
+}
+
+/* Hard stop (covers any leftover kb-wrap/kb-img in DOM) */
+html.no-ken-burns .kb-img {
+  animation: none !important;
+  transform: none !important;
+}
+
+/* Grouped view: disable Ken Burns entirely */
+#grid[data-view="grouped"] .kb-wrap:hover .kb-img,
+#grid[data-view="grouped"] .kb-wrap:focus-within .kb-img {
+  animation: none !important;
+}
+
+/* Also neutralize the JS pre-seeded transform (translate/scale) in grouped mode */
+#grid[data-view="grouped"] .kb-img {
+  transform: none !important;
 }
 
 /* Grid image tiles: render via <img> (not background-image) so we can lazy-load via IO */
