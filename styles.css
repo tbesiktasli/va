@@ -1450,7 +1450,8 @@ header {
   display: none; /* hidden by default, see rule below */
 }
 
-body.in-group-gallery:not(.in-adhoc-gallery) #gallery-view-switcher {
+body.in-group-gallery #gallery-view-switcher,
+body.in-adhoc-gallery #gallery-view-switcher {
   display: flex; /* let .view-switcher keep its flex layout */
 }
 
