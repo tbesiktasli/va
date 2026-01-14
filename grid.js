@@ -652,7 +652,20 @@ export class Grid {
         if (waveEl) {
           // create using shared helper if available
           if (window.createWave) {
-            wsInline = window.createWave(waveEl, obj.audio, { height: 70 });
+            wsInline = window.createWave(waveEl, null, { height: 70 }); // don't fetch MP3 yet
+            window.addAudioPlaceholder?.(waveEl);
+            
+            // draw immediately from cached peaks (or fetch via tryDrawPeaksPreview if not cached yet)
+            const meta = window.getCachedPeaksMeta?.(obj.audio);
+            if (meta?.peaks?.length) {
+              window.renderPeaksPreview?.(wsInline, meta.peaks, meta.duration);
+            } else {
+              window.tryDrawPeaksPreview?.(wsInline, obj.audio);
+            }
+            
+            wsInline.once?.('ready', () => window.removeAudioPlaceholder?.(waveEl));
+            wsInline.once?.('redrawcomplete', () => window.removeAudioPlaceholder?.(waveEl));
+
           } else if (window.WaveSurfer) {
             wsInline = window.WaveSurfer.create({
               ...(window.WS_DEFAULTS || {}),
@@ -665,21 +678,43 @@ export class Grid {
 
           panel.__wsInline = wsInline; // allow exitDetail() to destroy reliably
 
-          // click toggles play/pause; stopPropagation prevents closing detail
+          const ensureInlineAudio = () => {
+            if (typeof window.ensureWaveAudio !== 'function') return Promise.resolve(false);
+
+            // Prefer cached peaks/duration (if you added the cache), otherwise fall back to what wsInline already knows.
+            const cached = window.getCachedPeaksMeta?.(obj.audio);
+            const meta = {
+              peaks: cached?.peaks ?? wsInline?.__lazyPeaks,
+              duration: cached?.duration ?? wsInline?.__lazyDuration,
+            };
+
+            return window.ensureWaveAudio(wsInline, obj.audio, meta).catch(() => false);
+          };
+
+          // click toggles play/pause; first click ensures MP3 is loaded
           waveEl.addEventListener('click', (e) => {
             e.stopPropagation();
-            wsInline?.playPause?.();
+            ensureInlineAudio().then((ok) => {
+              if (!ok) return;
+              try { wsInline?.playPause?.(); } catch {}
+            });
           });
 
+          // hover starts playback; first hover ensures MP3 is loaded
           waveEl.addEventListener('mouseenter', (e) => {
             e.stopPropagation();
-            try { wsInline?.play?.(); } catch {}
+            ensureInlineAudio().then((ok) => {
+              if (!ok) return;
+              try { wsInline?.play?.(); } catch {}
+            });
           }, { passive: true });
 
+          // leave pauses immediately (no need to ensure MP3)
           waveEl.addEventListener('mouseleave', (e) => {
             e.stopPropagation();
             try { wsInline?.pause?.(); } catch {}
           }, { passive: true });
+
         }
       }
 
@@ -1556,39 +1591,21 @@ export class Grid {
                 cursorWidth: 0,
               }));
 
-          ws.once?.('ready', () => window.removeAudioPlaceholder?.(waveWrap));
+            ws.once?.('ready', () => window.removeAudioPlaceholder?.(waveWrap));
+            ws.once?.('redrawcomplete', () => window.removeAudioPlaceholder?.(waveWrap));
+              
 
           objectDiv.__ws = ws;
 
-          // 2) OPTIONAL: draw waveform from precomputed peaks (no audio fetch)
-          //    We try to find a peaks JSON next to the audio: foo.mp3 -> foo.peaks.json
-          let peaks, duration;
-          if (window.AUDIO_WAVE_RENDER_MODE === 'peaks') {
-            (async () => {
-              try {
-                const peaksUrl = object.audio.replace(/\.[^/.]+$/, '.peaks.json');
-                const r = await fetch(peaksUrl, { cache: 'force-cache' });
-                if (r.ok) {
-                  const json = await r.json();
-                  // support either { data: [...], duration: <sec> } or a plain array
-                  peaks = Array.isArray(json) ? json : (json.data || json.peaks || undefined);
-                  duration = (json.duration || json.length || object.duration || undefined);
-                  ws.__lazyPeaks = peaks;
-                  ws.__lazyDuration = duration;
-                  if (peaks && peaks.length && !ws.__mp3Requested) {
-                    // Draw waveform from peaks only; still no audio fetched
-                    ws.load('', peaks, duration);
-                  }                
-                }
-              } catch (e) { /* no peaks available — fine */ }
-            })();
-          }
+          // 2) Peaks preview (no audio fetch): reuse the shared implementation from script.js
+          window.tryDrawPeaksPreview?.(ws, object.audio);
+
           // Lazy MP3 load: keep waveform via peaks.json, only fetch MP3 on first interaction
           let hoverToken = 0;
 
           const ensureAudio = () => {
             if (typeof window.ensureWaveAudio !== 'function') return Promise.resolve(false);
-            const meta = { peaks: peaks ?? ws.__lazyPeaks, duration: duration ?? ws.__lazyDuration };
+            const meta = { peaks: ws.__lazyPeaks, duration: ws.__lazyDuration };
             return window.ensureWaveAudio(ws, object.audio, meta);
           };
 
