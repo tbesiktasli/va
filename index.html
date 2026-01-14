@@ -217,7 +217,7 @@
       <!-- Top-left controls -->
       <div id="fab-top-left" class="fab-stack">
 
-        <div id="grid-view-switcher" class="view-switcher" aria-label="Grid view switcher">
+        <div id="grid-view-switcher" class="view-switcher" data-view-switcher-behavior="apply" aria-label="Grid view switcher">
           <button type="button" class="fab fab-lg view-switcher-toggle" aria-label="Change view" data-cursor-label="change logic of exploration">
             <img src="img/icons/change_view.svg" alt="Change view">
           </button>         
@@ -353,10 +353,7 @@
         </svg>
       </div>
 
-      <div
-      id="gallery-view-switcher"
-      class="view-switcher"
-      aria-label="Grid view switcher">
+      <div id="gallery-view-switcher" class="view-switcher" data-view-switcher-behavior="close-gallery-then-apply" aria-label="Grid view switcher">
     
       <button type="button" class="fab fab-lg view-switcher-toggle" aria-label="Change view" data-cursor-label="change logic of exploration">
         <img src="img/icons/change_view.svg" alt="Change view">
@@ -1787,6 +1784,15 @@
   <script>
     // Global kill-switch for all Ken Burns behavior
     window.KEN_BURNS_ENABLED = false;
+  </script>
+
+  <script>
+    // draw waveforms from *.peaks.json without fetching MP3
+    window.AUDIO_WAVE_RENDER_MODE = 'peaks';
+
+    // optional: control when hover starts MP3 fetch/play
+    window.AUDIO_HOVER_PREVIEW_ENABLED = true;
+    window.AUDIO_HOVER_PREVIEW_DELAY_MS = 180;
   </script>
   
   <script type="module" src="script.js"></script>
