@@ -696,6 +696,64 @@ window.removeAudioPlaceholder ??= removeAudioPlaceholder;
 window.AUDIO_HOVER_PREVIEW_DELAY_MS ??= 180;   // ms before hover-preview triggers a network fetch
 window.AUDIO_HOVER_PREVIEW_ENABLED  ??= true;  // set false to disable hover preview
 
+// A tiny silent WAV data URI (no network request).
+// Used to let WaveSurfer render precomputed peaks without fetching the real MP3.
+window.SILENT_WAV_DATA_URI ??= 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+
+function renderPeaksPreview(ws, peaks, duration) {
+  if (!ws || !peaks?.length) return;
+  // If MP3 load already started, don't clobber it.
+  if (ws.__mp3Requested) return;
+
+  try {
+    // Use WaveSurfer's load path so it actually renders + emits ready/redrawcomplete.
+    ws.load(window.SILENT_WAV_DATA_URI, peaks, duration);
+  } catch (_) {}
+}
+
+window.renderPeaksPreview ??= renderPeaksPreview;
+
+// --- Peaks JSON normalizer ---
+// Supports:
+// 1) WaveSurfer-style: [..] or { peaks:[..], duration:.. }
+// 2) audiowaveform-style: { data:[min,max,min,max,...], bits:8|16, length|duration:.. }
+function parsePeaksJson(json) {
+  if (!json) return { peaks: undefined, duration: undefined };
+
+  // WaveSurfer-ready array
+  if (Array.isArray(json)) return { peaks: json, duration: undefined };
+
+  // WaveSurfer-ready object
+  if (Array.isArray(json.peaks)) {
+    return { peaks: json.peaks, duration: json.duration ?? json.length };
+  }
+
+  // audiowaveform JSON: min/max pairs in `data`
+  if (Array.isArray(json.data)) {
+    const bits = Number(json.bits) || 8;
+    const denom = bits === 16 ? 32768 : 128; // good enough baseline
+    const d = json.data;
+
+    // Convert [min,max,min,max...] -> [peak,peak,...] in 0..1 range
+    const out = new Array(Math.floor(d.length / 2));
+    for (let i = 0, j = 0; i + 1 < d.length; i += 2, j++) {
+      const mn = d[i];
+      const mx = d[i + 1];
+      out[j] = Math.max(Math.abs(mn), Math.abs(mx)) / denom;
+    }
+
+    return { peaks: out, duration: json.duration ?? json.length };
+  }
+
+  // fallback: whatever your current code did
+  return {
+    peaks: json.data || json.peaks,
+    duration: json.duration ?? json.length,
+  };
+}
+
+window.parsePeaksJson ??= parsePeaksJson;
+
 const __WS_AUDIO_STATE = new WeakMap();
 
 function __getWsAudioState(ws) {
@@ -726,6 +784,76 @@ window.getVideoPlaceholderPoster ??= getVideoPlaceholderPoster;
 
 // Optional: if true, we unload the video src on mouseleave (like freeing memory)
 window.VIDEO_UNLOAD_ON_LEAVE ??= false;
+
+function peaksUrlForAudio(src) {
+  if (!src) return src;
+
+  let s = String(src).trim();
+
+  // If it's like "va-cms.mpgs.de/uploads/..." (host but no protocol), make it absolute.
+  if (!/^https?:\/\//i.test(s) && /^[a-z0-9.-]+\.[a-z]{2,}(\/|$)/i.test(s)) {
+    s = 'https://' + s;
+  }
+
+  // If it's protocol-relative ("//va-cms..."), also make it absolute.
+  if (/^\/\//.test(s)) {
+    s = window.location.protocol + s;
+  }
+
+  const u = new URL(s, window.location.href);
+  u.pathname = u.pathname.replace(/\.[^/.]+$/, '.peaks.json');
+  u.search = '';
+  u.hash = '';
+  return u.toString();
+}
+
+window.peaksUrlForAudio ??= peaksUrlForAudio;
+
+// Cache decoded peaks so different WaveSurfer instances (tile/detail/related) can reuse them.
+const __PEAKS_CACHE = new Map(); // key: peaksUrl, value: { peaks, duration }
+window.getCachedPeaksMeta = (src) => __PEAKS_CACHE.get(window.peaksUrlForAudio(src));
+
+
+function tryDrawPeaksPreview(ws, src) {
+  if (!ws || !src) return;
+  if (window.AUDIO_WAVE_RENDER_MODE !== 'peaks') return;
+
+  // don’t do duplicate fetches per WS instance
+  if (ws.__peaksPreviewRequested) return;
+  ws.__peaksPreviewRequested = true;
+
+  // if MP3 fetch already started, don’t race and overwrite
+  if (ws.__mp3Requested) return;
+
+  const peaksUrl = peaksUrlForAudio(src);
+
+  (async () => {
+    try {
+      const r = await fetch(peaksUrl, { cache: 'force-cache' });
+      if (!r.ok) return;
+
+      const j = await r.json();
+      const parsed = window.parsePeaksJson ? window.parsePeaksJson(j) : {};
+      const peaks = parsed.peaks;
+      const duration = parsed.duration;      
+
+      ws.__lazyPeaks = peaks;
+      ws.__lazyDuration = duration;
+      
+      __PEAKS_CACHE.set(peaksUrl, { peaks, duration });
+
+      // Draw waveform without fetching MP3
+      if (peaks?.length && !ws.__mp3Requested) {
+        window.renderPeaksPreview?.(ws, peaks, duration);
+      }
+
+    } catch {
+      // no peaks available -> silently ignore
+    }
+  })();
+}
+
+window.tryDrawPeaksPreview ??= tryDrawPeaksPreview;
 
 /**
  * Ensure the MP3 is loaded for a WaveSurfer instance (once), optionally reusing already-fetched peaks/duration.
@@ -4414,14 +4542,8 @@ function initMobileSlideInsToggle() {
   
     if (barShown) {
       const barH = Math.ceil(bar.getBoundingClientRect().height || 0);
-  
-      // You asked to also account for the 60px "top margin" spacing.
-      // Make it robust: try to read it from the Explore button’s computed margin-top.
-      const exploreBtn = titleBoxEl.querySelector('#scroll-on.button');
-      const extraGap =
-        exploreBtn ? (parseFloat(getComputedStyle(exploreBtn).marginTop) || 60) : 60;
-  
-      inset = barH + Math.ceil(extraGap);
+      const GAP = 12; // small breathing room so the button doesn't kiss the bar
+      inset = barH + GAP;
     }
   
     titleBoxEl.style.setProperty('--titlebox-bottom-inset', `${inset}px`);
@@ -4525,6 +4647,11 @@ function initMobileSlideInsToggle() {
     document.body.dataset.currentGroupId = String(gid);
     window.__dispatchViewChange();
 
+    requestAnimationFrame(() => {
+      const tb = groupGalleryEl?.querySelector('.title-box');
+      if (tb) applyAdhocTitleBoxBottomInset(tb);
+    });    
+
     console.log('[gallery] opened', { gid });
   }
 
@@ -4604,6 +4731,10 @@ function initMobileSlideInsToggle() {
       renderAdhocGalleryTitle(titleLines);
     }
 
+    // Ad-hoc gallery should NOT show Authors/Contributors (they can linger from group gallery)
+    setGalleryAuthorsLine([]);
+    setGalleryContributorsLine([]);
+
     // Fresh content
     const box = groupGalleryEl.querySelector('.gallery-box');
     if (box) box.innerHTML = '';
@@ -4630,6 +4761,11 @@ function initMobileSlideInsToggle() {
     window.__dispatchViewChange();
     if (typeof window.renderSelectionBar === 'function') {
       window.renderSelectionBar();                     // keep the bar visible, but no button
+
+      requestAnimationFrame(() => {
+        const tb = groupGalleryEl?.querySelector('.title-box');
+        if (tb) applyAdhocTitleBoxBottomInset(tb);
+      });
     }
   
     const bar = document.getElementById('selection-bar');      // NEW
@@ -4713,6 +4849,11 @@ function initMobileSlideInsToggle() {
     window.__dispatchViewChange?.();
     if (typeof window.renderSelectionBar === 'function') {
       window.renderSelectionBar();
+
+      requestAnimationFrame(() => {
+        const tb = groupGalleryEl?.querySelector('.title-box');
+        if (tb) applyAdhocTitleBoxBottomInset(tb);
+      });
     }
 
     refreshSlideInsVisibility();
@@ -4780,6 +4921,10 @@ function initMobileSlideInsToggle() {
     // NEW: clear any ad-hoc title resizing when leaving the gallery
     const tEl = groupGalleryEl?.querySelector('.title-box h2');
     if (tEl) tEl.style.fontSize = '';
+
+    // NEW: clear any bottom inset so it doesn't carry into other modes
+    const tb = groupGalleryEl?.querySelector('.title-box');
+    if (tb) tb.style.removeProperty('--titlebox-bottom-inset');
   
     // Detach gallery observers / media behaviors
     window.__galleryIO__?.onClose?.();
@@ -5093,14 +5238,49 @@ function initMobileSlideInsToggle() {
             </figure>
           `;
         
-          // create the waveform
-          __detailWave = createWave(`#${id}`, src, { height: 70 });
-        
-          // same behavior as gallery: click toggles, hover plays, leave pauses
+          // create WaveSurfer WITHOUT url (won’t fetch MP3 yet)
           const container = slot.querySelector(`#${id}`);
-          container?.addEventListener('click', () => __detailWave?.playPause());
-          container?.addEventListener('mouseenter', () => { try { __detailWave?.play(); } catch {} }, { passive: true });
-          container?.addEventListener('mouseleave', () => { try { __detailWave?.pause(); } catch {} }, { passive: true });
+          __detailWave = createWave(container, null, { height: 70 });
+
+          window.addAudioPlaceholder?.(container);
+          __detailWave.once?.('ready', () => window.removeAudioPlaceholder?.(container));
+          __detailWave.once?.('redrawcomplete', () => window.removeAudioPlaceholder?.(container));
+
+          // draw instantly from peaks (prefer cache, fallback to fetching peaks.json)
+          const cached = window.getCachedPeaksMeta?.(src);
+          if (cached?.peaks?.length) {
+            window.renderPeaksPreview?.(__detailWave, cached.peaks, cached.duration);
+          } else {
+            window.tryDrawPeaksPreview?.(__detailWave, src);
+          }
+
+          // ensure MP3 is loaded once on first interaction (reuse peaks/duration)
+          const ensureDetailAudio = () => {
+            const c = window.getCachedPeaksMeta?.(src);
+            const meta = {
+              peaks: c?.peaks ?? __detailWave?.__lazyPeaks,
+              duration: c?.duration ?? __detailWave?.__lazyDuration,
+            };
+            return window.ensureWaveAudio?.(__detailWave, src, meta).catch(() => false);
+          };
+
+          container?.addEventListener('click', () => {
+            ensureDetailAudio().then((ok) => {
+              if (!ok) return;
+              try { __detailWave?.playPause?.(); } catch {}
+            });
+          });
+
+          container?.addEventListener('mouseenter', () => {
+            ensureDetailAudio().then((ok) => {
+              if (!ok) return;
+              try { __detailWave?.play?.(); } catch {}
+            });
+          }, { passive: true });
+
+          container?.addEventListener('mouseleave', () => {
+            try { __detailWave?.pause?.(); } catch {}
+          }, { passive: true });
         
           break;
         }          
@@ -6439,35 +6619,21 @@ function initMobileSlideInsToggle() {
           const ws = createWave(`#${wave.id}`, null);
           window.addAudioPlaceholder?.(wave);
           ws.once?.('ready', () => window.removeAudioPlaceholder?.(wave));
+          ws.once?.('redrawcomplete', () => window.removeAudioPlaceholder?.(wave));
 
         
-        // try to draw peaks first (non-blocking)
-        let peaks, duration;
-        if (window.AUDIO_WAVE_RENDER_MODE === 'peaks') {
-          const peaksUrl = src.replace(/\.[^/.]+$/, '.peaks.json');
-          (async () => {
-            try {
-              const r = await fetch(peaksUrl, { cache: 'force-cache' });
-              if (!r.ok) return;
-              const j = await r.json();
-              peaks = Array.isArray(j) ? j : (j.data || j.peaks);
-              duration = j.duration || j.length;
-              ws.__lazyPeaks = peaks;
-              ws.__lazyDuration = duration;
-              if (peaks?.length && !ws.__mp3Requested) ws.load('', peaks, duration);
-            } catch {}
-          })();
-        }
+        tryDrawPeaksPreview(ws, src);
+
         // hover plays/pauses (first hover will trigger MP3 fetch)
         hoverPlay(item, ws, src);
 
         // click toggles play/pause (first click will trigger MP3 fetch)
         item.addEventListener('click', () => {
-          const meta = { peaks: peaks ?? ws.__lazyPeaks, duration: duration ?? ws.__lazyDuration };
+          const meta = { peaks: ws.__lazyPeaks, duration: ws.__lazyDuration };
           window.ensureWaveAudio(ws, src, meta).then(() => {
             try { ws.playPause(); } catch {}
           }).catch(() => {});
-        });
+        });        
 
         wsRegistry.set(wave.id, ws);
         }
@@ -6531,32 +6697,16 @@ function initMobileSlideInsToggle() {
       const ws = createWave(wave, null);
       window.addAudioPlaceholder?.(wave);
       ws.once?.('ready', () => window.removeAudioPlaceholder?.(wave));
+      ws.once?.('redrawcomplete', () => window.removeAudioPlaceholder?.(wave));
 
-      // Optional: try peaks first to draw without fetching audio
-      let peaks, duration;
-      if (window.AUDIO_WAVE_RENDER_MODE === 'peaks') {
-        (async () => {
-          try {
-            const peaksUrl = src.replace(/\.[^/.]+$/, '.peaks.json');
-            const r = await fetch(peaksUrl, { cache: 'force-cache' });
-            if (r.ok) {
-              const j = await r.json();
-              peaks = Array.isArray(j) ? j : (j.data || j.peaks);
-              duration = j.duration || j.length;
-              ws.__lazyPeaks = peaks;
-              ws.__lazyDuration = duration;
-              if (peaks?.length && !ws.__mp3Requested) ws.load('', peaks, duration);
-            }
-          } catch {}
-        })();
-      }
+      tryDrawPeaksPreview(ws, src);
 
       // Hover play/pause (first hover will trigger MP3 fetch)
       hoverPlay(item, ws, src);
 
       // Click toggles play/pause (first click will trigger MP3 fetch)
       item.addEventListener('click', () => {
-        const meta = { peaks: peaks ?? ws.__lazyPeaks, duration: duration ?? ws.__lazyDuration };
+        const meta = { peaks: ws.__lazyPeaks, duration: ws.__lazyDuration };
         window.ensureWaveAudio(ws, src, meta).then(() => {
           try { ws.playPause(); } catch {}
         }).catch(() => {});
@@ -7131,13 +7281,24 @@ function initMobileSlideInsToggle() {
       if (!back) return;
       e.preventDefault();
 
-      // If we pushed a gallery state, let browser back close it via popstate:
+      // Ad-hoc gallery: don't navigate back to #home (that triggers goHome() => grouped).
+      // Just close the gallery so the grid returns in whatever state it already was.
+      const isAdhoc =
+        document.body.classList.contains('in-adhoc-gallery') ||
+        !!history.state?.adhoc;
+
+      if (isAdhoc) {
+        window.closeGallery?.();
+        return;
+      }
+
+      // Group gallery: use history so back/forward works as before
       if (history.state && history.state.gallery) {
         history.back();
       } else {
-        // Fallback: close directly if no history state
         window.closeGallery?.();
       }
+
     }, true);
 
     // 2) Listen for back/forward to restore the grid when leaving the gallery state
@@ -7840,51 +8001,46 @@ function initViewSwitcher(switcherId, bindings, { onActivate, enableTeaser = fal
   }
 }
 
-function initGridViewSwitcher() {
-  initViewSwitcher(
-    'grid-view-switcher',
-    [
-      { targetId: 'fab-group' },
-      { targetId: 'fab-cluster' },
-      { targetId: 'fab-ungroup' },
-    ],
-    {
-      enableTeaser: true,
-      onActivate: (targetFab) => targetFab.click(),
-    }
-  );
+// One source of truth for grid-mode switcher buttons
+const GRID_MODE_SWITCHER_BINDINGS = [
+  { targetId: 'fab-group' },
+  { targetId: 'fab-cluster' },
+  { targetId: 'fab-ungroup' },
+];
+
+function initGridModeViewSwitchers() {
+  // Any .view-switcher can opt-in via data-view-switcher-behavior
+  document
+    .querySelectorAll('.view-switcher[data-view-switcher-behavior]')
+    .forEach((switcher) => {
+      const switcherId = switcher.id;
+      if (!switcherId) return;
+
+      const behavior = String(switcher.dataset.viewSwitcherBehavior || '').trim();
+
+      initViewSwitcher(
+        switcherId,
+        GRID_MODE_SWITCHER_BINDINGS,
+        {
+          // only the grid one should have the teaser behavior
+          enableTeaser: behavior === 'apply',
+          onActivate: (targetFab) => {
+            if (behavior === 'close-gallery-then-apply') {
+              // works for BOTH group gallery and ad-hoc gallery
+              window.closeGallery?.();
+              setTimeout(() => targetFab.click(), 0);
+              return;
+            }
+
+            // default: apply immediately
+            targetFab.click();
+          },
+        }
+      );
+    });
 }
 
-function initGalleryViewSwitcher() {
-  initViewSwitcher(
-    'gallery-view-switcher',
-    [
-      { targetId: 'fab-group' },
-      { targetId: 'fab-cluster' },
-      { targetId: 'fab-ungroup' },
-    ],
-    {
-      onActivate: (targetFab) => {
-        const body = document.body;
-        const isGroupGallery =
-          body.classList.contains('in-group-gallery') &&
-          !body.classList.contains('in-adhoc-gallery');
-
-        // Only act in the real group gallery, never in the ad-hoc "tags" gallery
-        if (!isGroupGallery) return;
-
-        // 1) Close the gallery
-        window.closeGallery?.();
-
-        // 2) Switch the main grid mode (after gallery closes/restores)
-        setTimeout(() => targetFab.click(), 0);
-      },
-    }
-  );
-}
-
-initGridViewSwitcher();
-initGalleryViewSwitcher();
+initGridModeViewSwitchers();
 
 function setFitAllIconDone(done, reason = '') {
   if (!fabFitAll) return;
