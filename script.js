@@ -1165,6 +1165,9 @@ function initCursorLabel() {
     // If user is dragging the grid, don't show cursor labels.
     if (target.closest('#grid.dragging, #grid.panning')) return '';
 
+    // If a container explicitly disables cursor labels, never show tooltips inside it.
+    if (target.closest('[data-cursor-label-disabled="true"]')) return '';
+
     // Highest priority: always-on label
     const direct = target.getAttribute('data-cursor-label');
     if (direct && direct.trim()) return direct.trim();
@@ -2757,10 +2760,9 @@ async function resolveUploadUrlsForObjects(objs) {
           o.height = Math.max(1, Math.round(o.width * (cand.height / cand.width)));
         }
   
-        // const dpr = window.devicePixelRatio || 1;
-        const dpr = 1;
-        //const best = pickImageVariant(o._imageMeta, o.width || 200, dpr);
-        const best = pickImageVariant(o._imageMeta, o.width || 200, { dpr, headroom: 1.0 });
+        const dpr = window.devicePixelRatio || 1;
+        const best = pickImageVariant(o._imageMeta, o.width || 200, { dpr, headroom: 1.25 });
+        
         o.image = best.url || cand.url;
         if (window.DEBUG_MEDIA) {
           console.log('[assign]',
@@ -3223,27 +3225,42 @@ function openGroupGalleryFromDetail(gid) {
   window.openGroupGallery?.(gid);
 }
 
-function pickImageVariant(meta, targetCssWidth, dpr=1) {
-  if (!meta) return { url: undefined };
-  const need = Math.ceil((targetCssWidth || 200) * Math.max(1, dpr) * 1.25); // headroom
+function pickImageVariant(metaOrFormats, targetCssWidth, opts = {}) {
+  if (!metaOrFormats) return { url: undefined };
+
+  // Backwards-compatible:
+  // - third arg can be a number (old style) => dpr
+  // - or an options object (new style) => { dpr, headroom }
+  const o = (typeof opts === 'number') ? { dpr: opts } : (opts || {});
+  const dpr = Number(o.dpr ?? (window.devicePixelRatio || 1)) || 1;
+  const headroom = Number(o.headroom ?? 1.25) || 1.25;
+
+  const need = Math.ceil((targetCssWidth || 200) * Math.max(1, dpr) * headroom);
   const pool = [];
 
-  // gather [width,url,height]
-  if (meta.formats) {
-    Object.values(meta.formats).forEach(f => { if (f?.width && f?.url) pool.push([f.width, f.url, f.height]); });
+  // Accept either:
+  // - a "meta" object with { url, width, height, formats }
+  // - OR a Strapi "formats" object directly
+  const formats = metaOrFormats.formats ? metaOrFormats.formats : metaOrFormats;
+
+  if (formats && typeof formats === 'object') {
+    Object.values(formats).forEach(f => {
+      if (f?.width && f?.url) pool.push([f.width, f.url, f.height]);
+    });
   }
-  if (meta.width && meta.url) pool.push([meta.width, meta.url, meta.height]);
+
+  if (metaOrFormats.width && metaOrFormats.url) {
+    pool.push([metaOrFormats.width, metaOrFormats.url, metaOrFormats.height]);
+  }
+
+  if (!pool.length) return { url: metaOrFormats.url };
+
+  pool.sort((a, b) => a[0] - b[0]);
 
   // smallest >= need, else largest available
-  pool.sort((a,b)=>a[0]-b[0]);
-  let choice = pool[0];
-  for (const p of pool) { if (p[0] >= need) { choice = p; break; } }
-
-  if (window.DEBUG_MEDIA) {
-    dgrp(`[variant] need≈${need}px (css=${targetCssWidth}, dpr=${dpr}) options=${pool.length}`);
-    pool.forEach(p => console.log('option', p[0], '→', p[1]));
-    console.log('→ chosen', choice[0], choice[1]);
-    dgrpEnd();
+  let choice = pool[pool.length - 1];
+  for (const p of pool) {
+    if (p[0] >= need) { choice = p; break; }
   }
 
   return { url: choice[1], width: choice[0], height: choice[2] };
@@ -7426,6 +7443,25 @@ function initMobileSlideInsToggle() {
     img.loading = 'lazy';
     img.src = url;
     img.dataset.loaded = '1';
+
+    // Mark images that would be upscaled (avoid blur by not stretching them)
+    if (!img.dataset.upscaleChecked) {
+      img.dataset.upscaleChecked = '1';
+
+      img.addEventListener('load', () => {
+        const dpr = window.devicePixelRatio || 1;
+
+        // Compare intrinsic pixels vs rendered pixels
+        const needW = Math.ceil((img.clientWidth || 0) * dpr);
+        const needH = Math.ceil((img.clientHeight || 0) * dpr);
+
+        const lowRes =
+          (img.naturalWidth && needW && img.naturalWidth < needW) ||
+          (img.naturalHeight && needH && img.naturalHeight < needH);
+
+        img.classList.toggle('no-upscale', !!lowRes);
+      }, { once: true });
+    }
   
     window.DEBUG_MEDIA && console.debug('[grid:lazyload]', url);
   }  
@@ -9777,7 +9813,7 @@ function renderDiscoverProjectsFromGroups() {
     .from(document.querySelectorAll('#discover-connections .content-section'))
     .find(sec => {
       const h = sec.querySelector('h3');
-      return h && h.textContent.trim().toLowerCase() === 'project';
+      return h && h.textContent.trim().toLowerCase() === 'episodes';
     });
 
   if (!projectSection) return;
@@ -11581,7 +11617,7 @@ function renderSelectionBar() {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'button btn-create-gallery';
-    btn.innerHTML = '<span class="text">Create gallery</span><span class="icon">→</span>';
+    btn.innerHTML = '<span class="text">View together</span><span class="icon">→</span>';
     btn.addEventListener('click', () => {
       const theme = window.activeThemeFilter || null;
       if (theme && tags.length === 0) {
