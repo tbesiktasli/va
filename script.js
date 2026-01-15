@@ -8740,6 +8740,16 @@ window.addEventListener('DOMContentLoaded', async () => {
 const TAG_MODES = { OR: 'OR', AND: 'AND' };
 let TAG_MODE = TAG_MODES.OR;   // default
 
+// ---- CONFIG: max active tags ----
+// Max number of tags that can be active simultaneously.
+// Override by setting `window.MAX_ACTIVE_TAGS = <number>` BEFORE script.js loads.
+window.MAX_ACTIVE_TAGS ??= 7;
+
+function getMaxActiveTags() {
+  const n = Number(window.MAX_ACTIVE_TAGS);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 7;
+}
+
 const TAG_GROUP_POLICIES = { GLOBAL: 'GLOBAL', SCOPED: 'SCOPED' };
 let TAG_GROUP_POLICY = TAG_GROUP_POLICIES.GLOBAL; // or 'SCOPED'
 let activeTagGroupId = null; // used only in SCOPED policy
@@ -8931,6 +8941,8 @@ function updateTagAvailability() {
   const lis = [...ul.querySelectorAll('li')];
 
   const activeGroup = currentTagViewGroupId; // null = no group selected
+  const maxActive = (typeof getMaxActiveTags === 'function') ? getMaxActiveTags() : 7;
+  const maxReached = activeTags.size >= maxActive;
   
   // 0) Group gating: if a group is selected, disable chips from other groups
   if (activeGroup) {
@@ -8952,6 +8964,17 @@ function updateTagAvailability() {
       // no gating: make sure everything is enabled
       lis.forEach(li => { li.classList.remove('disabled'); li.setAttribute('aria-disabled','false'); });
     }
+
+    // NEW: max active tags cap (keep active ones enabled so you can deselect)
+    if (maxReached) {
+      lis.forEach(li => {
+        if (!li.classList.contains('active')) {
+          li.classList.add('disabled');
+          li.setAttribute('aria-disabled', 'true');
+        }
+      });
+    }
+
     return;
   }
 
@@ -8966,6 +8989,13 @@ function updateTagAvailability() {
     const tag = li.dataset.tag;
     const isActive = li.classList.contains('active');
     if (isActive) { li.classList.remove('disabled'); li.setAttribute('aria-disabled','false'); return; }
+
+    // NEW: max active tags cap (if reached, no more inactive tags can be selected)
+    if (maxReached) {
+      li.classList.add('disabled');
+      li.setAttribute('aria-disabled', 'true');
+      return;
+    }
 
     // If SCOPED is locked to a different group, visible list is always the locked group anyway.
     const pool = tagToObjects.get(tag) || [];
@@ -9270,6 +9300,13 @@ function initSlideInTags() {
       li.style.color = '';
       li.style.boxShadow = '';
     } else {
+      const maxActive = (typeof getMaxActiveTags === 'function') ? getMaxActiveTags() : 7;
+      if (activeTags.size >= maxActive) {
+        // Max reached: ignore selection (should already be disabled by updateTagAvailability)
+        updateTagAvailability();
+        return;
+      }
+
       activeTags.add(tag);
       li.classList.add('active');
       li.style.borderColor = color;
