@@ -343,7 +343,7 @@
   }
 
   .prepage-subline {
-    font-family: "Noto Serif Display", serif;
+    font-family: "Noto Serif", serif;
     font-style: italic;
   
     font-size: 1.5em; /* matches .title-box h3 size */
