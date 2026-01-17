@@ -108,6 +108,9 @@
   /* Cursor label conceal animation (reverse) */
   --cursor-label-conceal-speed: 1200;   /* px per second (higher = faster close) */
   --cursor-label-conceal-min-ms: 70;    /* minimum duration per line (close) */
+
+  /* Off-grid: theme segment color (stable + distinct from totals) */
+  --offgrid-theme-color: #6b4eff;
 }
 
 :root[data-theme="dark"] {
