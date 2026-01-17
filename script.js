@@ -8257,6 +8257,20 @@ const counters = {
   right:  document.getElementById('offgrid-right'),
 };
 
+function getThemeCounterColor() {
+  // JS override (optional)
+  const js = (typeof window.OFFGRID_THEME_COLOR === 'string')
+    ? window.OFFGRID_THEME_COLOR.trim()
+    : '';
+
+  // CSS override (preferred)
+  const css = getComputedStyle(document.documentElement)
+    .getPropertyValue('--offgrid-theme-color')
+    .trim();
+
+  return js || css || 'magenta';
+}
+
 if (!OFFGRID_COUNTERS_ENABLED) {
   Object.values(counters).forEach(n => n?.setAttribute('aria-hidden', 'true'));
 }
@@ -8294,11 +8308,12 @@ function updateOffgridCounters() {
   }
 
   const data = {
-    top: { total: 0, perTag: {} },
-    bottom: { total: 0, perTag: {} },
-    left: { total: 0, perTag: {} },
-    right: { total: 0, perTag: {} },
-  };
+    top: { total: 0, theme: 0, perTag: {} },
+    bottom: { total: 0, theme: 0, perTag: {} },
+    left: { total: 0, theme: 0, perTag: {} },
+    right: { total: 0, theme: 0, perTag: {} },
+  };  
+
   //const selectedTags = Array.from((typeof activeTags !== 'undefined' ? activeTags : new Set()));
   let selectedTags = Array.from((typeof activeTags !== 'undefined' ? activeTags : new Set()));
   // Ignore tags currently disabled in the UI (defensive; clicks are already blocked)
@@ -8314,10 +8329,8 @@ function updateOffgridCounters() {
     const overlaps = !(r.right <= vp.left || r.left >= vp.right || r.bottom <= vp.top || r.top >= vp.bottom);
     if (overlaps) continue;
 
-    // If we are in theme-filter mode, only count objects that match the theme
-    if (themeFilter && themeMatchesById && !themeMatchesById.has(el.id)) {
-      continue;
-    }
+    // Theme match is counted separately (total stays unconditional)
+    const matchesTheme = !!(themeFilter && themeMatchesById && themeMatchesById.has(el.id));
 
     // Measure "how far outside" ...
     const dTop    = Math.max(vp.top    - r.bottom, 0);
@@ -8330,6 +8343,9 @@ function updateOffgridCounters() {
     if (dRight  > maxD) { dir = 'right';  maxD = dRight; }
 
     data[dir].total++;
+
+    if (matchesTheme) data[dir].theme++;
+
     if (selectedTags.length) {
       const tags = (el.dataset.tags || '').split(',').filter(Boolean);
       for (const t of selectedTags) {
@@ -8341,7 +8357,7 @@ function updateOffgridCounters() {
   const render = (dir) => {
     const node = counters[dir];
     if (!node) return;
-    const { total, perTag } = data[dir];
+    const { total, theme, perTag } = data[dir];
     const valueEl = node.querySelector('.value');
     if (valueEl) valueEl.textContent = String(total);
 
@@ -8350,17 +8366,76 @@ function updateOffgridCounters() {
     host.querySelector('.breakdown')?.remove();
     if (total === 0) {
       node.setAttribute('aria-hidden', 'true');
+
+      if (valueEl) {
+        valueEl.classList.remove('offgrid-total');
+        delete valueEl.dataset.dir;
+      }
+
       return;
     }
     node.removeAttribute('aria-hidden');
 
+    if (valueEl) {
+      valueEl.textContent = String(total);
+    
+      // make totals clickable (always)
+      valueEl.classList.add('offgrid-total');
+      valueEl.dataset.dir = dir;
+      valueEl.title = total > 0
+        ? `Show nearest ${dir} item`
+        : `No ${dir} items`;
+      valueEl.dataset.cursorLabel = 'scroll to nearest item';
+    }    
+
     // Default: no breakdown → ensure class is off
     host.classList.remove('has-breakdown');
 
-    if (selectedTags.length) {
+    const hasThemeBreakdown = !!(themeFilter && themeMatchesById);
+    if (selectedTags.length || hasThemeBreakdown) {
       host.classList.add('has-breakdown');
       const wrap = document.createElement('span');
       wrap.className = 'breakdown';
+
+      if (hasThemeBreakdown) {
+        const nTheme = theme || 0;
+        const themeColor = getThemeCounterColor();
+      
+        // separator
+        const sep = document.createElement('span');
+        sep.className = 'sep';
+        sep.textContent = ' / ';
+        wrap.appendChild(sep);
+      
+        // ONE CLICKABLE SEGMENT for the active theme
+        const seg = document.createElement('span');
+        seg.className = 'offgrid-seg offgrid-theme-seg';
+        seg.setAttribute('role', 'button');
+        seg.tabIndex = 0;
+        seg.dataset.dir = dir;
+        seg.dataset.theme = '1';
+        seg.title = nTheme > 0
+          ? `Show nearest ${dir} item matching the active theme`
+          : `No ${dir} items matching the active theme`;
+        seg.dataset.cursorLabel = 'scroll to nearest item';
+        if (!nTheme) seg.classList.add('is-zero');
+      
+        // number (reuse tag-count styling)
+        const cnt = document.createElement('span');
+        cnt.className = 'tag-count';
+        cnt.textContent = String(nTheme);
+        cnt.style.color = themeColor;
+        seg.appendChild(cnt);
+      
+        // dot (reuse tag-dot styling)
+        const dot = document.createElement('span');
+        dot.className = 'tag-dot';
+        dot.textContent = ' •';
+        dot.style.color = themeColor;
+        seg.appendChild(dot);
+      
+        wrap.appendChild(seg);
+      }      
     
       for (const t of selectedTags) {
         const n = perTag[t] || 0;
@@ -8406,17 +8481,6 @@ function updateOffgridCounters() {
       }
       host.appendChild(wrap);
 
-      const valueEl = node.querySelector('.value');
-      if (valueEl) {
-        valueEl.textContent = String(total);
-        // make totals clickable
-        valueEl.classList.add('offgrid-total');
-        valueEl.dataset.dir = dir;
-        valueEl.title = total > 0
-          ? `Show nearest ${dir} item`
-          : `No ${dir} items`;
-        valueEl.dataset.cursorLabel = 'scroll to nearest item';
-      }
     }    
   };
 
@@ -8439,20 +8503,25 @@ function updateOffgridCounters() {
     
       const container = hit.closest('.count-invisible-objects');
       const dir = hit.dataset.dir || (container ? container.id.replace('offgrid-','') : null);
-      const tag = hit.classList.contains('offgrid-seg') ? (hit.dataset.tag || null) : null;
+      const isTheme = hit.dataset.theme === '1';
+      const tag = (hit.classList.contains('offgrid-seg') && !isTheme) ? (hit.dataset.tag || null) : null;
+      const useTheme = isTheme;
     
       OFFGRID.log('CLICK', { dir, tag, el: hit });
     
       // show what counters think for that dir/tag
       const perDir = OFFGRID.lastCounters?.[dir];
       if (perDir) {
-        const n = tag ? (perDir.perTag?.[tag] || 0) : perDir.total;
+        const n = isTheme
+        ? (perDir.theme || 0)
+        : (tag ? (perDir.perTag?.[tag] || 0) : perDir.total);
+
         OFFGRID.log('counters say', { dir, tag, count: n });
       } else {
         OFFGRID.log('no counter snapshot for', dir);
       }
     
-      flyToNearest(dir, tag);
+      flyToNearest(dir, tag, { theme: useTheme });
     });    
 
     // keyboard: Enter/Space on focused segments
@@ -8464,7 +8533,7 @@ function updateOffgridCounters() {
       const container = hit.closest('.count-invisible-objects');
       const dir = hit.dataset.dir || (container ? container.id.replace('offgrid-','') : null);
       const tag = hit.classList.contains('offgrid-seg') ? hit.dataset.tag || null : null;
-      if (dir) flyToNearest(dir, tag);
+      if (dir) flyToNearest(dir, tag, { theme: useTheme });
     });
   })();
 
@@ -8535,12 +8604,21 @@ function __collectOffscreenCandidates({ tag = null } = {}) {
   return out;
 }
 
-function findNearestOffscreen({ dir, tag = null }) {
+function findNearestOffscreen({ dir, tag = null, theme = false } = {}) {
   const workspaceEl = document.getElementById('workspace');
   const gridEl = document.getElementById('grid');
   if (!workspaceEl || !gridEl) return null;
 
   const vp = workspaceEl.getBoundingClientRect();
+
+  const themeFilter = theme ? (window.activeThemeFilter || null) : null;
+  let themeMatchesById = null;
+  
+  if (themeFilter && typeof window.objectsMatchingTheme === 'function') {
+    const objs = window.objectsMatchingTheme(themeFilter) || [];
+    themeMatchesById = new Set(objs.map(o => String(o.id)));
+  }  
+
   let best = { el: null, d: Infinity };
 
   const items = Array.from(gridEl.querySelectorAll('.object'));
@@ -8550,6 +8628,10 @@ function findNearestOffscreen({ dir, tag = null }) {
     // must be fully off-screen
     const overlaps = !(r.right <= vp.left || r.left >= vp.right || r.bottom <= vp.top || r.top >= vp.bottom);
     if (overlaps) continue;
+
+    if (themeFilter && themeMatchesById && !themeMatchesById.has(el.id)) {
+      continue;
+    }
 
     // classify side exactly like the counters do
     const dTop    = Math.max(vp.top    - r.bottom, 0);
@@ -8582,9 +8664,8 @@ function findNearestOffscreen({ dir, tag = null }) {
   return best.el; // ← IMPORTANT: return the element (not id)
 }
 
-function flyToNearest(dir, tag = null) {
-  // 0) sanity + debug
-  const el = findNearestOffscreen({ dir, tag });
+function flyToNearest(dir, tag = null, { theme = false } = {}) {
+  const el = findNearestOffscreen({ dir, tag, theme });
   if (!el) { console.debug('[offgrid] no target element', { dir, tag }); return; }
 
   const grid = document.getElementById('grid');
@@ -9114,12 +9195,14 @@ function updateObjectGlowsWithGradient() {
         glow.style.setProperty('--glow', 'transparent');
         glow.style.setProperty('--glow-color', 'transparent');
       } else {
-        // matched theme → single-color glow
-        const color = getComputedStyle(document.documentElement)
-          .getPropertyValue('--main-button-outline-color') || '#000';
-        glow.style.setProperty('--glow', color.trim());
-        glow.style.setProperty('--glow-color', color.trim());
-      }
+        // matched theme → single-color glow (use the same stable theme color as off-grid)
+        const color = (typeof getThemeCounterColor === 'function')
+          ? getThemeCounterColor()
+          : (getComputedStyle(document.documentElement).getPropertyValue('--offgrid-theme-color').trim() || '#000');
+      
+        glow.style.setProperty('--glow', color);
+        glow.style.setProperty('--glow-color', color);
+      }      
       return; // theme mode wins over tag mode
     }
 
