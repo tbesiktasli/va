@@ -56,10 +56,14 @@
   --burger-bar-thickness: 1.3px;   /* ← tweak this */
   --burger-bar-radius:    0.65px;  /* corner radius to match thickness/2 */
   --nav-icon-size: 18px;
-  --slidein-icon-size: 12px;
+  --slidein-icon-size: 20px;
   --icon-slidein-closed:          url('img/icons/arrow_counter_10x12px.svg');
   --icon-slidein-open:            url('img/icons/close.svg');
   --icon-detail-close:            url('img/icons/close.svg');
+
+  --icon-button-arrow: url('img/icons/arrow_button_33x18px.svg');
+  --button-arrow-w: 18px;
+  --button-arrow-h: 18px;
 
   /* Cursor (hover) */
   --cursor-eye: url("img/icons/eye_bg_w.svg") 16 16, pointer;
@@ -73,6 +77,8 @@
   /* Sidebar toggle icon config */
   --section-icon-size: 8px; /* chevron size */
   --icon-section-toggle: url('img/icons/arrow_expand.svg');
+  --icon-text-fallback: url('img/icons/Fallbackicon_text.svg');
+  --icon-location-pin: url('img/location-pin.svg');
   /* override this if you want a fixed color instead of current text color */
   --section-toggle-icon-color: initial; /* e.g., var(--main-light-font-color) */
 
@@ -92,6 +98,7 @@
   --detail-description-max-height: 6rem; /* max height of inline detail text */
   --prepage-side-w: 220px;      /* smaller side “padding” columns */
   --prepage-main-max: 900px;    /* wider middle content */  
+  --prepage-actions-reserve: 120px;
 
   /* Cursor label (tooltip near cursor) */
   --cursor-label-offset-x: 12;
@@ -99,7 +106,7 @@
   --cursor-label-padding: 6px 8px;
   --cursor-label-radius: 0px;
   --cursor-label-font-size: 12px;
-  --cursor-label-bg: rgba(0, 0, 0, 0.75);
+  --cursor-label-bg: rgba(0, 0, 0, 1);
   --cursor-label-color: #fff;
   --cursor-label-viewport-pad: 8;
   /* Cursor label reveal animation (grouped pills) */
@@ -141,6 +148,10 @@
     overflow-x: hidden;
     background-color: var(--main-bg-color);
     color: var(--main-font-color);
+  }
+
+  p {
+    font-weight: 200;
   }
 
   /* ================= Prepage / Splash Screen ================= */
@@ -287,7 +298,7 @@
   
   /* NEW paragraph under subline (smaller “normal text”) */
   #prepage .prepage-paragraph {
-    margin-top: 14px;
+    margin-top: 25px;
     max-width: 62ch;
     font-size: 1.05em;     /* smaller than subline, still readable */
     line-height: 1.7;
@@ -328,25 +339,29 @@
   }  
 
   #prepage .prepage-side-heading {
-    font-size: 0.7em;
-    margin: 0 0 8px 0;   /* space between heading and the paragraph/lines below */
+    font-size: 0.5em;
+    letter-spacing: 0.15em;
+    font-weight: 500;
+    margin-bottom: 5px;
   }
   
   #prepage .prepage-side-lines {
-    font-size: 0.7em;
+    font-size: 0.6em;
+    line-height: 1.6em;
+    font-weight: 200;
     margin: 0 0 18px 0;  /* space after each block (between sections) */
   }  
 
   /* Use ONLY the font sizes from gallery title box */
   .prepage-headline {
-    font-size: 4.5em;   /* matches .title-box h2 size */ 
-    line-height: 0.9;
+    font-size: 4em;   /* matches .title-box h2 size */ 
+    line-height: 1.1;
     margin: 0;
     font-style: italic;
   }
 
   .prepage-subline {
-    font-family: "Noto Serif", serif;
+    font-family: "Noto Serif Display", serif;
     font-style: italic;
   
     font-size: 1.5em; /* matches .title-box h3 size */
@@ -359,7 +374,7 @@
   .prepage-actions {
     display: flex;
     gap: 12px;
-    margin-top: 30px;
+    margin-top: 20px;
   }
 
   /* neutralize global .button margin-top in this context */
@@ -382,6 +397,7 @@
     align-items: center;
     font-size: 0.95em;
     opacity: 0.9;
+    padding-top: 10px;
   }
 
   .prepage-collab-text {
@@ -391,7 +407,7 @@
   .prepage-collab-logos {
     justify-self: center;
     display: flex;
-    gap: 10px;
+    gap: 15px;
     flex-wrap: wrap;
   }
 
@@ -633,7 +649,9 @@
     color: var(--main-font-color);
   }
 
-  #grid .object.text .detail-panel .detail-date-inline, #grid .object.text .detail-panel .detail-group {
+  #grid .object.text .detail-panel .detail-date-top,
+  #grid .object.text .detail-panel .detail-date-inline,
+  #grid .object.text .detail-panel .detail-group {
     font-family: "Albert Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", "DejaVu Sans", sans-serif;
   }
 
@@ -647,12 +665,18 @@
     line-height: 1.3;
   }
 
-  /* Grid text overflow fallback: show burger icon instead of unreadable text */
+  /* Grid text overflow fallback: show icon instead of unreadable text */
   #grid .object.text .text-placeholder-icon {
-    display: none;        /* hidden by default */
+    display: none;          /* hidden by default */
     width: 40%;
-    max-width: 60px;      /* optional: keep it from getting too large */
-    height: auto;
+    max-width: 60px;
+    aspect-ratio: 1 / 1;
+
+    /* tint follows text color => automatically correct in dark mode */
+    background-color: currentColor;
+
+    -webkit-mask: var(--icon-text-fallback) no-repeat center / contain;
+            mask: var(--icon-text-fallback) no-repeat center / contain;
   }
 
   /* When the text is too small to be useful, hide the text and show the icon */
@@ -1118,9 +1142,9 @@
   height: var(--fab-size);
   border-radius: calc(var(--fab-size) / 2);
 
-  /* outer outline + bar background */
+  /* shadow should exist even when collapsed */
   border: 0;
-  box-shadow: inset 0 0 0 1px transparent;
+  box-shadow: 2px 2px 2px rgba(0,0,0,.12), inset 0 0 0 1px transparent;
   background: transparent;
 
   display: flex;
@@ -1132,11 +1156,15 @@
   transition: width var(--view-switcher-expand-ms) ease, box-shadow 150ms ease, background-color 150ms ease;
 }
 
+.view-switcher .fab {
+  box-shadow: none;
+}
+
 .view-switcher:hover,
 .view-switcher:focus-within,
 .view-switcher.is-demo-open {
   width: var(--view-switcher-expanded-width);
-  box-shadow: inset 0 0 0 1px var(--main-outline-color);
+  box-shadow: 2px 2px 2px rgba(0,0,0,.12), inset 0 0 0 1px var(--main-outline-color);
   background: var(--main-bright-bg-color);
   padding-right: 24px;
 }
@@ -1147,7 +1175,7 @@
 .view-switcher.is-force-collapsed:focus-within,
 .view-switcher.is-force-collapsed.is-demo-open {
   width: var(--fab-size);
-  box-shadow: inset 0 0 0 1px transparent;
+  box-shadow: 2px 2px 2px rgba(0,0,0,.12), inset 0 0 0 1px transparent;
   background: transparent;
   padding-right: 0;
 }
@@ -1274,13 +1302,13 @@
 
 .fab svg,
 .fab img {
-  width: 18px;   /* was 22 */
-  height: 18px;
+  width: var(--fab-icon-size, 18px);
+  height: var(--fab-icon-size, 18px);
   fill: currentColor;
   stroke: currentColor;
-  display: block;             /* NEW */
-  justify-self: center;       /* NEW */
-  align-self: center;         /* NEW */
+  display: block;
+  justify-self: center;
+  align-self: center;
 }
 
 .fab.fab-lg {
@@ -1290,11 +1318,11 @@
 
 .fab.fab-lg svg,
 .fab.fab-lg img {
-  width: 20px;   /* was 26 */
-  height: 20px;
-  display: block;             /* NEW */
-  justify-self: center;       /* NEW */
-  align-self: center;         /* NEW */
+  width: var(--fab-icon-size, 20px);
+  height: var(--fab-icon-size, 20px);
+  display: block;
+  justify-self: center;
+  align-self: center;
 }
 
 .fab:hover { box-shadow: 2px 3px 4px rgba(0,0,0,.18); }
@@ -1404,13 +1432,10 @@ header {
   top: 12px;
   left: 12px;
   z-index: 1200;
-}
 
-#content-back-button svg,
-.text-subpage-back svg {
-  width: 26px;
-  height: 26px;
-}
+  /* ✅ force the “back” icon size for both gallery + subpages */
+  --fab-icon-size: 26px;
+}   
 
 /* Optional: vector-effect tweak for all back arrows */
 #content-back-button svg *,
@@ -1519,10 +1544,11 @@ body.in-adhoc-gallery #gallery-view-switcher {
 
 /* Group gallery: authors line under the subtitle */
 #group-gallery .title-box .gallery-authors {
-  margin-top: 14px;
+  margin-top: 30px;
   font-family: "Albert Sans", sans-serif;
-  font-size: 1.05em;
+  font-size: 1.1em;
   line-height: 1.4;
+  font-weight: 200;
   color: var(--main-light-font-color);
   text-align: center;
 }
@@ -1534,9 +1560,10 @@ body.in-adhoc-gallery #gallery-view-switcher {
 
 /* Group gallery: contributors line under the authors line (smaller) */
 #group-gallery .title-box .gallery-contributors {
-  margin-top: 8px;
+  margin-top: 20px;
   font-family: "Albert Sans", sans-serif;
-  font-size: 0.9em;   /* smaller than authors */
+  font-size: 0.8em;   /* smaller than authors */
+  font-weight: 200;
   line-height: 1.4;
   color: var(--main-light-font-color);
   text-align: center;
@@ -1581,6 +1608,9 @@ body.in-adhoc-gallery #group-gallery .title-box h3 {
 body.in-adhoc-gallery #group-gallery .title-box h2 {
   overflow-wrap: anywhere;
   word-break: break-word;
+
+  /* NEW: purely visual nudge; does NOT affect height measurements */
+  transform: translateY(var(--adhoc-title-offset-y, 0px));
 }
 
 /* Keep the "×" easy to tap even when font-size shrinks */
@@ -1598,7 +1628,7 @@ body.in-adhoc-gallery #group-gallery .title-box h2 {
 }
 
 .wide-content .title-box .button {
-  margin-top: 60px;
+  margin-top: 45px;
 }
 
 .button {
@@ -1607,10 +1637,13 @@ body.in-adhoc-gallery #group-gallery .title-box h2 {
   display: inline-flex;
   width: auto;
   max-width: max-content;
+  min-width: 110px;
+  justify-content: space-between;
   text-decoration: none;
   color: var(--main-font-color);
   align-items: center;
-  box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+  gap: 20px; /* was margin-left on .icon; works for both icon-after and icon-before */
+  box-shadow: 2px 2px 0.7px rgba(0, 0, 0, 0.2);
   text-decoration: none !important;
   background-color: var(--main-bg-color);
 }
@@ -1623,13 +1656,20 @@ body.in-adhoc-gallery #group-gallery .title-box h2 {
 }
 
 .button .icon {
-  margin-left: 20px;
+  width: var(--button-arrow-w);
+  height: var(--button-arrow-h);
+  display: inline-block;
+  flex: 0 0 auto;
+
+  /* draw svg as a solid shape tinted by current text color */
+  background-color: currentColor;
+  -webkit-mask: var(--icon-button-arrow) no-repeat center / contain;
+          mask: var(--icon-button-arrow) no-repeat center / contain;
 }
 
-/* Back button in theme secondary pane: icon before label */
+/* Back button: same arrow asset, rotated */
 .theme-back-button .icon {
-  margin-left: 0;
-  margin-right: 20px;
+  transform: rotate(180deg);
 }
 
 /* Back button: hidden by default (desktop / tablet) */
@@ -1723,7 +1763,7 @@ body.in-adhoc-gallery #group-gallery .title-box h2 {
   white-space: normal;
   /*word-break: break-word;*/
   hyphens: auto;
-  line-height: 1.1;
+  line-height: 1.3;
 }
 
 .wide-content .gallery-box .column .item.waveform, #related-objects .item.waveform {
@@ -1855,8 +1895,8 @@ and pin the expanded panel to the right edge. */
 /* Draw icon with mask so it inherits currentColor (works in dark mode) */
 .slide-in-handle .close-btn::before {
   content: "";
-  width: var(--slidein-icon-size);
-  height: var(--slidein-icon-size);
+  width: 15px;
+  height: 15px;
   display: block;
   background-color: currentColor;
   -webkit-mask: var(--icon-slidein-closed) no-repeat center / contain;
@@ -2176,15 +2216,30 @@ and pin the expanded panel to the right edge. */
 
 .location {
   border: 1px solid var(--main-outline-color);
-  border-radius: 14px;
+  border-radius: 20px;
   padding: 8px 8px 8px 22px;
   font-size: 0.6em;
   letter-spacing: 1px;
   text-transform: uppercase;
-  background-image: url('img/location-pin.svg');
-  background-repeat: no-repeat;
-  background-position: 6px center;
-  background-size: 12px 12px;
+
+  /* NEW: allow the masked icon to position correctly */
+  position: relative;
+  display: inline-block;
+}
+
+/* NEW: icon that follows text color (works in dark mode automatically) */
+.location::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 12px;
+  height: 12px;
+
+  background-color: currentColor;
+  -webkit-mask: var(--icon-location-pin) no-repeat center / contain;
+  mask: var(--icon-location-pin) no-repeat center / contain;
 }
 
 /* Group gallery: pinned location chip (avoid collapsed sidebar handles) */
@@ -2237,6 +2292,7 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
   margin-right: 15px;
   margin-bottom: 10px;
   border-right: 1px solid var(--main-outline-color);
+  font-family: "Noto Serif", serif;
 }
 .vertical-content .topics li:last-child {
   border: none;
@@ -2299,6 +2355,7 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 }
 
 .content-section .section-header h2 {
+  font-family: "Noto Serif", serif;
   font-style: italic;
 }
 
@@ -2332,6 +2389,7 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
   padding: 0;
   margin: 0;
   margin-left: 5px;
+  margin-top: 15px;
 }
 
 #discover-connections .dc-project-item {
@@ -2364,12 +2422,14 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
   display: block;
   font-size: 0.82rem;            /* reduced font */
   line-height: 1.2;
+  font-weight: 500;
 }
 
 #discover-connections .dc-project-subtitle {
   font-size: 0.72rem;            /* smaller subtitle */
   line-height: 1.25;
   opacity: 0.85;
+  font-weight: 200;
 }
 
 .content-section.multi-column .section-content {
@@ -2704,6 +2764,7 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
   overflow: auto;
   padding-left: 20px;
   padding-right: 20px;
+  padding-bottom: 0px;
   scrollbar-gutter: stable both-edges; /* no right-edge nudge when scrollbar appears */
 }
 
@@ -2748,6 +2809,9 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 .themes-list .theme-link {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-start;
+  text-align: left;
+
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -2808,6 +2872,12 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 
 
 #slide-ins .slide-in[data-mode="menu"] .content-section {
+  border-bottom: 1px solid var(--main-light-outline-color);
+  margin-top: 5px;
+  padding-bottom: 10px;
+}
+
+#slide-ins .slide-in[data-mode="menu"] .content-section:last-child {
   border-bottom: none;
 }
 
@@ -3047,7 +3117,7 @@ ul.tag-group-switch {
 }
 
 .main-menu .menu-heading {
-  font-size: 0.8rem;          /* relative to the big 4em menu items */
+  font-size: 0.9rem;          /* relative to the big 4em menu items */
   text-transform: uppercase;  /* <-- your “TABLE OF CONTENTS” requirement */
   letter-spacing: 0.12em;
   font-weight: 500;
@@ -3130,7 +3200,7 @@ ul.tag-group-switch {
 
   /* right column (scroll area) gets only a small bottom padding */
   .overlay-content .sub-menu {
-    padding-bottom: 12px;
+    padding-bottom: 60px;
   }
 }
 
@@ -3247,15 +3317,15 @@ ul.tag-group-switch {
 }
 
 .sub-menu .episode-title {
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .sub-menu .episode-subtitle {
-  opacity: 0.85;
+  font-weight: 200;
 }
 
 .sub-menu .episode-authors {
-  font-size: 0.65em;
+  font-size: 0.75em;
   line-height: 1.25;
 }
 
@@ -3632,8 +3702,8 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 
 .text-subpage h1 {
   font-family: "Noto Serif", serif;            /* you already load this family in <head> */
-  font-size: 2.5em;
-  line-height: 1.1;
+  font-size: 3em;
+  line-height: 1.2;
   margin: 0 0 30px;
 }
 
@@ -3653,7 +3723,7 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 }
 .text-subpage ul.arrow-list li {
   display: flex;
-  align-items: center;
+  align-items: flex-start;   /* was: center (caused vertical centering on wrap) */
   gap: 15px;
   margin-bottom: 25px;
   font-size: 1.2em;
@@ -3661,12 +3731,19 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 .text-subpage ul.arrow-list li a {
   text-decoration: none;
   color: var(--main-font-color);
+  line-height: 1.5em;
 }
 .text-subpage ul.arrow-list li:last-child { margin-bottom: 0; }
 .text-subpage ul.arrow-list li::before {
   content: "";
   width: 14px;
   height: 16px;
+
+  flex: 0 0 14px;            /* prevents flex shrinking */
+  flex-shrink: 0;            /* extra safety */
+  align-self: flex-start;    /* pins icon to top */
+  margin-top: 5px;           /* tiny optical nudge to match first line */
+
   background: url('img/icons/arrow_counter_10x12px.svg') no-repeat center/contain;
   transform: rotate(90deg);
 }
@@ -3685,6 +3762,8 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 
 .slide-in .text-page h1 {
   font-size: 2em;
+  letter-spacing: 0.08em;
+  font-weight: 500;
 }
 
 /* Each row: two columns side by side */
@@ -3702,11 +3781,12 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   margin: 0;
   margin-bottom: 20px;
   text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .text-page .two-col-row .right p {
   font-family: "Albert Sans", sans-serif;
-  font-weight: 400;
+  font-weight: 200;
   font-size: 0.9em;
   margin: 0 0 12px;
 }
@@ -3717,6 +3797,10 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 .text-page .two-col-row .right a {
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+#subpage-references strong {
+  font-weight: 500;
 }
 
 /* ================= Our Team / Authors subpage ================= */
@@ -3740,7 +3824,7 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 }
 
 .text-subpage .author-section .author-name {
-  font-family: "Noto Serif Display", serif;
+  font-family: "Noto Serif", serif;
   font-size: 1.6em;
   font-style: italic;
   font-weight: 500;
@@ -4012,20 +4096,31 @@ body.menu-open .header-right .header-close { display: inline-grid; }
     .header-right .theme-toggle {
       display: none;
     }
-
-    .prepage-actions {
-      flex-direction: column;
-      align-items: center;
-    }
-  
-    /* On mobile: hide both buttons */
-    .prepage-actions .button {
-      display: block;
-    }
   
     /* On mobile: show the "Coming soon to mobile" text */
     .prepage-actions .prepage-mobile-message {
       display: none;
+    }
+
+    /* Prepage: keep the two CTA buttons sticky above the prepage-bottom */
+    #prepage .prepage-actions {
+      position: sticky;
+      bottom: 0;                 /* pins to bottom of the scrollable .prepage-center */
+      z-index: 3;
+
+      width: 100%;
+
+      justify-content: center;
+      flex-wrap: wrap;
+
+      margin-top: 18px;
+      padding-top: 12px;
+
+      /* iOS safe area support (the supported one will apply) */
+      padding-bottom: calc(12px + constant(safe-area-inset-bottom));
+      padding-bottom: calc(12px + env(safe-area-inset-bottom));
+
+      background: var(--main-bg-color);
     }
 
     /* PREPAGE bottom row:
@@ -4100,7 +4195,7 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 
     /* Main content area: less padding, no wasted side space */
     .text-subpage .text-page {
-      padding: 40px 16px 24px 16px;   /* was 80px top, 200px sides on desktop */
+      padding: 62px 16px 24px 16px;   /* was 80px top, 200px sides on desktop */
       box-sizing: border-box;
       width: 100%;
       max-width: 720px;               /* keeps lines readable on small landscape */
