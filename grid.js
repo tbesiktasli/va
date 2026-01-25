@@ -309,8 +309,20 @@ export class Grid {
       }
     }
 
-    _vw() { return this.viewportEl?.clientWidth  || window.innerWidth; }
-    _vh() { return this.viewportEl?.clientHeight || window.innerHeight; }
+    _vw() {
+      const base = this.viewportEl?.clientWidth || window.innerWidth;
+    
+      // Slide-ins overlay reduces the usable viewport width.
+      // script.js keeps this updated via updateRightCounterOffset()
+      const slideInsVisible =
+        (typeof window !== 'undefined' && typeof window.__slideinsVisiblePx === 'number')
+          ? window.__slideinsVisiblePx
+          : 0;
+    
+      return Math.max(0, base - slideInsVisible);
+    }
+    
+    _vh() { return this.viewportEl?.clientHeight || window.innerHeight; }    
 
     _isMobileViewport() {
       const cfg = this.detailConfig?.mobile || {};
@@ -1454,31 +1466,10 @@ export class Grid {
           span.textContent = object.text;
           objectDiv.appendChild(span);
 
-          // Inline burger icon used as "too small to show text" placeholder
-          const svgNS = 'http://www.w3.org/2000/svg';
-          const icon = document.createElementNS(svgNS, 'svg');
-          icon.setAttribute('class', 'burger burger--rect text-placeholder-icon');
-          icon.setAttribute('viewBox', '0 0 28 20');
+          // Icon used as "too small to show text" placeholder
+          const icon = document.createElement('div');
+          icon.className = 'text-placeholder-icon';
           icon.setAttribute('aria-hidden', 'true');
-          icon.setAttribute('focusable', 'false');
-
-          const bars = [
-            { className: 'bar bar--top', y: 2 },
-            { className: 'bar bar--mid', y: 9 },
-            { className: 'bar bar--bot', y: 16 },
-          ];
-
-          for (const { className, y } of bars) {
-            const rect = document.createElementNS(svgNS, 'rect');
-            rect.setAttribute('class', className);
-            rect.setAttribute('x', '4');
-            rect.setAttribute('y', String(y));
-            rect.setAttribute('width', '20');
-            rect.setAttribute('height', '1');
-            rect.setAttribute('rx', '0.5');
-            icon.appendChild(rect);
-          }
-
           objectDiv.appendChild(icon);
 
           // 🔊 Hover text-to-speech for text objects (only if they have TTS audio)
