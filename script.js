@@ -4191,7 +4191,8 @@ function refreshSlideInsVisibility() {
     updateMobileSlideInsToggle();
   }
 
-  if (typeof updateRightCounterOffset === 'function') updateRightCounterOffset();
+  // Keep all viewport/offset math in one place.
+  if (typeof syncSlideInsViewport === 'function') syncSlideInsViewport('refreshSlideInsVisibility');
 }
 
 // Collapse all Discover Connections panels (keep the container visible)
@@ -4205,9 +4206,7 @@ function collapseDiscoverSidebar() {
   });
 
   // keep layout math in sync with the new (collapsed) width
-  if (typeof updateRightCounterOffset === 'function') {
-    updateRightCounterOffset();
-  }
+  if (typeof syncSlideInsViewport === 'function') syncSlideInsViewport('collapseDiscoverSidebar');
 }
 
 // (optional) expose for debugging / future reuse
@@ -4301,23 +4300,51 @@ function initMobileSlideInsToggle() {
   collapseEl.addEventListener('click', (e) => {
     e.preventDefault();
     if (!isMobileViewportForSlideIns()) return;
-
+  
     slideIns.classList.add('is-collapsed');
-
+  
     // Also collapse all individual panels so layout stays compact
     if (typeof collapseDiscoverSidebar === 'function') {
       collapseDiscoverSidebar();
     }
-
+  
     updateMobileSlideInsToggle();
+  
+    // Sync after styles apply (transform animation starts)
+    requestAnimationFrame(() => syncSlideInsViewport('mobile-collapse-start'));
+  
+    // Fallback final sync (in case transitionend doesn’t fire)
+    setTimeout(() => syncSlideInsViewport('mobile-collapse-end-fallback'), 520);
   });
-
-  // Clicking the floating icon: bring the strip back
+  
   expandEl.addEventListener('click', (e) => {
     e.preventDefault();
     slideIns.classList.remove('is-collapsed');
+  
     updateMobileSlideInsToggle();
+  
+    // Sync after styles apply (transform animation starts)
+    requestAnimationFrame(() => syncSlideInsViewport('mobile-expand-start'));
+  
+    // Fallback final sync
+    setTimeout(() => syncSlideInsViewport('mobile-expand-end-fallback'), 520);
   });
+  
+  // One-time: whenever any sidebar transition settles, sync to the final on-screen geometry.
+  // Why: the strip shows/hides via `transform`, while individual panels expand via `width` / `max-width`.
+  // ResizeObserver does NOT run for transforms, so we need this to get the final “fully visible” width.
+  if (!slideIns.__stripTransitionSyncInstalled) {
+    slideIns.__stripTransitionSyncInstalled = true;
+
+    const shouldSyncProp = (p) => (p === 'transform' || p === 'width' || p === 'max-width');
+
+    slideIns.addEventListener('transitionend', (ev) => {
+      if (!shouldSyncProp(ev.propertyName)) return;
+
+      // Let the final layout paint land before measuring.
+      requestAnimationFrame(() => syncSlideInsViewport(`slideins-${ev.propertyName}-end`));
+    });
+  }
 
   // Keep in sync with viewport changes
   const mq = window.matchMedia && window.matchMedia('(max-width: 768px)');
@@ -4444,8 +4471,12 @@ function initMobileSlideInsToggle() {
     minPx: 14,        // don’t go smaller than this (tweak if needed)
     precisionPx: 0.5, // font-size step precision
     maxIter: 18,
-    safetyPx: 12      // breathing room so we don’t “just barely” fit
+    safetyPx: 12,     // breathing room so we don’t “just barely” fit
+  
+    // NEW: visual top breathing room when we had to shrink (px)
+    shrinkOffsetYPx: 15
   };
+  
 
   let __adhocFitInit = false;
   let __adhocFitRaf = 0;
@@ -4496,6 +4527,9 @@ function initMobileSlideInsToggle() {
 
     applyAdhocTitleBoxBottomInset(titleBox);
 
+    // NEW: default to no visual shift (keeps “normal” titles centered)
+    titleBox.style.setProperty('--adhoc-title-offset-y', '0px');
+
     // Reset first so it can also scale UP again when space becomes available
     tEl.style.fontSize = '';
 
@@ -4507,6 +4541,9 @@ function initMobileSlideInsToggle() {
 
     // If it already fits at base size, keep it
     if (tEl.scrollHeight <= availablePx) return;
+
+    // NEW: we are about to shrink -> add a little top breathing room visually
+    titleBox.style.setProperty('--adhoc-title-offset-y', `${ADHOC_TITLE_FIT.shrinkOffsetYPx}px`);
 
     // If even min doesn’t fit, clamp to min
     tEl.style.fontSize = `${minPx}px`;
@@ -5756,7 +5793,7 @@ function initMobileSlideInsToggle() {
                data-theme-id="${idAttr}"
                data-theme-name="${nameAttr}">
               <span class="text">Explore Theme</span>
-              <span class="icon">&rarr;</span>
+              <span class="icon" aria-hidden="true"></span>
             </a>
           </div>
         `;
@@ -6324,7 +6361,6 @@ function initMobileSlideInsToggle() {
  
       span.style.whiteSpace = 'normal';
       span.style.display = 'block';
-      span.style.lineHeight = '1.1';
       span.style.maxWidth = maxW + 'px';
  
       // helper: does the span overflow the target box?
@@ -8283,6 +8319,7 @@ function scheduleOffgridUpdate() {
     updateOffgridCounters();
     // Keep offset in sync in case layout changed during pan/zoom flows
     updateRightCounterOffset();
+    keepGridCenteredOnRemainingViewport();
   });
 }
 
@@ -8557,7 +8594,7 @@ function worldCenterForObject(obj) {
   return { x, y };
 }
 
-function __collectOffscreenCandidates({ tag = null } = {}) {
+function __collectOffscreenCandidates({ tag = null, theme = false } = {}) {
   const workspaceEl = document.getElementById('workspace');
   const gridEl = document.getElementById('grid');
   if (!workspaceEl || !gridEl) return [];
@@ -8567,6 +8604,12 @@ function __collectOffscreenCandidates({ tag = null } = {}) {
 
   const vcx = (vp.left + vp.right) / 2;
   const vcy = (vp.top  + vp.bottom) / 2;
+
+  const themeFilter = theme ? (window.activeThemeFilter || null) : null;
+  const themeMatchesById =
+    themeFilter && typeof window.objectsMatchingTheme === 'function'
+      ? new Set(window.objectsMatchingTheme(themeFilter).map(o => String(o.id)))
+      : null;
 
   const out = [];
   for (const el of gridEl.querySelectorAll('.object')) {
@@ -8584,6 +8627,8 @@ function __collectOffscreenCandidates({ tag = null } = {}) {
       const tags = (el.dataset.tags || '').split(',').map(s => s.trim()).filter(Boolean);
       if (!tags.includes(tag)) continue;
     }
+
+    if (themeMatchesById && !themeMatchesById.has(String(el.id))) continue;
 
     const dxL = vp.left - r.right;
     const dxR = r.left - vp.right;
@@ -8603,6 +8648,64 @@ function __collectOffscreenCandidates({ tag = null } = {}) {
   }
   return out;
 }
+
+function __hasAnyVisibleMatch({ tag = null, theme = false } = {}) {
+  const ws = document.getElementById('workspace');
+  const gridEl = document.getElementById('grid');
+  if (!ws || !gridEl) return false;
+
+  const vp = ws.getBoundingClientRect();
+
+  const themeFilter = theme ? (window.activeThemeFilter || null) : null;
+  const themeMatchesById =
+    themeFilter && typeof window.objectsMatchingTheme === 'function'
+      ? new Set(window.objectsMatchingTheme(themeFilter).map(o => String(o.id)))
+      : null;
+
+  const els = gridEl.querySelectorAll('.object');
+
+  for (const el of els) {
+    // tag filter
+    if (tag) {
+      const tags = (el.dataset.tags || '').split(',').map(s => s.trim()).filter(Boolean);
+      if (!tags.includes(tag)) continue;
+    }
+
+    // theme filter
+    if (themeMatchesById && !themeMatchesById.has(String(el.id))) continue;
+
+    const r = el.getBoundingClientRect();
+    const overlaps =
+      !(r.right <= vp.left || r.left >= vp.right || r.bottom <= vp.top || r.top >= vp.bottom);
+
+    if (overlaps) return true;
+  }
+
+  return false;
+}
+
+function autoPanToClosestMatchIfNeeded({ tag = null, theme = false } = {}) {
+  // If you're in grouped mode, jumping the camera is usually not what you want.
+  if (window.gridObject?.currentState === 'grouped') return;
+
+  // If at least one match is visible, do nothing.
+  if (__hasAnyVisibleMatch({ tag, theme })) return;
+
+  // Otherwise: jump to the closest matching offscreen object
+  const candidates = __collectOffscreenCandidates({ tag, theme });
+  if (!candidates.length) return;
+
+  candidates.sort((a, b) => a.dCenter - b.dCenter);
+  const best = candidates[0];
+
+  // Reuse your existing "go-to" behavior (same effect as clicking the counter)
+  // flyToNearest exists already and supports { theme:true } in your off-grid logic. :contentReference[oaicite:2]{index=2}
+  if (best?.side && typeof flyToNearest === 'function') {
+    flyToNearest(best.side, tag, { theme });
+  }
+}
+
+window.autoPanToClosestMatchIfNeeded = autoPanToClosestMatchIfNeeded;
 
 function findNearestOffscreen({ dir, tag = null, theme = false } = {}) {
   const workspaceEl = document.getElementById('workspace');
@@ -8702,6 +8805,112 @@ function flyToNearest(dir, tag = null, { theme = false } = {}) {
   setTimeout(() => el.classList.remove('focus-pulse'), 600);
 }
 
+// === Auto-pan to closest match after filter change ===
+// Enable/disable via `window.AUTO_PAN_TO_MATCH_ON_FILTER = false` before this script loads.
+window.AUTO_PAN_TO_MATCH_ON_FILTER ??= true;
+
+function __rectOverlaps(a, b) {
+  return !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
+}
+
+function __countVisibleMatchesForTag(tag) {
+  const workspaceEl = document.getElementById('workspace');
+  const gridEl = document.getElementById('grid');
+  if (!workspaceEl || !gridEl || !tag) return { visible: 0, total: 0 };
+
+  const vp = workspaceEl.getBoundingClientRect();
+  let total = 0;
+  let visible = 0;
+
+  for (const el of gridEl.querySelectorAll('.object')) {
+    const tags = (el.dataset.tags || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (!tags.includes(tag)) continue;
+
+    total++;
+    const r = el.getBoundingClientRect();
+    if (__rectOverlaps(r, vp)) visible++;
+  }
+
+  return { visible, total };
+}
+
+function __countVisibleMatchesForTheme() {
+  const workspaceEl = document.getElementById('workspace');
+  const gridEl = document.getElementById('grid');
+  const themeFilter = window.activeThemeFilter || null;
+
+  if (!workspaceEl || !gridEl || !themeFilter || typeof window.objectsMatchingTheme !== 'function') {
+    return { visible: 0, total: 0, themeMatchesById: null };
+  }
+
+  const objs = window.objectsMatchingTheme(themeFilter) || [];
+  const themeMatchesById = new Set(objs.map(o => String(o.id)));
+
+  const vp = workspaceEl.getBoundingClientRect();
+  const total = themeMatchesById.size;
+  let visible = 0;
+
+  if (total === 0) return { visible: 0, total: 0, themeMatchesById };
+
+  for (const el of gridEl.querySelectorAll('.object')) {
+    if (!themeMatchesById.has(String(el.id))) continue;
+    const r = el.getBoundingClientRect();
+    if (__rectOverlaps(r, vp)) visible++;
+  }
+
+  return { visible, total, themeMatchesById };
+}
+
+// Main entry-point: call after a user changes filters.
+// - For tags: pass the interacted tag (matches the off-grid tag segment behavior)
+// - For themes: pass { theme: true }
+function maybeAutoPanToClosestMatch({ tag = null, theme = false } = {}) {
+  if (!window.AUTO_PAN_TO_MATCH_ON_FILTER) return;
+
+  // Keep in sync with your counter visibility rule
+  const state = window.gridObject?.currentState;
+  if (state === 'grouped') return;
+
+  // Must have your existing off-grid helpers available
+  if (typeof flyToNearest !== 'function' || typeof __collectOffscreenCandidates !== 'function') return;
+
+  // Don’t auto-pan if the grid/workspace isn’t present (e.g., other views)
+  const workspaceEl = document.getElementById('workspace');
+  const gridEl = document.getElementById('grid');
+  if (!workspaceEl || !gridEl) return;
+
+  // === Theme mode ===
+  if (theme) {
+    const { visible, total, themeMatchesById } = __countVisibleMatchesForTheme();
+    if (!total) return;        // no matches anywhere
+    if (visible > 0) return;   // already seeing at least one match
+
+    const candidates = __collectOffscreenCandidates();
+    const filtered = candidates.filter(c => themeMatchesById && themeMatchesById.has(String(c.id)));
+    if (!filtered.length) return;
+
+    filtered.sort((a, b) => a.dCenter - b.dCenter);
+    const best = filtered[0];
+    flyToNearest(best.side, null, { theme: true });
+    return;
+  }
+
+  // === Tag mode ===
+  if (!tag) return;
+  if (!(window.activeTags instanceof Set) || !window.activeTags.has(tag)) return; // only when tag is active
+
+  const { visible, total } = __countVisibleMatchesForTag(tag);
+  if (!total) return;        // no matches anywhere
+  if (visible > 0) return;   // at least one match already visible
+
+  const candidates = __collectOffscreenCandidates({ tag });
+  if (!candidates.length) return;
+
+  candidates.sort((a, b) => a.dCenter - b.dCenter);
+  const best = candidates[0];
+  flyToNearest(best.side, tag);
+}
+
 function summarizeRect(r) {
   return { left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) };
 }
@@ -8727,34 +8936,155 @@ const slideInsEl = document.getElementById('slide-ins');
 function updateRightCounterOffset() {
   const ws = document.getElementById('workspace') || document.documentElement;
   const slideIns = document.getElementById('slide-ins');
+
   let visible = 0;
 
   if (slideIns) {
-    const r = slideIns.getBoundingClientRect();
-    // How much of the slide-in is currently on-screen (it sits on the right)
-    visible = Math.max(0, Math.min(r.width, window.innerWidth - r.left));
+    // Treat “strip visible” as a logical state (classes), not geometry.
+    // Geometry can lie during transforms or shrink-to-fit flex quirks.
+    const stripIsVisible =
+      slideIns.classList.contains('visible') &&
+      !slideIns.classList.contains('is-collapsed');
+
+    if (stripIsVisible) {
+      const items = Array.from(slideIns.querySelectorAll(':scope > .slide-in'))
+        .filter(el => {
+          const cs = getComputedStyle(el);
+          return cs.display !== 'none' && !el.classList.contains('is-hidden');
+        });
+
+      let sum = 0;
+
+      for (const el of items) {
+        // 1) First try the real box size
+        let w = el.getBoundingClientRect().width;
+
+        // 2) If the box is “stuck” (common when max-width animates), fall back to computed max-width
+        // (computed style resolves clamp/calc to px).
+        if (w < 2) {
+          const mw = parseFloat(getComputedStyle(el).maxWidth || '0');
+          if (Number.isFinite(mw) && mw > 0) w = mw;
+        }
+
+        sum += Math.max(0, w);
+      }
+
+      visible = sum;
+    }
   }
 
-  // Expose as a CSS var the RIGHT counter can read
+  // Global for Grid._vw()
+  window.__slideinsVisiblePx = Math.round(visible);
+
+  // CSS vars (existing behavior)
   ws.style.setProperty('--slideins-visible', `${Math.round(visible)}px`);
 
-  // NEW: for pinned UI (like gallery location chip):
-  // Only reserve space when ALL sidebars are collapsed.
+  // Only reserve space for “collapsed-only” UI when ALL sidebars are collapsed.
   const anyExpanded = !!slideIns?.querySelector('.slide-in.expanded');
   const collapsedVisible = anyExpanded ? 0 : visible;
   ws.style.setProperty('--slideins-collapsed-visible', `${Math.round(collapsedVisible)}px`);
 }
 
+// Keep the grid's world-center stable when the slide-ins visible width changes.
+let __lastSlideInsVisiblePx = null;
+
+function keepGridCenteredOnRemainingViewport() {
+  const g = window.gridObject;
+  const gridShell = document.getElementById('grid-shell');
+
+  // Only adjust when the grid is actually showing
+  const gridIsVisible = !!(gridShell && gridShell.offsetParent !== null);
+  if (!g || !gridIsVisible) {
+    // Don't "burn" the delta while the grid isn't measurable/visible.
+    // If we update __lastSlideInsVisiblePx here, the next visible call sees no change
+    // and won't recenter (the “only 1px move” symptom).
+    return;
+  }
+
+  const newVisible = (typeof window.__slideinsVisiblePx === 'number') ? window.__slideinsVisiblePx : 0;
+
+  console.log('[slideins] visiblePx=', newVisible, 'last=', __lastSlideInsVisiblePx);
+
+  // first run: just initialize baseline
+  if (__lastSlideInsVisiblePx == null) {
+    __lastSlideInsVisiblePx = newVisible;
+    return;
+  }
+
+  // ignore tiny noise
+  if (Math.abs(newVisible - __lastSlideInsVisiblePx) < 1) return;
+
+  const zoom = g.zoomLevel || 1;
+
+  // camera position in pixels
+  const cam = (typeof g._getCameraLeftTop === 'function')
+    ? g._getCameraLeftTop()
+    : {
+        left: parseFloat(g.htmlGridElement?.style?.left) || 0,
+        top:  parseFloat(g.htmlGridElement?.style?.top)  || 0,
+      };
+
+  const baseVw = g.viewportEl?.clientWidth || window.innerWidth;
+  const vh     = g.viewportEl?.clientHeight || window.innerHeight;
+
+  // This is the key: compute the world-center using the *previous* usable width.
+  const oldUsableVw = Math.max(0, baseVw - __lastSlideInsVisiblePx);
+
+  const worldCenterX = (oldUsableVw / 2 - cam.left) / zoom;
+  const worldCenterY = (vh / 2 - cam.top) / zoom;
+
+  // Update baseline BEFORE moving, so we don't re-enter on cascaded calls
+  __lastSlideInsVisiblePx = newVisible;
+
+  // Now re-center that same world point under the *new* usable width.
+  // (Grid._vw() now accounts for window.__slideinsVisiblePx)
+  if (typeof g.centerViewportOnWorldPoint === 'function') {
+    g.centerViewportOnWorldPoint(worldCenterX, worldCenterY, true);
+
+    // small safety clamp after the transition settles
+    setTimeout(() => {
+      g.clampCameraToBounds?.(true, 'slideins-width-change');
+    }, 450);
+  }
+}
+
+function syncSlideInsViewport(reason = '') {
+  if (typeof updateRightCounterOffset === 'function') updateRightCounterOffset();
+  if (typeof keepGridCenteredOnRemainingViewport === 'function') keepGridCenteredOnRemainingViewport();
+}
+
 // On init and whenever #slide-ins resizes (open/close), update the CSS var
 if (slideInsEl && 'ResizeObserver' in window) {
-  const ro = new ResizeObserver(() => updateRightCounterOffset());
+  const ro = new ResizeObserver(() => {
+    syncSlideInsViewport('ResizeObserver');
+  });
   ro.observe(slideInsEl);
+
   // initial set
-  updateRightCounterOffset();
+  syncSlideInsViewport('init');
 } else {
-  // Fallback: update on window resize
-  window.addEventListener('resize', updateRightCounterOffset);
-  updateRightCounterOffset();
+  window.addEventListener('resize', () => {
+    syncSlideInsViewport('resize');
+  });
+
+  syncSlideInsViewport('init-fallback');
+}
+
+// Sync when sidebar animations actually finish (max-width / width / transform).
+// ResizeObserver may not fire if the strip element itself doesn’t resize.
+if (slideInsEl && !slideInsEl.__transitionSyncInstalled) {
+  slideInsEl.__transitionSyncInstalled = true;
+
+  slideInsEl.addEventListener('transitionend', (e) => {
+    const prop = e.propertyName;
+    if (prop !== 'max-width' && prop !== 'width' && prop !== 'transform') return;
+
+    // Only react to transitions coming from slide-ins or their width-driving parts
+    const fromSlideIn = e.target?.closest?.('.slide-in, .secondary-pane');
+    if (!fromSlideIn) return;
+
+    requestAnimationFrame(() => syncSlideInsViewport(`transitionend:${prop}`));
+  }, true);
 }
 
 
@@ -9123,6 +9453,13 @@ function reseedTagsFromDetail(tag) {
   if (typeof scheduleOffgridUpdate === 'function') scheduleOffgridUpdate();
   if (typeof renderSelectionBar === 'function') renderSelectionBar();
   syncDetailTagHighlights();
+
+  // Auto-pan: if this click resulted in an active tag and there are no visible matches, jump to the closest matching object
+  // (same as clicking the off-grid counter segment for this tag).
+  if (!wasSoleActive && activeTags.has(tag)) {
+    requestAnimationFrame(() => maybeAutoPanToClosestMatch({ tag }));
+  }
+
 }
 // expose for grid.js
 window.reseedTagsFromDetail = reseedTagsFromDetail;
@@ -9165,6 +9502,13 @@ function toggleTagFromDetail(tag) {
   if (typeof scheduleOffgridUpdate === 'function') scheduleOffgridUpdate();
   if (typeof renderSelectionBar === 'function') renderSelectionBar();
   syncDetailTagHighlights();
+
+  // Auto-pan: if this toggle turned ON a tag and there are no visible matches, jump to the closest matching object
+  // (same as clicking the off-grid counter segment for this tag).
+  if (!already && s.has(tag)) {
+    requestAnimationFrame(() => maybeAutoPanToClosestMatch({ tag }));
+  }
+
 }
 window.toggleTagFromDetail = toggleTagFromDetail;
 
@@ -9348,6 +9692,7 @@ function initSlideInTags() {
     }
     const tag = li.dataset.tag;
     const color = tagColors[tag];
+    const wasActive = activeTags.has(tag);
 
     // If a theme filter is active, clear it (tags and themes are exclusive)
     if (window.activeThemeFilter) {
@@ -9413,6 +9758,12 @@ function initSlideInTags() {
     }
 
     syncDetailTagHighlights();
+    // Auto-pan: if this click turned ON a tag and there are no visible matches, jump to the closest matching object
+    // (same as clicking the off-grid counter segment for this tag).
+    if (!wasActive && activeTags.has(tag)) {
+      requestAnimationFrame(() => maybeAutoPanToClosestMatch({ tag }));
+    }
+
   });
 
   // 3) Match toggle (last)
@@ -9477,17 +9828,19 @@ function openMenuSecondary(slideInSelector, { title, paragraphs, showSelectButto
   const footerHtml = showSelectButton ? `
     <div class="secondary-pane-footer">
       <a href="#" class="button theme-back-button">
-        <span class="icon">&larr;</span>
+        <span class="icon" aria-hidden="true"></span>
         <span class="text">Back</span>
       </a>
       <a href="#" class="button theme-select-button">
         <span class="text">Select</span>
-        <span class="icon">&rarr;</span>
+        <span class="icon" aria-hidden="true"></span>
       </a>
     </div>
   ` : '';
 
   panel.innerHTML = contentHtml + footerHtml;
+  // ✅ Always start new theme content at the top
+  panel.scrollTop = 0;
 
   // Theme "Select" / "Back" handlers
   if (showSelectButton) {
@@ -9569,6 +9922,15 @@ function openMenuSecondary(slideInSelector, { title, paragraphs, showSelectButto
           if (typeof updateRightCounterOffset === 'function') updateRightCounterOffset();
           if (typeof updateMobileSlideInsToggle === 'function') updateMobileSlideInsToggle();
         }
+
+        // 6) If no themed objects are visible, jump to the closest themed match
+        requestAnimationFrame(() => {
+          window.autoPanToClosestMatchIfNeeded?.({ theme: true });
+        });
+
+        // Auto-pan: if the active theme has no visible matches, jump to the closest matching object
+        // (same as clicking the off-grid theme segment).
+        requestAnimationFrame(() => requestAnimationFrame(() => maybeAutoPanToClosestMatch({ theme: true })));
 
       }, { once: true });
     }
@@ -10102,6 +10464,12 @@ function initSlideIns() {
           el.querySelector('.vertical-content')?.classList.remove('visible');
         }
       });
+
+      // keep layout math + grid camera in sync
+      requestAnimationFrame(() => {
+        syncSlideInsViewport('slidein-toggle-click');
+      });      
+
       return;
     }
   
@@ -10135,6 +10503,11 @@ function initSlideIns() {
         });
       }
     }
+
+    // ✅ ADD THIS (ensures camera reacts immediately when user opens/closes)
+    requestAnimationFrame(() => {
+      syncSlideInsViewport('slidein-toggle-click');
+    });    
   });  
 }
 
@@ -10928,13 +11301,24 @@ document.addEventListener('DOMContentLoaded', () => {
   if (slideIns) {
     ['transitionrun','transitionstart','transitionend'].forEach(evt => {
       slideIns.addEventListener(evt, (e) => {
-        if (e.propertyName === 'transform' || !e.propertyName) {
-          requestAnimationFrame(updateRightCounterOffset);
-        }
+        const p = e.propertyName;
+    
+        // We care about:
+        // - strip show/hide: transform
+        // - panel expansion: max-width
+        // - secondary pane: width
+        if (p && p !== 'transform' && p !== 'max-width' && p !== 'width') return;
+    
+        requestAnimationFrame(() => {
+          syncSlideInsViewport(`slideins:${evt}:${p || 'unknown'}`);
+        });
       });
-    });
+    });    
   }
-  window.addEventListener('resize', updateRightCounterOffset);
+  window.addEventListener('resize', () => {
+    updateRightCounterOffset();
+    keepGridCenteredOnRemainingViewport();
+  });
 });
 
 // === Rich text enhancement: linkify URLs and embed YouTube ===
