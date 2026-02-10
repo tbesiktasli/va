@@ -126,6 +126,8 @@ export class Grid {
       
         textPadBase: 20, // px at zoom = 1
         textPadMin:  6,  // px floor when zooming out
+
+        textMinFontSize: 8, // px: grid tiles should not go below this (best-effort; clamped to section size)
       
         // Pan/drag "rubber band" tuning (lower bounce)
         pan: {
@@ -222,6 +224,7 @@ export class Grid {
         },
       };
       
+      this._ensureTextBoxesMeetMinFontSize();
       this.createGrid();
       this.addObjectsRandomly();
       // ✨ NEW: snapshot initial ungrouped layout so we can always go back to it
@@ -1182,7 +1185,7 @@ export class Grid {
       if (focusObj?.type === 'text') {
         this._waitForObjectSizesToSettle(() => {
           const el2 = document.getElementById(id);
-          if (el2) fitTextToContainer(el2);
+          this._fitText(el2);
         }, { quietMs: 56, fallbackMs: 650 });
       }
     
@@ -1639,7 +1642,7 @@ export class Grid {
         this.htmlGridElement.appendChild(objectDiv);
 
         if (object.type === 'text') {
-          fitTextToContainer(objectDiv); // Call our function
+          this._fitText(objectDiv);
         }
       }
     }
@@ -1958,14 +1961,130 @@ export class Grid {
       requestAnimationFrame(() => this._setObjectTransitionsEnabled(true));
     }
 
-      // Refit all text tiles currently in the DOM
+    // Single place to call text fitting (keeps min font size consistent everywhere)
+    _fitText(el) {
+      if (!el) return;
+      fitTextToContainer(el, 100, this.display?.textMinFontSize ?? 7);
+    }
+
+    // Hidden DOM node used to measure text at a given font size without touching real tiles
+    _getTextMeasureNodes() {
+      if (this._textMeasureEl && this._textMeasureSpan && document.body.contains(this._textMeasureEl)) {
+        return { el: this._textMeasureEl, span: this._textMeasureSpan };
+      }
+
+      const el = document.createElement('div');
+      el.id = 'text-measure';
+      el.setAttribute('aria-hidden', 'true');
+
+      const span = document.createElement('span');
+      span.className = 'scaling-text';
+      el.appendChild(span);
+
+      document.body.appendChild(el);
+
+      this._textMeasureEl = el;
+      this._textMeasureSpan = span;
+      return { el, span };
+    }
+
+    _textFitsAtFontSize(text, boxW, boxH, fontSizePx) {
+      const { el, span } = this._getTextMeasureNodes();
+
+      el.style.width = `${boxW}px`;
+      el.style.height = `${boxH}px`;
+
+      // Mirror the important setup from fitTextToContainer()
+      span.style.display = 'inline-block';
+      span.style.opacity = '';
+      span.style.whiteSpace = 'pre-wrap';
+      span.style.minWidth = '0';
+      span.textContent = text;
+
+      const cs = getComputedStyle(el);
+      const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+      const padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+
+      const availW = Math.max(0, boxW - padX);
+      const availH = Math.max(0, boxH - padY);
+      if (availW <= 0 || availH <= 0) return false;
+
+      span.style.maxWidth = `${availW}px`;
+      span.style.fontSize = `${fontSizePx}px`;
+
+      return (span.scrollWidth <= availW && span.scrollHeight <= availH);
+    }
+
+    // OPTION 2: best-effort growth within section bounds so text can stay >= min font size.
+    // width grows first; if still not enough, we use full width and grow height.
+    _ensureTextBoxesMeetMinFontSize() {
+      const minFs = (this.display?.textMinFontSize ?? 7);
+      const maxW = this.gridSectionDimension?.width ?? 200;
+      const maxH = this.gridSectionDimension?.height ?? 180;
+
+      for (const o of this.objects) {
+        if (o.type !== 'text') continue;
+
+        const text = (o.text || '').trim();
+        if (!text) continue;
+
+        // Clamp current size to section bounds
+        let w0 = Math.max(1, Math.min(o.width  ?? 1, maxW));
+        let h0 = Math.max(1, Math.min(o.height ?? 1, maxH));
+
+        // Already OK → keep
+        if (this._textFitsAtFontSize(text, w0, h0, minFs)) {
+          o.width = w0;
+          o.height = h0;
+          continue;
+        }
+
+        // A) Grow width (keeping height)
+        let bestW = null;
+        let lo = w0, hi = maxW;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          if (this._textFitsAtFontSize(text, mid, h0, minFs)) {
+            bestW = mid;
+            hi = mid - 1;
+          } else {
+            lo = mid + 1;
+          }
+        }
+        if (bestW != null) {
+          o.width = bestW;
+          o.height = h0;
+          continue;
+        }
+
+        // B) Use full width and grow height
+        const w1 = maxW;
+        let bestH = null;
+        lo = h0; hi = maxH;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          if (this._textFitsAtFontSize(text, w1, mid, minFs)) {
+            bestH = mid;
+            hi = mid - 1;
+          } else {
+            lo = mid + 1;
+          }
+        }
+
+        // If even max box can't fit at min font → keep max box (your existing placeholder logic will kick in)
+        o.width = w1;
+        o.height = (bestH != null) ? bestH : maxH;
+      }
+    }
+
+    // Refit all text tiles currently in the DOM
     _refitAllText() {
       for (const o of this.objects) {
         if (o.type !== 'text') continue;
         const el = document.getElementById(o.id);
-        if (el) fitTextToContainer(el);
+        this._fitText(el);
       }
-    }
+    }  
 
     // Convenience wrappers
     // opts:
@@ -2167,7 +2286,7 @@ export class Grid {
         el.style.top    = `${scaledTop}px`;
     
         if (obj.type === 'text') {
-          fitTextToContainer(el);
+          this._fitText(el);
         }
       }
     
@@ -2186,7 +2305,7 @@ export class Grid {
         for (const obj of this.objects) {
           if (obj.type !== 'text') continue;
           const el = document.getElementById(obj.id);
-          if (el) fitTextToContainer(el);
+          this._fitText(el);
         }
       }, { quietMs: 56, fallbackMs: 650 });
 
