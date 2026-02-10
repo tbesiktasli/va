@@ -1,4 +1,7 @@
 :root {
+  /* Copy / paragraph typography (shared across text + detail pages) */
+  --copy-font-size: 0.9em;
+  --copy-line-height: 2em;
   --header-h: 50px; /* fallback */
   --selection-bar-h: 88px; /* 2-row selection bar height */
   --selection-bar-h-compact: 56px; /* 1-row selection bar height (ad-hoc gallery) */
@@ -18,6 +21,9 @@
   --view-switcher-demo-delay-ms: 700ms;  /* wait after load before auto-expanding */
   --view-switcher-demo-hold-ms: 900ms;   /* keep it open after fully revealed */
   --fab-edge-gap: 12px; /* distance from viewport edges */
+  /* Jump-mark scrolling: default top breathing room (desktop/web) */
+  --jump-scroll-offset: 18px;
+
 
   /* main theme colors */
   --main-bg-color: #fffaf5;
@@ -272,7 +278,8 @@
     row-gap: 18px;
   
     /* breathing room when scrolling */
-    padding: 8px 0 24px;
+    padding: 16px 0;
+    margin-block: auto;
     box-sizing: border-box;
   }
   
@@ -489,7 +496,8 @@
   }
   
   /* Gallery view: text tiles use Noto Serif (not Display) */
-  #group-gallery .gallery-box .column .item.text {
+  #group-gallery .gallery-box .column .item.text,
+  #detail-content #related-objects .item.text {
     font-family: "Noto Serif", serif;
     font-optical-sizing: auto;
     font-weight: 400;
@@ -626,15 +634,17 @@
 
   /* Center text objects without affecting font-fitting geometry */
   #grid .object[data-type="text"],
-  #grid .object.text {
-    display: flex;               /* create a flex formatting context */
-    align-items: center;         /* vertical centering */
-    justify-content: center;     /* horizontal centering */
-    text-align: center;          /* center multi-line text */
+  #grid .object.text,
+  #text-measure {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
   }
 
     /* Grid view: reuse gallery text styling */
-  #grid .object.text {
+  #grid .object.text,
+  #text-measure {
     box-sizing: border-box;               /* keep absolute size even with padding */
     border: 1px solid var(--object-text-border-color);
     padding: var(--grid-text-pad);
@@ -647,6 +657,16 @@
     font-style: normal;
     font-variation-settings: "wdth" 100;
     color: var(--main-font-color);
+  }
+
+  #text-measure {
+    position: fixed;
+    left: -10000px;
+    top: -10000px;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: -1;
+    background: transparent;
   }
 
   #grid .object.text .detail-panel .detail-date-top,
@@ -881,7 +901,7 @@
   .detail-inline-image {
     max-width: 100%;      /* don’t let the wrapper exceed its column */
     margin: 1rem 0;       /* optional: spacing similar to paragraphs */
-    padding-right: 100px;
+    padding-right: var(--inline-figure-pad-right, 100px);
   }
 
   .detail-inline-image img {
@@ -1437,6 +1457,22 @@ header {
   --fab-icon-size: 26px;
 }   
 
+/* Jump marks: keep space above anchor targets when scrollIntoView() runs */
+.text-page .two-col-row[id] {
+  scroll-margin-top: var(--jump-scroll-offset, 0px);
+}
+
+/* Mobile: when jumping to sections inside these long text subpages,
+  keep the target heading below the back button (so it doesn't overlap). */
+/* Mobile: keep the target heading below the back button (so it doesn't overlap). */
+@media (max-width: 768px) {
+  #subpage-introduction,
+  #subpage-archive-architecture {
+    /* configurable per page */
+    --jump-scroll-offset: calc(var(--fab-size) + 28px);
+  }
+}
+
 /* Optional: vector-effect tweak for all back arrows */
 #content-back-button svg *,
 .text-subpage-back svg * {
@@ -1529,17 +1565,24 @@ body.in-adhoc-gallery #gallery-view-switcher {
   transform: translateY(0);
 }
 
+.wide-content .title-box {
+  /* configurable typography */
+  --title-h2-size: 5em;
+  --title-h3-size: 1.9em;
+  --title-h3-margin-top: 30px;
+}
+
 .wide-content .title-box h2 {
-  font-size: 5em;
+  font-size: var(--title-h2-size);
   line-height: 1.1;
   margin: 0;
   padding: 0;
 }
 
 .wide-content .title-box h3 {
-  font-size: 1.9em;
+  font-size: var(--title-h3-size);
   line-height: 1.3;
-  margin-top: 30px;
+  margin-top: var(--title-h3-margin-top);
 }
 
 /* Group gallery: authors line under the subtitle */
@@ -1594,6 +1637,11 @@ body.in-adhoc-gallery #gallery-view-switcher {
   border: none;
   background: transparent;
   font: inherit;
+
+  color: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+
   line-height: 1;
   cursor: pointer;
   padding: 0;
@@ -1727,7 +1775,7 @@ body.in-adhoc-gallery #group-gallery .title-box h2 {
 /* size for GALLERY text tiles only */
 .wide-content .gallery-box .column .item.text {
   width: 150px;
-  height: 100px;
+  height: 150px;
 }
 
 /* shared look for both gallery + strip (no width here) */
@@ -1761,10 +1809,17 @@ body.in-adhoc-gallery #group-gallery .title-box h2 {
   display: block;
   max-width: 100%;
   white-space: normal;
-  /*word-break: break-word;*/
-  hyphens: auto;
+
+  hyphens: auto;            /* insert hyphens when language is known */
+  overflow-wrap: normal;    /* don't break anywhere (lets hyphenation happen) */
+  word-break: normal;       /* keep normal word breaking */
+
+  /* fallback for “no hyphenation dictionary” cases: */
+  overflow-wrap: break-word;
+
   line-height: 1.3;
 }
+
 
 .wide-content .gallery-box .column .item.waveform, #related-objects .item.waveform {
   width: 60%;
@@ -1950,8 +2005,8 @@ and pin the expanded panel to the right edge. */
 
 .vertical-content p {
   padding: 0 100px;
-  font-size: 0.9em;
-  line-height: 2em;
+  font-size: var(--copy-font-size);
+  line-height: var(--copy-line-height);
   margin-bottom: 20px;
 }
 
@@ -1969,11 +2024,16 @@ and pin the expanded panel to the right edge. */
 .vertical-content .right blockquote {
   font-style: italic;
   font-size: 0.9em;
-  margin-top: 30px;
+  margin-top: var(--blockquote-margin-top, 30px);
   margin-bottom: 30px;
   padding-left: 50px;
-  padding-right: 120px;
+  padding-right: 100px;
   line-height: 2em;
+}
+
+/* Detail page: if a quote is the first element inside .detail-content, remove the usual top margin */
+#detail-content .detail-content > blockquote:first-child {
+  --blockquote-margin-top: 0px;
 }
 
 .vertical-content .right img {
@@ -1987,6 +2047,15 @@ and pin the expanded panel to the right edge. */
   --vc-pad-left: 100px;             /* keep this in sync with your design */
   --vc-pad-right: 0px;              /* set if you ever add right padding */
   padding-left: var(--vc-pad-left);
+
+  /* Desktop: shorten section dividers so they don't visually touch the slide-in handles */
+  --detail-divider-inset-right: 20px; /* tweak: 16–32px usually feels good */
+}
+
+@media (min-width: 769px) {
+  #detail-content .content-section {
+    --section-divider-right: var(--detail-divider-inset-right);
+  }
 }
 
 #detail-content .vertical-content .detail-nav-arrows {
@@ -2244,6 +2313,7 @@ and pin the expanded panel to the right edge. */
 
 /* Group gallery: pinned location chip (avoid collapsed sidebar handles) */
 #gallery-location-chip {
+  display: none;
   position: fixed;
   top: calc(var(--header-h) + 12px + env(safe-area-inset-top));
   /* NEW: respect the collapsed sidebar strip width */
@@ -2349,9 +2419,27 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 .content-section {
   /*height: 100%;*/
   color: var(--main-font-color);
-  border-bottom: 1px solid var(--main-outline-color);
   padding-top: 20px;
   box-sizing: border-box;
+
+  /* Divider is drawn via ::after so we can inset it per context (detail vs sidebar) */
+  position: relative;
+  border-bottom: none;
+
+  /* Default: full width divider (sidebars keep current look) */
+  --section-divider-left: 0px;
+  --section-divider-right: 0px;
+}
+
+.content-section::after {
+  content: "";
+  position: absolute;
+  left: var(--section-divider-left);
+  right: var(--section-divider-right);
+  bottom: 0;
+  height: 1px;
+  background: var(--section-divider-color, var(--main-outline-color));
+  pointer-events: none;
 }
 
 .content-section .section-header h2 {
@@ -2381,6 +2469,11 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 
 #discover-connections .content-section.collapsible.is-open .section-content {
   overflow-y: auto;
+}
+
+/* Discover Connections: shared type scale (episodes = source of truth) */
+#discover-connections {
+  --dc-list-font-size: 0.82rem; /* was the Episodes title size */
 }
 
 /* Discover Connections → Project list */
@@ -2420,7 +2513,7 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 
 #discover-connections .dc-project-text strong {
   display: block;
-  font-size: 0.82rem;            /* reduced font */
+  font-size: var(--dc-list-font-size);
   line-height: 1.2;
   font-weight: 500;
 }
@@ -2803,6 +2896,9 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
   padding: 10px 0 0;
   display: grid;
   gap: 15px;
+
+  font-size: var(--dc-list-font-size, 0.82rem);
+  font-family: "Albert Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 /* Row button with tiny circular icon + label */
@@ -2818,6 +2914,9 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
   padding: 2px 0;           /* minimal target padding, no visible box */
   cursor: pointer;
   line-height: 1.1;
+
+  font-family: inherit;
+  font-size: inherit;
 }
 
 .themes-list .theme-icon {
@@ -2866,19 +2965,31 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 /* Secondary pane: match background + light separator to its right */
 #slide-ins .slide-in[data-mode="menu"] .secondary-pane{
   background: var(--main-bg-color);
-  border-left: 1px solid var(--main-light-outline-color);  /* separator between secondary and main */
-  border-right: 1px solid var(--main-light-outline-color);  /* separator between secondary and main */
+
+  /* Keep ONE divider line when secondary is closed (width: 0) */
+  border-left: 1px solid var(--main-light-outline-color);
+
+  /* Important: prevent the “double border” when width is 0 */
+  border-right: 0;
+}
+
+/* Only add the second divider when the secondary pane is actually open */
+#slide-ins .slide-in[data-mode="menu"].secondary-open .secondary-pane{
+  border-right: 1px solid var(--main-light-outline-color);
 }
 
 
 #slide-ins .slide-in[data-mode="menu"] .content-section {
-  border-bottom: 1px solid var(--main-light-outline-color);
   margin-top: 5px;
   padding-bottom: 10px;
+
+  /* Restore old lighter divider color in menu sidebar */
+  --section-divider-color: var(--main-light-outline-color);
 }
 
-#slide-ins .slide-in[data-mode="menu"] .content-section:last-child {
-  border-bottom: none;
+/* Restore old behavior: last section has no bottom divider */
+#slide-ins .slide-in[data-mode="menu"] .content-section:last-child::after {
+  content: none;
 }
 
 /* START TAGS */
@@ -3006,7 +3117,7 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 .tag-group-switch {
   margin-top: 8px;
   margin-bottom: 8px;          /* override generic .content-section ul margin */
-  font-size: 0.85rem;
+  font-size: var(--dc-list-font-size, 0.85rem);
   color: var(--main-font-color);
   list-style: none;            /* remove bullets */
   padding: 0;
@@ -3232,7 +3343,9 @@ ul.tag-group-switch {
   display: flex;
   flex-direction: column;
   gap: 90px; /* space between group entries */
-  font-size: 1.1rem;
+
+  /* Match the normal submenu sizing (same as Viral Atmospheres sub-items) */
+  font-size: 1em;
 }
 
 .sub-menu .episode-entry {
@@ -3709,7 +3822,8 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 
 .text-subpage p {
   font-family: "Albert Sans", sans-serif;
-  font-size: 1.2em;
+  font-size: var(--copy-font-size);
+  line-height: var(--copy-line-height);
   margin: 0 0 20px;
   padding: 0;
 }
@@ -3719,18 +3833,19 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 .text-subpage ul.arrow-list {
   list-style: none;
   padding: 0;
-  margin: 50px 0 0;
+  margin: 60px 0 0;
 }
 .text-subpage ul.arrow-list li {
   display: flex;
   align-items: flex-start;   /* was: center (caused vertical centering on wrap) */
   gap: 15px;
   margin-bottom: 25px;
-  font-size: 1.2em;
+  font-size: 1.25em;
+  font-weight: 200;
 }
 .text-subpage ul.arrow-list li a {
   text-decoration: none;
-  color: var(--main-font-color);
+  color: inherit;
   line-height: 1.5em;
 }
 .text-subpage ul.arrow-list li:last-child { margin-bottom: 0; }
@@ -3744,7 +3859,11 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   align-self: flex-start;    /* pins icon to top */
   margin-top: 5px;           /* tiny optical nudge to match first line */
 
-  background: url('img/icons/arrow_counter_10x12px.svg') no-repeat center/contain;
+  /* NEW: draw icon via mask so it inherits currentColor (works in dark mode) */
+  background-color: currentColor;
+  -webkit-mask: var(--icon-slidein-closed) no-repeat center / contain;
+          mask: var(--icon-slidein-closed) no-repeat center / contain;
+
   transform: rotate(90deg);
 }
 
@@ -3922,6 +4041,7 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   font-family: "Albert Sans", sans-serif;
   font-size: 0.9em;
   color: var(--main-light-font-color);
+  margin-bottom: 30px;
 }
 
 /* List layout: arrow on left, text on right */
@@ -4076,6 +4196,33 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   margin-bottom: 0;
 }
 
+/* Related Themes (detail page) */
+#detail-content #related-themes .related-theme-item h4 {
+  font-size: 1em;
+  font-weight: 400;
+}
+
+/* Align the Explore Theme button to the same right edge as paragraph text */
+#detail-content #related-themes .related-theme-actions {
+  padding: 0 100px;              /* matches .vertical-content p padding */
+  display: flex;
+  justify-content: flex-end;      /* right-align within padded text width */
+}
+
+
+/* TABLET / iPad: shrink group gallery title earlier (prevents vertical overflow) */
+@media (max-width: 1024px) {
+  #group-gallery .title-box {
+    --title-h2-size: 3.6em;
+    --title-h3-size: 1.5em;
+    --title-h3-margin-top: 22px;
+
+    /* also reduce the aggressive desktop padding so text wraps less */
+    padding-left: 18vw;   /* was 25vw on desktop */
+    padding-right: 8vw;   /* was 10vw on desktop */
+  }
+}
+
 
 /* MOBILE */
 
@@ -4218,14 +4365,12 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 
     /* Body text: slightly smaller with less vertical gaps */
     .text-subpage p {
-      font-size: 1.05em;              /* was 1.2em */
       margin: 0 0 14px;
       padding: 0;
     }
 
     /* Arrow list navigation at top: less big vertical gaps */
     .text-subpage ul.arrow-list {
-      margin: 24px 0 0;               /* was 50px top margin */
       padding: 0;
     }
 
@@ -4236,7 +4381,6 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 
     /* Two-column sections inside subpages (“The Power of Feelings” etc.) */
     .text-subpage .two-col-table {
-      margin-top: 32px;               /* was 50/100px, depending on rule */
       row-gap: 16px;
     }
 
@@ -4260,6 +4404,33 @@ body.menu-open .header-right .header-close { display: inline-grid; }
       margin: 0 auto;
     }
 
+    /* Mobile: sidebars — let inline figures/images use full available width */
+    .slide-in[data-mode="content"] {
+      --inline-figure-pad-right: 0px; /* disables the 100px right pad from .detail-inline-image */
+    }
+
+    /* Strapi richtext often outputs <figure>…<img>…</figure> — remove default margins/padding */
+    .slide-in[data-mode="content"] .content-sidebar-context-body figure,
+    .slide-in[data-mode="content"] .content-sidebar-notes-body figure,
+    .slide-in[data-mode="content"] .content-sidebar-references-body figure {
+      margin-left: 0;
+      margin-right: 0;
+      padding-left: 0;
+      padding-right: 0;
+    }
+
+    /* Also remove any img padding that shrinks width (e.g. .vertical-content .right img { padding-left: 20px }) */
+    .slide-in[data-mode="content"] .content-sidebar-context-body figure img,
+    .slide-in[data-mode="content"] .content-sidebar-notes-body figure img,
+    .slide-in[data-mode="content"] .content-sidebar-references-body figure img {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      height: auto;
+      padding-left: 0;
+      padding-right: 0;
+    }
+
     .slide-in[data-mode="content"] .two-col-table {
       margin-top: 24px;              /* was 50px from desktop rule */
       row-gap: 16px;
@@ -4278,6 +4449,9 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 
     /* Slightly smaller title in sidebars on mobile */
     .slide-in[data-mode="content"] .text-page h1 {
+      font-family: "Noto Serif", serif;
+      font-style: italic;
+
       font-size: 1.6em;              /* was 2em */
       line-height: 1.2;
       margin: 0 0 14px;
@@ -4376,16 +4550,35 @@ body.menu-open .header-right .header-close { display: inline-grid; }
       -webkit-mask-image: var(--icon-slidein-mobile-open-content);
               mask-image: var(--icon-slidein-mobile-open-content);
     }
+
+    /* Mobile: let group gallery title use more horizontal space */
+    #group-gallery .title-box {
+      --title-h2-size: 2.4em;
+      --title-h3-size: 1.2em;
+      --title-h3-margin-top: 16px;
+
+      padding-left: clamp(16px, 6vw, 40px);  /* overrides desktop 25vw */
+      padding-right: clamp(16px, 6vw, 40px); /* overrides desktop 10vw */
+      min-width: 100%;
+
+      position: relative; /* allows absolute positioning of Explore inside */
+    }  
   
-    #group-gallery .title-box h2 {
-      font-size: 2.4em;     /* down from 5em */
-      line-height: 1.15;
+    /* Mobile: pin the Explore button to the bottom without affecting title centering */
+    #group-gallery .title-box #scroll-on {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: calc(var(--titlebox-bottom-inset, 0px) + env(safe-area-inset-bottom, 0px) + 16px);
+      margin: 0;
     }
-    
-    #group-gallery .title-box h3 {
-      font-size: 1.2em;     /* down from 1.9em */
-      line-height: 1.4;
-      margin-top: 16px;     /* less vertical gap */
+
+    /* Mobile: center the pinned location chip in group gallery */
+    #gallery-location-chip {
+      left: 50%;
+      right: auto;
+      transform: translateX(-50%);
+      max-width: calc(100vw - 32px); /* keep some side breathing room */
     }
 
     /* 4. Object detail page (#detail-content) – mobile */
@@ -4406,7 +4599,8 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 
     /* Main title on detail page: smaller & tighter */
     #detail-content .vertical-content h1 {
-      font-size: 2em;                /* was: 3em */
+      font-family: "Noto Serif", serif;   /* mobile: use Noto Serif (not Display) */
+      font-size: 2em;                     /* was: 3em */
       line-height: 1.2;
       margin-bottom: 0.75rem;
     }
@@ -4421,7 +4615,7 @@ body.menu-open .header-right .header-close { display: inline-grid; }
     }
 
     #slide-ins .vertical-content {
-      padding-left: 16px;
+      padding-left: 0;
       padding-right: 16px;
     }
 
@@ -4429,7 +4623,17 @@ body.menu-open .header-right .header-close { display: inline-grid; }
     #detail-content .vertical-content p,
     #detail-content .vertical-content .right h3 {
       padding-left: 0;               /* was: 0 100px in desktop */
+    }
+
+    /* Keep quote blocks aligned to the same right edge as paragraphs on mobile */
+    #detail-content .vertical-content p,
+    #detail-content .vertical-content .right h3,
+    #detail-content .vertical-content .right blockquote {
       padding-right: 0;
+    }
+
+    #detail-content #related-themes .related-theme-actions {
+      padding: 0; /* match mobile paragraph padding */
     }
 
     #detail-content .vertical-content .detail-nav-arrow.prev {
