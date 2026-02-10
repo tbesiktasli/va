@@ -1844,89 +1844,170 @@ TAG_GROUPS.forEach(g => g.tags.forEach(t => tagToGroup.set(t, g.id)));
 // Colors for ALL tags (stable per label)
 const ALL_TAGS = TAG_GROUPS.flatMap(g => g.tags);
 
-// === Tag color assignment (avoid similar colors) ============================
-// Configurable knobs (kept together on purpose)
+// === Tag color assignment (maximize distinction among *selected* tags) ======
+// Instead of pre-coloring ALL tags (which guarantees collisions),
+// we only assign colors to the CURRENTLY selected tags.
+// Each new selected tag gets the color that is maximally different from the colors already in use.
+
 const TAG_COLOR_CONFIG = {
-  sat: 80,            // %
-  lightA: 45,         // %
-  lightB: 58,         // % alternate lightness to improve separability
-  candidateTries: 14  // more = better spacing, slightly more CPU at startup
+  // Optional override from HTML before this script loads:
+  // window.TAG_COLOR_PALETTE = ['#...', ...]
+  palette: Array.isArray(window.TAG_COLOR_PALETTE) && window.TAG_COLOR_PALETTE.length
+    ? window.TAG_COLOR_PALETTE
+    : [
+      // Distinct, readable (avoid very light yellows that vanish on bright chips)
+      '#005F73', '#0A9396', '#2B9348', '#3A0CA3', '#4361EE',
+      '#9B2226', '#AE2012', '#BB3E03', '#CA6702', '#6D597A',
+      '#1B4965', '#6A994E', '#5A189A', '#F72585', '#2D6A4F'
+    ]
 };
 
-// Deterministic string -> uint32 (FNV-1a)
-function hashInt(str) {
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-function circDist(a, b) {
-  const d = Math.abs(a - b) % 360;
-  return Math.min(d, 360 - d);
-}
-
-// Pick hue that maximizes distance to already-used hues (best-effort)
-function pickHue(seedHue, usedHues, tries) {
-  if (!usedHues.length) return seedHue;
-  const GOLDEN = 137.50776405003785; // degrees
-  let bestHue = seedHue;
-  let bestScore = -1;
-
-  for (let k = 0; k < tries; k++) {
-    const h = (seedHue + k * GOLDEN) % 360;
-    const score = usedHues.reduce((min, u) => Math.min(min, circDist(h, u)), Infinity);
-    if (score > bestScore) {
-      bestScore = score;
-      bestHue = h;
-    }
-  }
-  return bestHue;
-}
-
-// Build/update tagColors in-place so existing references keep working
+// Active colors only: tag -> color (CSS color string)
 const tagColors = {};
 window.tagColors = tagColors;
 
-function syncTagColorsFromTags(tags) {
-  const uniq = Array.from(new Set(tags)).filter(Boolean);
+// --- Perceptual distance (OKLab) -------------------------------------------
+const __colorCtx = document.createElement('canvas').getContext('2d');
+const __oklabCache = new Map();
 
-  // stable order: hash-based (so adding tags later doesn't reshuffle everything)
-  uniq.sort((a, b) => hashInt(a) - hashInt(b));
-
-  // collect already-used hues (from current tagColors)
-  const used = [];
-  const hueRe = /hsl\(\s*([0-9.]+)/i;
-
-  for (const t of uniq) {
-    const c = tagColors[t];
-    if (!c) continue;
-    const m = String(c).match(hueRe);
-    if (m) used.push(((Number(m[1]) % 360) + 360) % 360);
-  }
-
-  // assign missing ones with maximin hue choice
-  uniq.forEach((t, i) => {
-    if (tagColors[t]) return;
-
-    const base = hashInt(t) % 360;
-    const hue = pickHue(base, used, TAG_COLOR_CONFIG.candidateTries);
-    used.push(hue);
-
-    const light = (i % 2 === 0) ? TAG_COLOR_CONFIG.lightA : TAG_COLOR_CONFIG.lightB;
-    tagColors[t] = `hsl(${hue.toFixed(2)} ${TAG_COLOR_CONFIG.sat}% ${light}%)`;
-  });
-
-  // drop colors for tags that no longer exist
-  Object.keys(tagColors).forEach(k => {
-    if (!uniq.includes(k)) delete tagColors[k];
-  });
+function __rgbStringToRgb01(rgb) {
+  // supports: rgb(r,g,b) or rgba(r,g,b,a)
+  const m = String(rgb).match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+  if (!m) return null;
+  return [Number(m[1]) / 255, Number(m[2]) / 255, Number(m[3]) / 255];
 }
 
-// Initial build
-syncTagColorsFromTags(ALL_TAGS);
+function __hexToRgb01(hex) {
+  let h = String(hex).trim().replace('#', '');
+  if (h.length === 3) h = h.split('').map(ch => ch + ch).join('');
+  if (h.length !== 6) return null;
+  const n = parseInt(h, 16);
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+}
+
+function __colorToRgb01(color) {
+  if (!color) return null;
+  const c = String(color).trim();
+
+  // Fast paths
+  if (c[0] === '#') return __hexToRgb01(c);
+  if (c.startsWith('rgb')) return __rgbStringToRgb01(c);
+
+  // Resolve any CSS color (e.g. hsl(...), named colors) via canvas
+  __colorCtx.fillStyle = '#000';
+  __colorCtx.fillStyle = c;
+  const resolved = __colorCtx.fillStyle; // usually '#rrggbb' or 'rgb(...)'
+  if (resolved[0] === '#') return __hexToRgb01(resolved);
+  if (resolved.startsWith('rgb')) return __rgbStringToRgb01(resolved);
+  return null;
+}
+
+function __srgbToLinear(u) {
+  return (u <= 0.04045) ? (u / 12.92) : Math.pow((u + 0.055) / 1.055, 2.4);
+}
+
+function __rgb01ToOklab(rgb01) {
+  const r = __srgbToLinear(rgb01[0]);
+  const g = __srgbToLinear(rgb01[1]);
+  const b = __srgbToLinear(rgb01[2]);
+
+  // linear sRGB -> LMS
+  const l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+  const m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+  const s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+
+  const l_ = Math.cbrt(l);
+  const m_ = Math.cbrt(m);
+  const s_ = Math.cbrt(s);
+
+  return [
+    0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_, // L
+    1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_, // a
+    0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_  // b
+  ];
+}
+
+function __oklab(color) {
+  if (__oklabCache.has(color)) return __oklabCache.get(color);
+  const rgb01 = __colorToRgb01(color);
+  const lab = rgb01 ? __rgb01ToOklab(rgb01) : [0, 0, 0];
+  __oklabCache.set(color, lab);
+  return lab;
+}
+
+function __oklabDistance(c1, c2) {
+  const a = __oklab(c1), b = __oklab(c2);
+  const dL = a[0] - b[0], da = a[1] - b[1], db = a[2] - b[2];
+  return Math.sqrt(dL*dL + da*da + db*db);
+}
+
+// Pick candidate that maximizes its MIN distance to all used colors
+function pickMostDistinctColor(usedColors) {
+  const used = (usedColors || []).filter(Boolean);
+  const usedSet = new Set(used);
+
+  const palette = TAG_COLOR_CONFIG.palette;
+  const candidates = palette.filter(c => !usedSet.has(c));
+
+  // If palette is exhausted, fall back to evenly spaced HSL hues
+  if (!candidates.length) {
+    const idx = used.length;
+    const hue = (idx * 137.50776405003785) % 360; // golden angle
+    return `hsl(${hue.toFixed(2)} 85% 52%)`;
+  }
+
+  if (!used.length) return candidates[0];
+
+  let best = candidates[0];
+  let bestScore = -Infinity;
+
+  for (const cand of candidates) {
+    let minD = Infinity;
+    for (const u of used) {
+      const d = __oklabDistance(cand, u);
+      if (d < minD) minD = d;
+    }
+    if (minD > bestScore) {
+      bestScore = minD;
+      best = cand;
+    }
+  }
+  return best;
+}
+
+// Keep tagColors in sync with CURRENT selection:
+// - remove colors for deselected tags
+// - assign unique/maximally distinct colors for selected tags
+function syncActiveTagColors() {
+  const active = window.activeTags;
+  if (!active || typeof active.forEach !== 'function') return;
+
+  // drop inactive
+  Object.keys(tagColors).forEach(t => {
+    if (!active.has(t)) delete tagColors[t];
+  });
+
+  // ensure every active tag has a unique, distinct color
+  const used = [];
+  active.forEach((t) => {
+    const existing = tagColors[t];
+    if (existing && !used.includes(existing)) {
+      used.push(existing);
+      return;
+    }
+    const next = pickMostDistinctColor(used);
+    tagColors[t] = next;
+    used.push(next);
+  });
+}
+window.syncActiveTagColors = syncActiveTagColors;
+
+// Convenience: safe lookup anywhere you need a color
+function getTagColor(tag) {
+  if (!tag) return '';
+  if (!tagColors[tag]) syncActiveTagColors();
+  return tagColors[tag] || '';
+}
 
 // Helper: extract tag names from a Strapi relation (v4/v5, populated or not)
 function extractTagNamesFromRelation(rel) {
@@ -2043,9 +2124,6 @@ function rebuildTagCachesFromCurrentGroups() {
   TAG_GROUPS.forEach(g => {
     (g.tags || []).forEach(t => ALL_TAGS.push(t));
   });
-
-  // 3) colors (same strategy as initial boot)
-  syncTagColorsFromTags(ALL_TAGS);
 
 }
 
@@ -2182,9 +2260,9 @@ window.activeThemeFilter = null;
   const _add = s.add.bind(s);
   const _del = s.delete.bind(s);
   const _clr = s.clear.bind(s);
-  s.add    = (...a) => { const r = _add(...a);    window.renderSelectionBar?.(); return r; };
-  s.delete = (...a) => { const r = _del(...a);    window.renderSelectionBar?.(); return r; };
-  s.clear  = (...a) => { const r = _clr(...a);    window.renderSelectionBar?.(); return r; };
+  s.add    = (...a) => { const r = _add(...a); window.syncActiveTagColors?.(); window.renderSelectionBar?.(); return r; };
+  s.delete = (...a) => { const r = _del(...a); window.syncActiveTagColors?.(); window.renderSelectionBar?.(); return r; };
+  s.clear  = (...a) => { const r = _clr(...a); window.syncActiveTagColors?.(); window.renderSelectionBar?.(); return r; };
 })();
 
 // Central helper: remove one tag from the global selection and keep all tag-based UI in sync.
@@ -4811,7 +4889,19 @@ function initMobileSlideInsToggle() {
     refreshSlideInsVisibility();
     collapseDiscoverSidebar?.();
 
+    // Ensure we're not accidentally still in "group gallery" mode (would show group-only UI like location chip)
+    document.body.classList.remove('in-group-gallery', 'in-theme-gallery');
+    delete document.body.dataset.currentGroupId;
+
+    // Ad-hoc tag gallery must NOT show the pinned location chip
+    const locChip = document.getElementById('gallery-location-chip');
+    if (locChip) {
+      locChip.textContent = '';
+      locChip.hidden = true;
+    }
+
     document.body.classList.add('in-gallery', 'in-adhoc-gallery');   // mark ad-hoc mode
+
     window.__dispatchViewChange();
     if (typeof window.renderSelectionBar === 'function') {
       window.renderSelectionBar();                     // keep the bar visible, but no button
@@ -5785,9 +5875,10 @@ function initMobileSlideInsToggle() {
         if (!name && !desc) return '';
     
         return `
-          <div class="related-theme-item">
-            ${name ? `<h4>${name}</h4>` : ''}
-            ${desc ? `<p>${desc}</p>` : ''}
+        <div class="related-theme-item">
+          ${name ? `<h4>${name}</h4>` : ''}
+          ${desc ? `<p>${desc}</p>` : ''}
+          <div class="related-theme-actions">
             <a href="#"
                class="button related-theme-explore"
                data-theme-id="${idAttr}"
@@ -5796,7 +5887,8 @@ function initMobileSlideInsToggle() {
               <span class="icon" aria-hidden="true"></span>
             </a>
           </div>
-        `;
+        </div>
+      `;      
       }).join('');
     
       // One delegated click handler per host
@@ -6779,9 +6871,9 @@ function initMobileSlideInsToggle() {
   const box = gg?.querySelector('.gallery-box');
   if (!gg || !box) return;
 
-  // random width between 100–200 px
-  function randItemWidth() {
-    return 100 + Math.floor(Math.random() * 101); // 100..200
+  // random width between min..max px (inclusive)
+  function randItemWidth(min = 100, max = 200) {
+    return min + Math.floor(Math.random() * (max - min + 1));
   }
 
   function uid() {
@@ -6836,7 +6928,7 @@ function initMobileSlideInsToggle() {
       img.loading = 'lazy';
 
       // Desired CSS width for this gallery item (same logic as before)
-      const desiredCss = randItemWidth(); // 100..200 px
+      const desiredCss = randItemWidth(120, 200); // 120..200 px
       const dpr = window.devicePixelRatio || 1;
       const needPx = Math.round(desiredCss * dpr * 1.5); // small headroom for zoom/hover
 
@@ -6911,7 +7003,7 @@ function initMobileSlideInsToggle() {
     if (o.type === 'text') {
       const d = document.createElement('div');
       d.className = 'item text';
-      d.style.width = `${randItemWidth()}px`;      // ← random width
+      d.style.width = `${randItemWidth(120, 200)}px`;      // ← random width
       const span = document.createElement('span');
       span.className = 'scaling-text';
       span.textContent = o.text || o.caption || o.title || '';
@@ -6946,7 +7038,7 @@ function initMobileSlideInsToggle() {
     // Fallback
     const d = document.createElement('div');
     d.className = 'item text';
-    d.style.width = `${randItemWidth()}px`;        // ← random width
+    d.style.width = `${randItemWidth(120, 200)}px`;        // ← random width
     const span = document.createElement('span');
     span.className = 'scaling-text';
     span.textContent = o.title || '[unknown]';
@@ -9691,7 +9783,6 @@ function initSlideInTags() {
       return;
     }
     const tag = li.dataset.tag;
-    const color = tagColors[tag];
     const wasActive = activeTags.has(tag);
 
     // If a theme filter is active, clear it (tags and themes are exclusive)
@@ -9736,10 +9827,12 @@ function initSlideInTags() {
       }
 
       activeTags.add(tag);
+      const color = getTagColor(tag); // ← NEW: guaranteed distinct within active set
       li.classList.add('active');
       li.style.borderColor = color;
       li.style.color = color;
       li.style.boxShadow = `${color}66 0 0 8px`;
+      
       // Set lock on first selection in SCOPED
       if (TAG_GROUP_POLICY === TAG_GROUP_POLICIES.SCOPED) {
         activeTagGroupId = li.dataset.group;
@@ -11240,22 +11333,11 @@ function initArrowListScrolling() {
     event.preventDefault();
     event.stopPropagation?.();
 
-    // Use the same scroll-locator as scroll-up buttons
-    const scroller = (typeof nearestScroller === 'function')
-      ? nearestScroller(target)
-      : target.closest('.scroll-container-vertical') ||
-        document.scrollingElement ||
-        document.documentElement;
-
-    if (!scroller) return;
-
-    const targetRect   = target.getBoundingClientRect();
-    const scrollerRect = scroller.getBoundingClientRect();
-    const targetTop    = targetRect.top - scrollerRect.top + scroller.scrollTop;
-
-    scroller.scrollTo({
-      top: targetTop,
-      behavior: 'smooth'
+    // Let CSS handle the top offset via scroll-margin-top.
+    // (Your CSS already sets scroll-margin-top for the relevant targets on mobile.)
+    target.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start'
     });
   });
 }
