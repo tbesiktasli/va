@@ -739,6 +739,10 @@ export class Grid {
         openLink.addEventListener('click', (ev) => {
           ev.preventDefault();
           ev.stopPropagation();
+
+          // ✅ stop any audio playing in the grid / inline panel before routing to full detail
+          this.pauseAllAudio({ reset: true });
+
           // keep your current signature
           window.openObjectDetail?.({
             objectId: obj.id,
@@ -810,8 +814,8 @@ export class Grid {
 
       // NOTE: visited is only set when opening the full detail view (see script.js -> openObjectDetail)
 
-      // Stop any hover TTS audio when opening inline detail
-      this.stopHoverTts();
+      // Stop any hover audio (tile + inline) and hover TTS when opening inline detail
+      this.pauseAllAudio({ reset: true });
 
       const cameraPrev = this._captureCameraSnapshot?.();
 
@@ -985,8 +989,8 @@ export class Grid {
 
       // NOTE: visited is only set when opening the full detail view (see script.js -> openObjectDetail)
 
-      // Stop any hover TTS audio when opening clustered inline detail
-      this.stopHoverTts();
+      // Stop any hover audio (tile + inline) and hover TTS when opening clustered inline detail
+      this.pauseAllAudio({ reset: true });
 
       const cameraPrev = this._captureCameraSnapshot?.();
 
@@ -1230,6 +1234,41 @@ export class Grid {
         v.currentTime = 0;
       });
     }
+
+    pauseAllAudio({ reset = true } = {}) {
+      // 1) stop hover TTS (text tiles)
+      this.stopHoverTts();
+    
+      if (!this.htmlGridElement) return;
+    
+      const stopWs = (ws) => {
+        if (!ws) return;
+        try { ws.pause?.(); } catch {}
+        try { ws.stop?.(); } catch {}
+        if (reset) {
+          try { ws.seekTo?.(0); } catch {}
+          try { ws.setTime?.(0); } catch {}
+        }
+      };
+    
+      // 2) stop audio waves on grid tiles
+      this.htmlGridElement.querySelectorAll('.object.audio').forEach((el) => {
+        stopWs(el.__ws);
+      });
+    
+      // 3) stop audio waves inside inline detail panels
+      this.htmlGridElement.querySelectorAll('.detail-panel').forEach((panel) => {
+        stopWs(panel.__wsInline);
+      });
+    
+      // 4) future-proof: any native <audio> tags inside the grid
+      this.htmlGridElement.querySelectorAll('audio').forEach((a) => {
+        try { a.pause(); } catch {}
+        if (reset) {
+          try { a.currentTime = 0; } catch {}
+        }
+      });
+    }    
 
     _ensureHoverTtsAudio() {
       if (!this._hoverTtsAudio) {
@@ -3329,24 +3368,22 @@ export class Grid {
         if (p.clickCandidateId && p.moved2 <= CLICK_EPS2) {
           const clickedId = p.clickCandidateId;
 
-          if (this.currentState === 'detail' && this._detail?.active) {
-              if (clickedId !== this._detail.id) {
-                const from = this._detail.source || 'ungrouped';
-                this.exitDetail().then(() => {
-                  // restore the source state before re-opening
-                  this._setState(from);
-                  if (from === 'clustered') {
-                    // use your clustered-detail opener; defaults inside handle size/margin
-                    this.enterClusterDetail?.(clickedId);
-                  } else {
-                    this.enterDetail(clickedId, { size: 400, margin: 80 });
-                  }
-                });
-              } else {
-                // clicked the same focused item -> just close
-                this.exitDetail();
-              }
-            } else if (this.currentState === 'clustered' && !(this._detail && this._detail.active)) {
+          if (this._detail?.active) {
+            if (clickedId !== this._detail.id) {
+              const from = this._detail.source || 'ungrouped';
+              this.exitDetail().then(() => {
+                // restore the source state before re-opening
+                this._setState(from);
+                if (from === 'clustered') {
+                  this.enterClusterDetail?.(clickedId);
+                } else {
+                  this.enterDetail(clickedId, { size: 400, margin: 80 });
+                }
+              });
+            } else {
+              this.exitDetail();
+            }
+          } else if (this.currentState === 'clustered' && !(this._detail && this._detail.active)) {
               // If this group only has one object, go straight to full detail page
               const obj = this.objects.find(o => String(o.id) === String(clickedId));
               const gid = obj && obj.groupId;
