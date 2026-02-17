@@ -2210,6 +2210,43 @@ and pin the expanded panel to the right edge. */
   height: 70px; /* keep in sync with DETAIL_WS_CONFIG.height */
 }
 
+/* Detail audio: Play/Stop controls before the waveform */
+#detail-content .detail-media.audio .wave-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* In a flex row, the wave should stretch instead of forcing width:100% */
+#detail-content .detail-media.audio .wave-row > .wave {
+  flex: 1 1 auto;
+  width: auto;
+}
+
+#detail-content .detail-media.audio .wave-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--main-outline-color);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+#detail-content .detail-media.audio .wave-btn svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+#detail-content .detail-media.audio .wave-btn.is-playing {
+  background: var(--main-bright-bg-color);
+}
+
 /* Primary slot: keep the media centered */
 #detail-content #detail-primary {
   display: block;                /* normal flow, no implicit centering */
