@@ -2453,8 +2453,13 @@ const THEMES = [
 for(let i=0; i<100; i++) {
 
   let objectType = objectTypes[Math.floor(Math.random() * objectTypes.length)];
-  let randomObjectWidth = Math.floor(Math.random() * (110 - 60 + 1)) + 60;
-  let randomObjectHeight = Math.floor(Math.random() * (150 - 60 + 1)) + 60;
+  // explicit size corridors (dummy)
+  const textW  = Math.floor(Math.random() * (110 - 60 + 1)) + 60;
+  const textH  = Math.floor(Math.random() * (150 - 60 + 1)) + 60;
+
+  const imageW = Math.floor(Math.random() * (110 - 72 + 1)) + 72; // 60 -> 72
+  const imageH = Math.floor(Math.random() * (150 - 72 + 1)) + 72; // 60 -> 72
+
   const randomGroupId = Math.floor(Math.random() * groupCount + 1);
 
   //let angle = Math.random() * 2 * Math.PI;
@@ -2473,9 +2478,9 @@ for(let i=0; i<100; i++) {
       date: randomDateString(),
       grid_x: 0,
       grid_y: 0,
-      width: randomObjectWidth,
-      height: randomObjectHeight,
-      image: `https://picsum.photos/${randomObjectWidth}/${randomObjectHeight}`,
+      width: imageW,
+      height: imageH,
+      image: `https://picsum.photos/${imageW}/${imageH}`,
       text: '',
     }
 
@@ -2490,14 +2495,14 @@ for(let i=0; i<100; i++) {
       date: randomDateString(),
       grid_x: 0,
       grid_y: 0,
-      width: randomObjectWidth,
-      height: randomObjectHeight,
+      width: textW,
+      height: textH,      
       image: '',
       text: 'hello world! This is some text. I am too long by the way',
     }
   } else if (objectType === 'video') {
-    const w = Math.floor(Math.random() * (180 - 120 + 1)) + 120;
-    const h = Math.floor(Math.random() * (160 - 90 + 1)) + 90;
+    const w = Math.floor(Math.random() * (180 - 144 + 1)) + 144; // 120 -> 144
+    const h = Math.floor(Math.random() * (160 - 108 + 1)) + 108; //  90 -> 108  
     newObject = {
       id: `object_${i+1}`,
       type: 'video',
@@ -3669,8 +3674,8 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
 
     // ---- dimensions (same as before)
     let width, height;
-    if (type === 'image') { width = rand(120, 200); height = rand(120, 160); }
-    if (type === 'video') { width = rand(120, 180); height = rand(90, 160); }
+    if (type === 'image') { width = rand(144, 200); height = rand(144, 160); }
+    if (type === 'video') { width = rand(144, 180); height = rand(108, 160); }
     if (type === 'audio') { width = rand(140, 200); height = 60; }
     if (type === 'text')  { width = rand(120, 180); height = rand(120, 160); }
 
@@ -5377,10 +5382,24 @@ function initMobileSlideInsToggle() {
           // render just a container for WaveSurfer (no native controls)
           const id = `detail-wave-${obj.id || 'x'}`;
           slot.innerHTML = `
-            <figure class="detail-media audio">
+          <figure class="detail-media audio">
+            <div class="wave-row">
+              <button type="button" class="wave-btn wave-btn--play" aria-label="Play">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="currentColor" d="M8 5v14l11-7z"></path>
+                </svg>
+              </button>
+        
+              <button type="button" class="wave-btn wave-btn--stop" aria-label="Stop">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="7" y="7" width="10" height="10" fill="currentColor"></rect>
+                </svg>
+              </button>
+        
               <div id="${id}" class="wave" aria-label="Waveform"></div>
-            </figure>
-          `;
+            </div>
+          </figure>
+        `;        
         
           // create WaveSurfer WITHOUT url (won’t fetch MP3 yet)
           const container = slot.querySelector(`#${id}`);
@@ -5408,6 +5427,38 @@ function initMobileSlideInsToggle() {
             return window.ensureWaveAudio?.(__detailWave, src, meta).catch(() => false);
           };
 
+          const playBtn = slot.querySelector('.wave-btn--play');
+          const stopBtn = slot.querySelector('.wave-btn--stop');
+          
+          playBtn?.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+          
+            ensureDetailAudio().then((ok) => {
+              if (!ok) return;
+              try { __detailWave?.stop?.(); } catch {}
+              try { __detailWave?.play?.(); } catch {}
+            });
+          });
+          
+          stopBtn?.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+          
+            try { __detailWave?.stop?.(); }
+            catch {
+              // fallback if stop() isn’t available for any reason
+              try { __detailWave?.pause?.(); } catch {}
+              try { __detailWave?.seekTo?.(0); } catch {}
+            }
+          });
+          
+          // Optional: simple “playing” visual state on the play button
+          __detailWave?.on?.('play',   () => playBtn?.classList.add('is-playing'));
+          __detailWave?.on?.('pause',  () => playBtn?.classList.remove('is-playing'));
+          __detailWave?.on?.('finish', () => playBtn?.classList.remove('is-playing'));          
+
+          /*
           container?.addEventListener('click', () => {
             ensureDetailAudio().then((ok) => {
               if (!ok) return;
@@ -5425,7 +5476,8 @@ function initMobileSlideInsToggle() {
           container?.addEventListener('mouseleave', () => {
             try { __detailWave?.pause?.(); } catch {}
           }, { passive: true });
-        
+        */
+
           break;
         }          
 
@@ -6173,8 +6225,8 @@ function initMobileSlideInsToggle() {
 
       //window.markObjectVisited?.(objectId);
 
-      // pause any grid waves so we don't hear two audios at once
-      window.__gridWaves?.pauseAll?.();
+      // pause any grid audio (tile hover + inline panels) so we don't hear two audios at once
+      window.gridObject?.pauseAllAudio?.({ reset: true });
       // make sure previous detail waveform is gone before rendering a new one
       destroyDetailWave();
 
@@ -11882,6 +11934,10 @@ window.refreshHeaderLeftFromState = refreshHeaderLeftFromState;
 function restoreGridStateFromDetail() {
   const g = window.gridObject;
   if (!g) return;
+
+  // If inline detail is open, do not mutate the grid state here.
+  if (g._detail?.active) return;
+
   if (g.currentState === 'detail' && g.prevState) {
     g.currentState = g.prevState;
     g.prevState = null;
