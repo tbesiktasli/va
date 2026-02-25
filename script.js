@@ -1229,11 +1229,24 @@ function initCursorLabel() {
 
   const galleryEl = document.getElementById('group-gallery');
 
+  const gallerySuppressSel =
+  (galleryEl?.getAttribute('data-cursor-label-gallery-suppress') || '').trim() ||
+  'a, button, [role="button"], [role="link"], .fab';
+
+  const isSuppressedInGallery = (node) => {
+    if (!galleryEl?.classList.contains('active')) return false;
+    if (!node?.closest) return false;
+    if (!node.closest('#group-gallery')) return false;
+    if (!gallerySuppressSel) return false;
+    return !!node.closest(gallerySuppressSel);
+  };
+
   const computeGalleryEmptyLabel = (ev) => {
     if (!galleryEl) return '';
     if (!galleryEl.classList.contains('active')) return '';      // only when gallery is shown
     if (!ev.target?.closest?.('#group-gallery')) return '';
-    if (ev.target.closest('.item')) return '';                   // not empty space (gallery item)
+    if (isSuppressedInGallery(ev.target)) return '';
+    // ✅ removed: if (ev.target.closest('.item')) return '';
     if (ev.target.closest('.fab')) return '';                    // don't override FABs in the gallery
   
     // Only show if there is actually horizontal overflow
@@ -1242,7 +1255,7 @@ function initCursorLabel() {
   
     const label = galleryEl.getAttribute('data-cursor-label-gallery-empty') || '';
     return label.trim();
-  };  
+  };
 
   const wrapTooltip = (label, maxLen = 30) => {
     const raw = String(label ?? '');
@@ -1472,6 +1485,31 @@ function initCursorLabel() {
     pump();
   };  
 
+  // NEW: Grace window to prevent flicker when moving between sidebar handles
+  const isSlideInHandle = (node) => !!node && node.classList?.contains('slide-in-handle');
+
+  let __cursorLabelHideDelayTimer = null;
+  const __cursorLabelHideDelayMs = (() => {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue('--cursor-label-hide-delay-ms');
+    const v = parseInt(raw, 10);
+    return Number.isFinite(v) ? v : 80;
+  })();
+
+  const cancelHideDelay = () => {
+    if (__cursorLabelHideDelayTimer) {
+      clearTimeout(__cursorLabelHideDelayTimer);
+      __cursorLabelHideDelayTimer = null;
+    }
+  };
+
+  const scheduleHideDelay = () => {
+    cancelHideDelay();
+    __cursorLabelHideDelayTimer = setTimeout(() => {
+      __cursorLabelHideDelayTimer = null;
+      requestTooltipTransition(null);
+    }, __cursorLabelHideDelayMs);
+  };
+
   const showGrouped = (prefixLine, groupTitle, target, key) => {
     const wasVisible = el.classList.contains('is-visible');
   
@@ -1530,6 +1568,7 @@ function initCursorLabel() {
 
   const hideInstant = () => {
     // Cancel any in-flight / queued transitions
+    cancelHideDelay();
     __tooltipReqId++;
     __tooltipHasPending = false;
     __tooltipPending = null;
@@ -1554,6 +1593,7 @@ function initCursorLabel() {
   };  
 
   document.addEventListener('pointerover', (ev) => {
+    cancelHideDelay();
     
     if (isGridPanning()) {
       // Safari fires pointerover/out while the grid moves under the cursor.
@@ -1600,16 +1640,32 @@ function initCursorLabel() {
         return;
       }
 
-      requestTooltipTransition(() => show(shown, candidate, k));
+      // ✅ Sidebar handles: keep tooltip visible when moving handle ↔ handle
+      if (el.classList.contains('is-visible') && isSlideInHandle(activeTarget) && isSlideInHandle(candidate)) {
+        show(shown, candidate, k); // in-place update (no fade-out/fade-in)
+      } else {
+        requestTooltipTransition(() => show(shown, candidate, k));
+      }
+      return;
+    }
+
+      // Gallery: hide the "scroll horizontally" hint over interactive elements
+    if (isSuppressedInGallery(ev.target)) {
+      hideInstant();
       return;
     }
 
     // If the element *qualifies* for cursor labels (candidate exists) but the computed label is empty,
     // it means we intentionally disabled tooltips for this case → hide immediately (no "line pop").
-    if (candidate) {
+    // If the element qualifies for cursor labels but label is empty, we usually hide instantly.
+    // EXCEPT inside the active gallery: there we want the gallery-level hint ("scroll horizontally")
+    // to stay stable even when hovering items.
+    const inActiveGallery = !!(candidate?.closest?.('#group-gallery') && galleryEl?.classList.contains('active'));
+    if (candidate && !inActiveGallery) {
       hideInstant();
       return;
     }
+    // if inActiveGallery: fall through, so computeGalleryEmptyLabel() can drive the tooltip
 
     const emptyLabel = computeGridEmptyLabel(ev);
     if (emptyLabel) {
@@ -1619,8 +1675,19 @@ function initCursorLabel() {
 
     const galleryEmptyLabel = computeGalleryEmptyLabel(ev);
     if (galleryEmptyLabel) {
-      requestTooltipTransition(() => show(galleryEmptyLabel, galleryEl, 'hscroll'));
-      return;      
+      const shown = wrapTooltip(galleryEmptyLabel, 30);
+      const k = 'hscroll';
+      const nextKey = `${k}||${shown}`;
+      const curKind = (el.dataset.kind || '');
+    
+      // ✅ If it's already showing the same gallery hint, do nothing (prevents hectic close/open).
+      if (el.classList.contains('is-visible') && curKind === k && activeDefaultKey === nextKey) {
+        activeTarget = galleryEl;
+        return;
+      }
+    
+      requestTooltipTransition(() => show(galleryEmptyLabel, galleryEl, k));
+      return;
     }
 
     hide();
@@ -1648,7 +1715,37 @@ function initCursorLabel() {
       }
     }
   
-    if (nextCandidate !== activeTarget) requestTooltipTransition(null);
+        // Slide-in sidebar handles: allow tiny gaps while moving between handles (prevents flicker)
+        if (isSlideInHandle(activeTarget)) {
+          if (nextCandidate && isSlideInHandle(nextCandidate)) {
+            activeTarget = nextCandidate;
+            return;
+          }
+          scheduleHideDelay();
+          return;
+        }
+    
+        // Default tooltips: moving between elements that resolve to the same label should not hide
+        if (nextCandidate && el.dataset.kind !== 'grouped') {
+          const nextLabel = computeLabel(nextCandidate);
+          if (nextLabel) {
+            const shown = wrapTooltip(nextLabel, 30);
+            const k = (el.dataset.kind || '');
+            const nextKey = `${k}||${shown}`;
+            if (nextKey === activeDefaultKey) {
+              activeTarget = nextCandidate;
+              return;
+            }
+          }
+        }
+    
+        // ✅ Gallery hint: moving between elements *inside* #group-gallery should NOT hide the tooltip
+        if (el.dataset.kind === 'hscroll') {
+          const stillInsideGallery = !!ev.relatedTarget?.closest?.('#group-gallery');
+          if (stillInsideGallery) return;
+        }
+
+        if (nextCandidate !== activeTarget) requestTooltipTransition(null);
   }, true);  
 
   document.addEventListener('pointermove', (ev) => {
@@ -4236,6 +4333,7 @@ function refreshSlideInsVisibility() {
         panel.setAttribute('aria-hidden', 'true');
         panel.innerHTML = '';
       }
+      resetSlideInScroll(el);
     }
   });
 
@@ -4530,6 +4628,7 @@ function initMobileSlideInsToggle() {
       close.type = 'button';
       close.className = 'adhoc-title-tag-close';
       close.setAttribute('aria-label', `Remove tag ${tag}`);
+      close.setAttribute('data-cursor-label', 'remove tag');
       close.textContent = '×';
 
       span.appendChild(label);
@@ -5613,7 +5712,7 @@ function initMobileSlideInsToggle() {
         };
 
         const LABEL_RENAMES = {
-          'research':   { key: 'research',   text: 'Project' },
+          'research':   { key: 'research',   text: 'Episode' },
           'researcher': { key: 'researcher', text: getResearcherLabel(obj.type) },
         };
 
@@ -9662,8 +9761,21 @@ function updateObjectGlowsWithGradient() {
   let themedIds = null;
 
   const gridEl = document.getElementById('grid');
+  if (!gridEl) return;
+
   const anyGlowActive = (themeFilter != null) || (selected.length > 0);
-  gridEl?.setAttribute('data-glow', anyGlowActive ? 'on' : 'off');  
+  gridEl.setAttribute('data-glow', anyGlowActive ? 'on' : 'off');
+
+  // If nothing active, hide glows cheaply and clear classes on previously glowing objects
+  if (!anyGlowActive) {
+    gridEl.style.removeProperty('--grid-glow');
+
+    document
+      .querySelectorAll('.object.has-glow, .object.glow-partial, .object.glow-full')
+      .forEach(el => el.classList.remove('has-glow', 'glow-partial', 'glow-full'));
+
+    return;
+  }
 
   // Pre-compute which objects match the theme (if any)
   if (themeFilter && typeof window.objectsMatchingTheme === 'function') {
@@ -9671,91 +9783,66 @@ function updateObjectGlowsWithGradient() {
     themedIds = new Set(objs.map(o => String(o.id)));
   }
 
-  document.querySelectorAll(".object").forEach(div => {
-    const tags = (div.dataset.tags || '').split(",").filter(Boolean);
-    const glow = div.querySelector(".object-glow");
-    if (!glow) return;
-
-    // === THEME FILTER ===
-    if (themeFilter && themedIds) {
-      if (!themedIds.has(div.id)) {
-        // not in the theme → no glow
-        glow.style.setProperty('--glow', 'transparent');
-        glow.style.setProperty('--glow-color', 'transparent');
-      } else {
-        // matched theme → single-color glow (use the same stable theme color as off-grid)
-        const color = (typeof getThemeCounterColor === 'function')
-          ? getThemeCounterColor()
-          : (getComputedStyle(document.documentElement).getPropertyValue('--offgrid-theme-color').trim() || '#000');
-      
-        glow.style.setProperty('--glow', color);
-        glow.style.setProperty('--glow-color', color);
-      }      
-      return; // theme mode wins over tag mode
-    }
-
-    // === TAG FILTER (existing behavior) ===
-
-    // nothing selected → no glow
-    if (selected.length === 0) {
-      glow.style.setProperty('--glow', 'transparent');
-      glow.style.setProperty('--glow-color', 'transparent'); // added
-      return;
-    }
-
-    if (TAG_MODE === TAG_MODES.OR) {
-      // existing OR behavior
-      const matchesAny = tags.some(t => activeTags.has(t));
-      if (!matchesAny) {
-        glow.style.setProperty('--glow', 'transparent');
-        glow.style.setProperty('--glow-color', 'transparent'); // added
-        return;
-      }
-
-      const colors = tags
-        .filter(t => activeTags.has(t))
-        .map(t => tagColors[t]);
-
-      const n = Math.max(1, colors.length);
-      const stops = colors.map((c, i) => {
-        const start = (i * 100 / n).toFixed(2);
-        const end   = ((i + 1) * 100 / n).toFixed(2);
-        return `${c} ${start}% ${end}%`;
-      });
-      const conic = `conic-gradient(from 0deg at 50% 50%, ${stops.join(", ")})`;
-      glow.style.setProperty('--glow', conic);
-      // use the first tag color as a simple flat color for Safari
-      glow.style.setProperty('--glow-color', colors[0] || 'transparent');
-      return;
-    }
-
-    // === AND mode (your change) ===
-    const matchesAll  = selected.every(t => tags.includes(t));          // strict intersection
-    const matchesSome = tags.some(t => activeTags.has(t));              // partial / 1-of-N
-
-    if (!matchesSome) {
-      // no overlap at all → no glow
-      glow.style.setProperty('--glow', 'transparent');
-      glow.style.setProperty('--glow-color', 'transparent'); // added
-      return;
-    }
-
-    // decide which colors to show
-    const colors = matchesAll
-      // for full intersection: keep your old behavior → use ALL selected tag colors
-      ? selected.map(t => tagColors[t])
-      // for partial match: highlight only the tags that this object actually has
-      : tags.filter(t => activeTags.has(t)).map(t => tagColors[t]);
-
+  // Helper: build a conic gradient from ALL selected tag colors (once per update)
+  const conicFrom = (colors) => {
     const n = Math.max(1, colors.length);
     const stops = colors.map((c, i) => {
       const start = (i * 100 / n).toFixed(2);
       const end   = ((i + 1) * 100 / n).toFixed(2);
       return `${c} ${start}% ${end}%`;
     });
-    const conic = `conic-gradient(from 0deg at 50% 50%, ${stops.join(", ")})`;
-    glow.style.setProperty('--glow', conic);
-    glow.style.setProperty('--glow-color', colors[0] || 'transparent');
+    return `conic-gradient(from 0deg at 50% 50%, ${stops.join(", ")})`;
+  };
+
+  // === Set the glow paint ONCE on the grid (inherited by all .object-glow) ===
+  if (themeFilter && themedIds) {
+    const color = (typeof getThemeCounterColor === 'function')
+      ? getThemeCounterColor()
+      : (getComputedStyle(document.documentElement).getPropertyValue('--offgrid-theme-color').trim() || '#000');
+
+    // Use a gradient form even for single colors so Safari border-image stays happy
+    gridEl.style.setProperty('--grid-glow', `linear-gradient(${color}, ${color})`);
+  } else {
+    const colors = selected.map(t => tagColors[t]).filter(Boolean);
+
+    if (!colors.length) {
+      gridEl.style.setProperty('--grid-glow', 'transparent');
+    } else if (colors.length === 1) {
+      gridEl.style.setProperty('--grid-glow', `linear-gradient(${colors[0]}, ${colors[0]})`);
+    } else {
+      gridEl.style.setProperty('--grid-glow', conicFrom(colors));
+    }
+  }
+
+  // === Toggle glow per object (no per-object gradient computations) ===
+  document.querySelectorAll(".object").forEach(div => {
+    // If some object ever missed the glow child, don't toggle anything
+    if (!div.querySelector(".object-glow")) return;
+
+    const tags = (div.dataset.tags || '').split(",").filter(Boolean);
+
+    let state = 'off'; // off | full | partial
+
+    // Theme mode wins over tag mode
+    if (themeFilter && themedIds) {
+      state = themedIds.has(String(div.id)) ? 'full' : 'off';
+    } else {
+      if (selected.length === 0) {
+        state = 'off';
+      } else if (TAG_MODE === TAG_MODES.OR) {
+        state = tags.some(t => activeTags.has(t)) ? 'full' : 'off';
+      } else {
+        // AND mode: keep your current behavior (full intersection vs partial overlap)
+        const matchesAll  = selected.every(t => tags.includes(t));
+        const matchesSome = tags.some(t => activeTags.has(t));
+        state = !matchesSome ? 'off' : (matchesAll ? 'full' : 'partial');
+      }
+    }
+
+    const on = state !== 'off';
+    div.classList.toggle('has-glow', on);
+    div.classList.toggle('glow-full', state === 'full');
+    div.classList.toggle('glow-partial', state === 'partial');
   });
 }
 
@@ -9865,27 +9952,25 @@ function initSlideInTags() {
 
     // Toggle selection
     if (activeTags.has(tag)) {
-      activeTags.delete(tag);
-      li.classList.remove('active');
-      li.style.borderColor = '#000';
-      li.style.color = '';
-      li.style.boxShadow = '';
+      const isAdhoc = (typeof isAdhocGalleryActive === 'function') && isAdhocGalleryActive();
+
+      // Use the shared helper so behavior matches the bottom selection bar:
+      // when the last tag is removed while in ad-hoc gallery -> close it.
+      if (typeof window.deselectTagGlobally === 'function') {
+        window.deselectTagGlobally(tag, { closeGalleryWhenEmpty: isAdhoc });
+        return; // important: helper already refreshes UI + gallery
+      }
     } else {
       const maxActive = (typeof getMaxActiveTags === 'function') ? getMaxActiveTags() : 7;
       if (activeTags.size >= maxActive) {
-        // Max reached: ignore selection (should already be disabled by updateTagAvailability)
         updateTagAvailability();
         return;
       }
 
       activeTags.add(tag);
-      const color = getTagColor(tag); // ← NEW: guaranteed distinct within active set
-      li.classList.add('active');
-      li.style.borderColor = color;
-      li.style.color = color;
-      li.style.boxShadow = `${color}66 0 0 8px`;
-      
-      // Set lock on first selection in SCOPED
+      const color = getTagColor(tag);
+      window.setTagPillVisualState(li, { active: true, color });
+
       if (TAG_GROUP_POLICY === TAG_GROUP_POLICIES.SCOPED) {
         activeTagGroupId = li.dataset.group;
       }
@@ -9941,15 +10026,7 @@ function syncDetailTagHighlights() {
 
     // Apply the same color treatment you use elsewhere
     const c = colors[tag];
-    if (isActive && c) {
-      el.style.borderColor = c;
-      el.style.color = c;
-      el.style.boxShadow = `${c}66 0 0 8px`;
-    } else {
-      el.style.removeProperty('border-color');
-      el.style.removeProperty('color');
-      el.style.removeProperty('box-shadow');
-    }
+    window.setTagPillVisualState(el, { active: isActive, color: c });
   });
 }
 
@@ -10532,15 +10609,9 @@ function renderTagsForCurrentGroup() {
     li.dataset.group = tagToGroup.get(tag) || '';
     li.textContent = tag;
 
-    if (activeTags.has(tag)) {
-      const color = tagColors[tag];
-      li.classList.add('active');
-      if (color) {
-        li.style.borderColor = color;
-        li.style.color = color;
-        li.style.boxShadow = `${color}66 0 0 8px`;
-      }
-    }
+    const isActive = activeTags.has(tag);
+    const color = tagColors[tag] || '';
+    window.setTagPillVisualState(li, { active: isActive, color });
 
     ul.appendChild(li);
   });
@@ -10557,13 +10628,18 @@ function markActiveGroupButton() {
 
 function clearAllTagSelectionsUI() {
   document.querySelectorAll('#discover-connections .tags li.active').forEach(n => {
-    n.classList.remove('active');
-    n.style.borderColor = '#000';
-    n.style.color = '';
-    n.style.boxShadow = '';
+    window.setTagPillVisualState(n, { active: false });
   });
 }
 
+function resetSlideInScroll(slideInEl) {
+  // Only reset the 3 content sidebars (not the menu sidebar)
+  const mode = (slideInEl?.dataset?.mode || 'content');
+  if (mode === 'menu') return;
+
+  const scroller = slideInEl.querySelector('.vertical-content');
+  if (scroller) scroller.scrollTop = 0;
+}
 
 // --- Slide-ins: expand/collapse ---
 function initSlideIns() {
@@ -10596,10 +10672,13 @@ function initSlideIns() {
     const wrap = e.target.closest('.slide-in');
     if (!wrap) return;
   
-    const isExpanded = wrap.classList.contains('expanded');
+    const handle = e.target.closest('.slide-in-handle');
+    if (!handle) return; // ✅ ignore clicks inside the panel content
   
-    // 1) vertical text → always open this, close others
-    if (e.target.matches('.vertical-text')) {
+    const isExpanded = wrap.classList.contains('expanded');
+    const closeBtn = e.target.closest('.close-btn');
+  
+    const openThisAndCloseOthers = () => {
       document.querySelectorAll('#slide-ins .slide-in').forEach(el => {
         if (el === wrap) {
           el.classList.add('expanded');
@@ -10607,53 +10686,47 @@ function initSlideIns() {
         } else {
           el.classList.remove('expanded', 'secondary-open');
           el.querySelector('.vertical-content')?.classList.remove('visible');
+    
+          // ✅ When a content sidebar gets closed, reset its scroll for next open
+          resetSlideInScroll(el);
         }
       });
-
-      // keep layout math + grid camera in sync
-      requestAnimationFrame(() => {
-        syncSlideInsViewport('slidein-toggle-click');
-      });      
-
-      return;
-    }
+    };
+    
+    const closeThis = () => {
+      wrap.classList.remove('expanded', 'secondary-open');
+      wrap.querySelector('.vertical-content')?.classList.remove('visible');
+    
+      // ✅ When a content sidebar gets closed, reset its scroll for next open
+      resetSlideInScroll(wrap);
+    
+      const panel = wrap.querySelector('.secondary-pane');
+      if (panel) {
+        panel.setAttribute('aria-hidden', 'true');
+        panel.innerHTML = '';
+      }
+      if (typeof clearThemesActiveState === 'function') {
+        clearThemesActiveState();
+      }
+    };
   
-    // 2) close button → if open -> close; if closed -> open (like vertical text)
-    const closeBtn = e.target.closest('.close-btn');
     if (closeBtn) {
       e.stopPropagation();
   
       if (isExpanded) {
-        // CLOSE this one
-        wrap.classList.remove('expanded', 'secondary-open');
-        wrap.querySelector('.vertical-content')?.classList.remove('visible');
-        const panel = wrap.querySelector('.secondary-pane');
-        if (panel) {
-          panel.setAttribute('aria-hidden', 'true');
-          panel.innerHTML = '';
-        }
-        if (typeof clearThemesActiveState === 'function') {
-          clearThemesActiveState();
-        }
+        closeThis();
       } else {
-        // OPEN this one (same as vertical-text)
-        document.querySelectorAll('#slide-ins .slide-in').forEach(el => {
-          if (el === wrap) {
-            el.classList.add('expanded');
-            el.querySelector('.vertical-content')?.classList.add('visible');
-          } else {
-            el.classList.remove('expanded', 'secondary-open');
-            el.querySelector('.vertical-content')?.classList.remove('visible');
-          }
-        });
+        openThisAndCloseOthers();
       }
+    } else {
+      // ✅ clicking anywhere on the handle (including empty space) opens it
+      openThisAndCloseOthers();
     }
-
-    // ✅ ADD THIS (ensures camera reacts immediately when user opens/closes)
+  
     requestAnimationFrame(() => {
       syncSlideInsViewport('slidein-toggle-click');
-    });    
-  });  
+    });
+  });
 }
 
 // END TAG SETUP
@@ -11911,7 +11984,8 @@ function refreshHeaderLeftFromState() {
       obj?.groupLocation ||                 // last fallback (avoid blank)
       '';
 
-    return setHeaderLeft('custom', { text: title });
+    const headerText = title ? `Episode: ${title}` : 'Episode';
+    return setHeaderLeft('custom', { text: headerText });
   }
 
   // Adhoc (custom) gallery → “Make new connections”
@@ -12152,6 +12226,26 @@ const HeaderTyper = (() => {
   return { type, cancel };
 })();
 
+// Tag pills: apply active coloring WITHOUT glow (no colored box-shadow)
+function setTagPillVisualState(el, { active = false, color = '' } = {}) {
+  if (!el) return;
+
+  el.classList.toggle('active', !!active);
+
+  if (active && color) {
+    el.style.borderColor = color;
+    el.style.color = color;
+  } else {
+    el.style.removeProperty('border-color');
+    el.style.removeProperty('color');
+  }
+
+  // Key requirement: NEVER apply glow to pills
+  el.style.removeProperty('box-shadow');
+}
+window.setTagPillVisualState = setTagPillVisualState;
+
+
 function syncSelectionBarOverflow() {
   const bar = document.getElementById('selection-bar');
   if (!bar) return;
@@ -12224,13 +12318,8 @@ function renderSelectionBar() {
       const li = document.createElement('li');
       li.dataset.tag = tag;
       li.innerHTML = `${tag} <span class="x" aria-hidden="true">X</span>`;
-      const color = window.tagColors?.[tag];
-      if (color) {
-        li.classList.add('active');
-        li.style.borderColor = color;
-        li.style.color = color;
-        li.style.boxShadow = `${color}66 0 0 8px`;
-      }
+      const color = window.tagColors?.[tag] || '';
+      window.setTagPillVisualState(li, { active: true, color });
       list.appendChild(li);
     }
   }
