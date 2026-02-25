@@ -212,6 +212,12 @@ export class Grid {
           portraitHeight: 330,
           margin: 80,
         },
+
+        // NEW: smaller inline detail height for text objects (desktop/tablet only)
+        text: {
+          inlineHeight: 350,
+        },
+
         // Mobile-specific behaviour
         mobile: {
           // match your CSS: @media (max-width: 768px)
@@ -591,13 +597,47 @@ export class Grid {
       }
 
       // Limit number of connecting tags in inline detail panel (optional)
+      // + If there are active tags: show active ones first (for this object),
+      //   then the rest alphabetically. If there are NO active tags: keep current order.
       const allConnectingTags = Array.isArray(obj.connectingTags) ? obj.connectingTags : [];
       const maxDetailTags = this.display?.detailConnectingTagLimit;
-      const detailConnectingTags = (
+
+      // Optional config switch (default: enabled)
+      // Set `display.detailConnectingTagsActiveFirst = false` to disable this behavior.
+      const activeFirstEnabled = this.display?.detailConnectingTagsActiveFirst !== false;
+
+      const orderConnectingTagsForDetail = (tags) => {
+        const activeSet = window.activeTags;
+        const hasActive = !!(activeFirstEnabled && activeSet && activeSet.size);
+
+        // No active tags => keep existing ordering exactly as it is today
+        if (!hasActive) return tags;
+
+        const active = [];
+        const inactive = [];
+
+        for (const t of tags) {
+          (activeSet.has(t) ? active : inactive).push(t);
+        }
+
+        // Only sort the non-active ones
+        inactive.sort((a, b) =>
+          a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true })
+        );
+
+        return active.concat(inactive);
+      };
+
+      const limitConnectingTagsForDetail = (tags) => (
         typeof maxDetailTags === 'number' && maxDetailTags > 0
-          ? allConnectingTags.slice(0, maxDetailTags)
-          : allConnectingTags
+          ? tags.slice(0, maxDetailTags)
+          : tags
       );
+
+      const getDetailConnectingTags = () =>
+        limitConnectingTagsForDetail(orderConnectingTagsForDetail(allConnectingTags));
+
+      const detailConnectingTags = getDetailConnectingTags();
 
       panel.innerHTML = `
         <button class="detail-close" aria-label="Close"></button>
@@ -619,7 +659,7 @@ export class Grid {
         }
         <div class="detail-info">
           <div class="detail-date-inline">${formattedDate}</div>
-            ${primaryText ? `<div class="detail-description" data-allow-scroll>${primaryText}</div>` : ''}
+            ${primaryText ? `<div class="detail-description"${obj.type === 'text' ? '' : ' data-allow-scroll'}>${primaryText}</div>` : ''}
           <div class="detail-group">${obj.groupLocation || ''}</div>
           <div class="detail-tags-row detail-tags-row--scroll" data-allow-scroll>
             <ul class="detail-tags tags">
@@ -755,24 +795,31 @@ export class Grid {
       // --- tags
       const tagList = panel.querySelector('.detail-tags');
       if (tagList) {
-        // annotate
-        tagList.querySelectorAll('li').forEach(li => {
-          li.dataset.tag = li.textContent.trim();
-        });
+        const annotate = () => {
+          tagList.querySelectorAll('li').forEach(li => {
+            li.dataset.tag = li.textContent.trim();
+          });
+        };
+
+        const rerender = () => {
+          const tags = getDetailConnectingTags();
+          tagList.innerHTML = tags.map(t => `<li>${t}</li>`).join('');
+          annotate();
+        };
 
         const repaint = () => {
           tagList.querySelectorAll('li').forEach(li => {
             const t = li.dataset.tag;
             const on = !!(window.activeTags && window.activeTags.has(t));
             const c  = (window.tagColors && window.tagColors[t]) || '';
-            li.classList.toggle('active', on);
-            li.style.borderColor = on && c ? c : '#000';
-            li.style.color       = on && c ? c : '';
-            li.style.boxShadow   = on && c ? `${c}66 0 0 8px` : '';
+        
+            // Use the shared rule: outline + text only, no glow
+            window.setTagPillVisualState(li, { active: on, color: c });
           });
         };
 
-        // initial paint
+        // initial annotate + paint (initial HTML already uses detailConnectingTags)
+        annotate();
         repaint();
 
         tagList.addEventListener('click', (ev) => {
@@ -788,6 +835,9 @@ export class Grid {
             toggleTagFromDetail(tag);
           }
 
+          // Rebuild list so active tags jump to the front when active tags exist,
+          // and revert to original order when the last active tag is cleared.
+          rerender();
           repaint();
         });
       }
@@ -871,6 +921,12 @@ export class Grid {
       const mobileSize = this._applyMobileDetailSizing(W, H);
       W = mobileSize.width;
       H = mobileSize.height;
+
+      // Text objects don't need a tall square (description is already capped/scrollable)
+      if (!this._isMobileViewport?.() && obj.type === 'text' && height == null) {
+        const textH = this.detailConfig?.text?.inlineHeight ?? 320;
+        H = Math.min(H, textH);
+      }
 
       const targetLeft = ocx - W / 2;
       const targetTop  = ocy - H / 2;
@@ -1033,6 +1089,12 @@ export class Grid {
       const mobileSize = this._applyMobileDetailSizing(width, height);
       width  = mobileSize.width;
       height = mobileSize.height;
+
+      // Text objects don't need a tall square (description is already capped/scrollable)
+      if (!this._isMobileViewport?.() && obj.type === 'text') {
+        const textH = this.detailConfig?.text?.inlineHeight ?? 320;
+        height = Math.min(height, textH);
+      }
     
       // Cluster/group center in world space
       const g = this.groups?.[obj.groupId];
