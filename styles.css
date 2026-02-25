@@ -115,6 +115,7 @@
   --cursor-label-bg: rgba(0, 0, 0, 1);
   --cursor-label-color: #fff;
   --cursor-label-viewport-pad: 8;
+  --cursor-label-hide-delay-ms: 80; /* grace delay to prevent flicker between sidebar handles */
   /* Cursor label reveal animation (grouped pills) */
   --cursor-label-reveal-speed: 550; /* px per second (higher = faster) */
   --cursor-label-reveal-min-ms: 120; /* minimum duration per line */
@@ -564,13 +565,42 @@
   .object {
     position: absolute;
     box-sizing: border-box;
-    background-color: #fff;
+    background-color: transparent;
     background-size: cover;
     background-position: center;
     /*background-repeat: 'no-repeat';*/
     overflow: visible;
     z-index: 1;
     transition: transform 0.5s ease, width 0.4s ease, height 0.4s ease;
+
+    --object-radius: 0px;         /* keep 0 => perfectly rectangular */
+    border-radius: var(--object-radius);
+  }
+
+  /* Solid tile surface layer (prevents glow tint inside tiles) */
+  .object::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+
+    /* sits between glow (-2) and content */
+    z-index: -1;
+
+    /* default tile fill (matches old .object background) */
+    background-color: #fff;
+
+    border-radius: inherit;
+  }
+
+  /* Preserve existing per-type fills */
+  .object.audio::after,
+  .object.image::after {
+    background-color: transparent;
+  }
+
+  #grid .object.text::after {
+    background-color: var(--main-bright-bg-color);
   }
 
   /* Visited marker: small filled dot (top-left) */
@@ -648,7 +678,7 @@
     box-sizing: border-box;               /* keep absolute size even with padding */
     border: 1px solid var(--object-text-border-color);
     padding: var(--grid-text-pad);
-    background-color: var(--main-bright-bg-color);
+    background-color: transparent;
 
     /* use plain Noto Serif (not Display) */
     font-family: "Noto Serif", serif;
@@ -727,9 +757,9 @@
     height: 70px;       /* detail-panel height */
   }
 
-  /* If your tiles can be very short, keep controls on top of content */
+  /* Audio tiles: keep glow visible outside the tile */
   #grid .object.audio {
-    overflow: hidden;
+    overflow: visible;
   }
 
     /* Detail panel overlay inside the expanded card */
@@ -881,8 +911,8 @@
     text-align: left;
   }
 
-  /* Inline detail panel: cap text height and make it scrollable */
-  #grid .detail-panel .detail-description {
+  /* Inline detail panel: cap text height and make it scrollable (except text objects) */
+  #grid .detail-panel:not(.detail-text-object) .detail-description {
     max-height: var(--detail-description-max-height);
     overflow-y: auto;
   }
@@ -1006,14 +1036,19 @@
   .detail-panel.portrait .detail-media {
     display: flex;
     align-items: flex-start;  /* top */
-    justify-content: flex-start;
+    justify-content: center;
   }
 
-  /* Keep images/videos contained */
+  :root{
+    --inline-detail-media-max-h: 150px;
+  }
+  
   .detail-panel .detail-media img,
   .detail-panel .detail-media video {
+    display: block;
+    margin: 0 auto;
     max-width: 100%;
-    max-height: 150px;
+    max-height: var(--inline-detail-media-max-h);
     object-fit: contain;
   }
 
@@ -1032,89 +1067,96 @@
 
   .object-glow {
     position: absolute;
-    inset: -2px;                 /* extends a little outside the card */
+    inset: 0;                      /* flush with the object box */
     pointer-events: none;
-    z-index: 0;
-    border-radius: 6px;
+    z-index: -2;
+    border-radius: var(--object-radius, 0px);
   
-    /* knobs */
-    --ring: 2px;                 /* ring thickness */
-    --glow-opacity: 0.55;        /* ring opacity */
+  /* fed once per filter change on #grid (JS sets these) */
+  --glow: var(--grid-glow, transparent);
+
+  /* knobs */
+  --ring: 2px;                   /* Safari fallback border thickness */
   
-    --halo-opacity: 0.8;         /* outer halo opacity */
-    --halo-blur: 16px;           /* outer halo blur */
-    --halo-spread: 10px;         /* outer halo spread (new) */
+  /* Glow knobs (2-layer halo = more “glow”, less “ring”) */
+  --halo-opacity: 0.35;     /* outer, soft */
+  --halo-blur: 30px;
+  --halo-spread: 22px;
+
+  --halo2-opacity: 0.70;    /* inner, stronger */
+  --halo2-blur: 14px;
+  --halo2-spread: 12px;
   
-    /* IMPORTANT:
-       no filter + no mix-blend-mode on the container,
-       otherwise blur will bleed inward again */
+    /* default off; JS toggles .has-glow on the .object */
+    opacity: 0;
   }
   
-  /* Crisp gradient ring (no blur) */
-  .object-glow::before {
+  .object.has-glow .object-glow {
+    opacity: 1;
+  }
+  
+  .object.glow-partial .object-glow {
+    --halo-opacity: 0.18;
+    --halo-blur: 22px;
+    --halo-spread: 16px;
+  
+    --halo2-opacity: 0.35;
+    --halo2-blur: 10px;
+    --halo2-spread: 8px;
+  }
+  
+/* Non-Safari: multi-color glow ONLY (no ring).
+   Two blurred gradient layers = real “bloom”. */
+   .object-glow::before {
     content: "";
     position: absolute;
-    inset: -2px;                 /* ring sits slightly outside */
-    border-radius: inherit;
+    inset: calc(-1 * (var(--halo-spread) + var(--halo-blur)));
+    border-radius: calc(var(--object-radius, 0px) + var(--halo-spread) + var(--halo-blur));
     background: var(--glow);
     pointer-events: none;
   
-    /* ring thickness */
-    padding: var(--ring);
-    opacity: var(--glow-opacity);
-  
-    /* punch out the center so only the ring remains */
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
+    opacity: var(--halo-opacity);
+    filter: blur(var(--halo-blur)) saturate(1.2);
+    will-change: filter, opacity;
   }
   
-  /* Outer-only halo (box-shadow never draws inward) */
   .object-glow::after {
     content: "";
     position: absolute;
-    inset: 0;
-    border-radius: inherit;
+    inset: calc(-1 * (var(--halo2-spread) + var(--halo2-blur)));
+    border-radius: calc(var(--object-radius, 0px) + var(--halo2-spread) + var(--halo2-blur));
+    background: var(--glow);
     pointer-events: none;
   
-    opacity: var(--halo-opacity);
-    box-shadow: 0 0 var(--halo-blur) var(--halo-spread) var(--glow-color, transparent);
-  }  
-
+    opacity: var(--halo2-opacity);
+    filter: blur(var(--halo2-blur)) saturate(1.35);
+    will-change: filter, opacity;
+  }
+  
   /* === Performance: disable expensive glow when not needed === */
   #grid[data-glow="off"] .object-glow {
     display: none !important;      /* cheapest: remove from paint/composite */
   }
-
-/* Safari fallback for object glows:
-   use the conic gradient as a multi-color border image.
-   No blur, no mask, no blend-mode. */
-   html.is-safari .object-glow {
-    inset: 0;                      /* align to card edges */
-    border-radius: inherit;
-    pointer-events: none;
-    z-index: 0;
   
-    /* kill heavy effects */
-    filter: none;
-    mix-blend-mode: normal;
-    opacity: 1;
+  /* Safari fallback: gradient border only (no halo / no mask) */
+  html.is-safari .object-glow {
+    inset: 0;
+    border-radius: var(--object-radius, 0px);
   
     /* multi-color border from the existing --glow gradient */
     border: var(--ring) solid transparent;
     border-image: var(--glow) 1;
   }
   
-  /* Safari: we don’t need the masked halo pseudo element at all */
-  html.is-safari .object-glow::before {
+  html.is-safari .object-glow::before,
+  html.is-safari .object-glow::after {
     content: none;
-  }  
-
-/* Disable the glow “highlight” when the grid is in grouped view */
-#grid[data-view="grouped"] .object-glow {
-  display: none !important;
-}
+  }
+  
+  /* Disable the glow “highlight” when the grid is in grouped view */
+  #grid[data-view="grouped"] .object-glow {
+    display: none !important;
+  }
   
 #controls {
   position: fixed;
@@ -1422,7 +1464,26 @@ header {
   width: 100vw;
   overflow-x: scroll;
   overflow-y: hidden;
+}
 
+/* Hide scrollbars (keep scrolling) — used for horizontal scrollers across the app */
+:is(
+  .detail-tags-row--scroll,
+  #selection-bar .sb-tags-scroll,
+  #related-objects.related-strip,
+  .scroll-container-horizontal
+) {
+  scrollbar-width: none;       /* Firefox */
+  -ms-overflow-style: none;    /* old Edge/IE */
+}
+
+:is(
+  .detail-tags-row--scroll,
+  #selection-bar .sb-tags-scroll,
+  #related-objects.related-strip,
+  .scroll-container-horizontal
+)::-webkit-scrollbar {
+  display: none;               /* Chrome/Safari */
 }
 
 .scroll-container-vertical {
@@ -1930,6 +1991,8 @@ and pin the expanded panel to the right edge. */
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
+  position: relative;
 }
 
 .slide-in-handle .close-btn {
@@ -3706,8 +3769,8 @@ html.no-ken-burns .kb-img {
 }
 
 /* Grid image tiles: render via <img> (not background-image) so we can lazy-load via IO */
-.object.image { overflow: hidden; background-color: transparent; }
-.object.image img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.object.image { overflow: visible; background-color: transparent; }
+.object.image > img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 /* If the chosen asset is smaller than the tile, do NOT upscale it. */
 .object.image img.no-upscale {
