@@ -15,6 +15,7 @@
   --visited-dot-border: 2px;
   --visited-dot-scale: 1;
   --view-switcher-expanded-width: 176px;
+  --view-switcher-expanded-height: 176px;
   --view-switcher-expand-ms: 200ms;      /* bar expansion duration */
   --view-switcher-stagger-ms: 90ms;      /* delay between icons */
   --view-switcher-icon-lead-ms: 70ms; /* icons start this much before expansion ends */
@@ -102,6 +103,8 @@
   --prepage-bg-tilt-y: 0deg;
   --prepage-bg-perspective: 900px;
   --detail-description-max-height: 6rem; /* max height of inline detail text */
+  --detail-sticky-top: 20px; /* sticky offset for detail meta (desktop) */
+  --content-section-pad-top: 20px; /* matches .content-section padding-top */
   --prepage-side-w: 220px;      /* smaller side “padding” columns */
   --prepage-main-max: 900px;    /* wider middle content */  
   --prepage-actions-reserve: 120px;
@@ -1157,6 +1160,66 @@
   #grid[data-view="grouped"] .object-glow {
     display: none !important;
   }
+
+/* ---------------------------
+   Gallery glow plumbing
+   --------------------------- */
+
+/* Make every gallery item a positioning context for .object-glow */
+#group-gallery .gallery-box .item {
+  position: relative;
+  overflow: visible;
+  z-index: 0;
+}
+
+/* Solid surface layer (prevents glow tint inside gallery items) */
+#group-gallery .gallery-box .item::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+
+  /* sits between the glow (-1) and the real content (1) */
+  z-index: 0;
+
+  /* text tiles already set background-color on .item.text;
+     inheriting it here blocks the glow from tinting the tile */
+  background-color: inherit;
+
+  border-radius: inherit;
+}
+
+/* Keep real content above the glow */
+#group-gallery .gallery-box .item > :not(.object-glow) {
+  position: relative;
+  z-index: 1;
+}
+
+/* In the gallery, keep glow behind the media but above the gallery background */
+#group-gallery .gallery-box .item .object-glow {
+  z-index: -1;
+}
+
+/* Hard-disable glow painting unless JS explicitly enables it */
+#group-gallery[data-glow="off"] .object-glow {
+  display: none !important;
+}
+
+/* Ad-hoc gallery: show the same glow, but ONLY on hover/touch/focus */
+body.in-adhoc-gallery #group-gallery .item.has-glow:is(:hover, :active, :focus-visible) .object-glow {
+  opacity: 1;
+}
+
+/* Partial glow tuning (same as grid’s partial state) */
+body.in-adhoc-gallery #group-gallery .item.glow-partial .object-glow {
+  --halo-opacity: 0.18;
+  --halo-blur: 22px;
+  --halo-spread: 16px;
+
+  --halo2-opacity: 0.35;
+  --halo2-blur: 10px;
+  --halo2-spread: 8px;
+}
   
 #controls {
   position: fixed;
@@ -1361,6 +1424,78 @@
 }
 
 .view-switcher-btn:active { transform: scale(0.98); }
+
+/* ==========================
+   View switcher: vertical (expand downward)
+   Opt-in per element via: data-view-switcher-layout="vertical"
+   ========================== */
+
+   .view-switcher[data-view-switcher-layout="vertical"] {
+    /* keep it a compact FAB-sized pill when collapsed */
+    width: var(--fab-size);
+    height: var(--fab-size);
+  
+    /* stack: toggle on top, options below */
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+  
+    /* animate height instead of width */
+    transition:
+      height var(--view-switcher-expand-ms) ease,
+      box-shadow 150ms ease,
+      background-color 150ms ease;
+  }
+  
+  /* Expanded: open DOWNWARDS (height grows) */
+  .view-switcher[data-view-switcher-layout="vertical"]:hover,
+  .view-switcher[data-view-switcher-layout="vertical"]:focus-within,
+  .view-switcher[data-view-switcher-layout="vertical"].is-demo-open {
+    width: var(--fab-size); /* prevent horizontal expansion */
+    height: var(--view-switcher-expanded-height);
+  
+    /* override the horizontal pill's padding */
+    padding-right: 0;
+    padding-bottom: 12px;
+  }
+  
+  /* Manual collapse state (toggle click closes even if still hovered/focused) */
+  .view-switcher[data-view-switcher-layout="vertical"].is-force-collapsed,
+  .view-switcher[data-view-switcher-layout="vertical"].is-force-collapsed:hover,
+  .view-switcher[data-view-switcher-layout="vertical"].is-force-collapsed:focus-within,
+  .view-switcher[data-view-switcher-layout="vertical"].is-force-collapsed.is-demo-open {
+    width: var(--fab-size);
+    height: var(--fab-size);
+  
+    padding-right: 0;
+    padding-bottom: 0;
+  }
+  
+  /* Options: stack vertically */
+  .view-switcher[data-view-switcher-layout="vertical"] .view-switcher-options {
+    flex-direction: column;
+    align-items: center;
+  
+    /* replace left/right padding with top padding */
+    padding: 10px 0 0 0;
+    gap: 12px;
+  }
+  
+  /* Icon entrance animation: Y instead of X */
+  .view-switcher[data-view-switcher-layout="vertical"] .view-switcher-btn {
+    transform: translateY(-6px);
+  }
+  
+  .view-switcher[data-view-switcher-layout="vertical"]:hover .view-switcher-btn,
+  .view-switcher[data-view-switcher-layout="vertical"]:focus-within .view-switcher-btn,
+  .view-switcher[data-view-switcher-layout="vertical"].is-demo-open .view-switcher-btn {
+    transform: translateY(0);
+  }
+  
+  /* Manual collapse: keep buttons hidden + slightly shifted */
+  .view-switcher[data-view-switcher-layout="vertical"].is-force-collapsed .view-switcher-btn {
+    transform: translateY(-6px);
+  }
 
 .fab svg,
 .fab img {
@@ -1856,10 +1991,10 @@ body.in-adhoc-gallery #group-gallery .title-box h2 {
   --gallery-media-max-h: 320px;
 }
 
-#group-gallery .gallery-box img.item.image,
-#group-gallery .gallery-box video.item {
+#group-gallery .gallery-box .item.image img,
+#group-gallery .gallery-box .item.video video {
   max-height: var(--gallery-media-max-h);
-  width: auto;
+  width: 100%;
   height: auto;
   object-fit: contain;
   display: block;
@@ -2519,7 +2654,7 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 .content-section {
   /*height: 100%;*/
   color: var(--main-font-color);
-  padding-top: 20px;
+  padding-top: var(--content-section-pad-top);
   box-sizing: border-box;
 
   /* Divider is drawn via ::after so we can inset it per context (detail vs sidebar) */
@@ -2638,11 +2773,54 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 .content-section .right {
   padding-top: 20px;
   max-width: 50%;
-  height: 100%;
-  overflow-y: scroll;
   box-sizing: border-box;
-  padding-bottom: 50px;
 }
+
+/* Detail: by default (non-text objects), the big top block keeps an internal scroll on the RIGHT.
+   Text objects override this below to use a sticky LEFT column instead. */
+   #detail-content:not(.detail--text) .content-section.multi-column:not(.sub-section) .right {
+    height: 100%;
+    overflow-y: auto;
+    padding-bottom: 50px;
+  }
+  
+  /* Detail (text objects): keep the title/tags/meta (LEFT) sticky while the main content (RIGHT) scrolls in the page.
+     Sticky naturally stops when the first (non-sub-section) block ends. */
+  @media (min-width: 769px) {
+    #detail-content.detail--text .content-section.multi-column:not(.sub-section) .section-content {
+      align-items: flex-start;
+      height: auto;
+    }
+  
+    #detail-content.detail--text .content-section.multi-column:not(.sub-section) .left {
+      position: sticky;
+      top: var(--detail-sticky-top);
+      height: max-content;
+      align-self: flex-start;
+    }
+  
+    #detail-content.detail--text .content-section.multi-column:not(.sub-section) .right {
+      height: auto;
+      overflow: visible;
+      padding-bottom: 50px;
+    }
+
+    #detail-content.detail--text .content-section.multi-column.sub-section {
+      position: relative; /* makes the sticky boundary explicit */
+    }
+  
+    #detail-content.detail--text .content-section.multi-column.sub-section .section-header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: var(--main-bg-color);
+    
+      /* Pull the header up into the section's top padding so there's no see-through gap */
+      margin-top: calc(-1 * var(--content-section-pad-top));
+      padding-top: calc(12px + var(--content-section-pad-top));
+      padding-bottom: 12px;
+    }
+  }
 
 .content-section.sub-section .left {
   width: 30%;
@@ -2672,6 +2850,11 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
   max-height: 0;
   overflow: hidden;
   transition: max-height .3s ease;
+}
+
+/* Detail accordions should expand naturally (not be constrained by height:100%) */
+#detail-content .content-section.sub-section.collapsible .section-content {
+  height: auto;
 }
 
 #discover-connections .content-section.collapsible.is-open .section-content {
@@ -2715,6 +2898,8 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 .content-section.collapsible .section-header {
   display: flex;
   align-items: center;
+  cursor: pointer;
+  width: 100%;
 }
 
 /* sidebar section expand/collapse icon (mask-based, inherits currentColor) */
@@ -2722,6 +2907,7 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 .content-section.collapsible .section-header::after {
   content: '';
   margin-left: auto;
+  margin-right: var(--section-divider-right, 0px);
   width: var(--section-icon-size, 8px);
   height: var(--section-icon-size, 8px);
   display: inline-block;
@@ -2741,6 +2927,15 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 .content-section.collapsible.is-open h3::after,
 .content-section.collapsible.is-open .section-header::after {
   transform: rotate(180deg);
+}
+
+/* Detail page: make sub-section headers a full-row click target */
+#detail-content .content-section.sub-section .section-header {
+  padding: 12px 0;
+}
+
+#detail-content .content-section.sub-section .section-header h2 {
+  margin: 0;
 }
 
 /* Handle column: fixed */
@@ -3283,6 +3478,11 @@ ul.tag-group-switch {
   --overlay-menu-col-gap: clamp(24px, 6vw, 120px);
   --overlay-submenu-font-size: 2em;
   --overlay-episodes-font-scale: 0.8; /* Episodes will be 80% of normal submenu size */
+  /* Main menu item open animation */
+  --overlay-menu-item-in-ms: 180ms;
+  --overlay-menu-item-stagger-ms: 70ms;
+  --overlay-menu-item-dy: 10px; /* starts slightly “above”, moves down into place */
+  --overlay-menu-item-ease: cubic-bezier(.2,.8,.2,1);
   overflow: hidden;
 }
 
@@ -3352,6 +3552,35 @@ ul.tag-group-switch {
   display: flex;
   align-items: baseline;
   gap: 10px;
+}
+
+/* Animate main navigation items on menu open (staggered fade + slight downward slide) */
+#overlay-menu.active .main-menu .menu-item {
+  opacity: 0;
+  transform: translate3d(0, calc(-1 * var(--overlay-menu-item-dy)), 0);
+
+  transition:
+    opacity var(--overlay-menu-item-in-ms) ease,
+    transform var(--overlay-menu-item-in-ms) var(--overlay-menu-item-ease);
+
+  /* stagger using the JS-provided index: --menu-i: 0,1,2,... */
+  transition-delay: calc(var(--menu-i, 0) * var(--overlay-menu-item-stagger-ms));
+
+  will-change: opacity, transform;
+}
+
+#overlay-menu.active.menu-anim-in .main-menu .menu-item {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+/* Accessibility: respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  #overlay-menu.active .main-menu .menu-item {
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }
 
 /* Main menu: show dash only for the active main item */
@@ -3618,14 +3847,14 @@ ul.tag-group-switch {
   /*box-shadow: 0 1px 3px rgba(0,0,0,.06);*/
 }
   
-/* Top / Bottom centered (no rotation). Explicitly unset conflicting edges. */
-#workspace .count-invisible-objects.top    { top: 8px;    bottom: auto; left: 50%; right: auto; transform: translateX(-50%); }
-#workspace .count-invisible-objects.bottom { top: auto;   bottom: 8px;  left: 50%; right: auto; transform: translateX(-50%); }
+/* Usable center = viewport center shifted left by half the visible slide-ins width */
+#workspace { --usable-center-x: calc(50% - (var(--slideins-visible, 0px) / 2)); }
+
+/* Top / Bottom centered within the usable viewport */
+#workspace .count-invisible-objects.top    { top: 8px;    bottom: auto; left: var(--usable-center-x); right: auto; transform: translateX(-50%); }
+#workspace .count-invisible-objects.bottom { top: auto;   bottom: 8px;  left: var(--usable-center-x); right: auto; transform: translateX(-50%); }
 
 /* Left / Right vertically centered (rotate like in the demo). Explicitly unset conflicting edges. */
-
-/* The right badge sits to the LEFT of the slide-in width + 8px. */
-#workspace { --slideins-width: 0px; } /* default */
   
 /* Optional: fade when zero to reduce clutter */
 #workspace .count-invisible-objects[aria-hidden="true"] { opacity: 0; pointer-events: none; }
@@ -4293,6 +4522,10 @@ body.menu-open .header-right .header-close { display: inline-grid; }
 }
 .related-theme-item:last-child {
   margin-bottom: 0;
+}
+
+#detail-content #related-themes {
+  padding-bottom: 8px;
 }
 
 /* Related Themes (detail page) */
