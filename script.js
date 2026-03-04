@@ -5006,6 +5006,9 @@ function initMobileSlideInsToggle() {
 
     document.body.classList.add('in-gallery', 'in-adhoc-gallery');   // mark ad-hoc mode
 
+    // Apply tag-glow state to the freshly rendered ad-hoc items
+    updateObjectGlowsWithGradient();
+
     window.__dispatchViewChange();
     if (typeof window.renderSelectionBar === 'function') {
       window.renderSelectionBar();                     // keep the bar visible, but no button
@@ -5136,6 +5139,9 @@ function initMobileSlideInsToggle() {
     if (typeof window.renderAdhocGallery === 'function') {
       window.renderAdhocGallery(objs);                    // reuse your gallery item builder
     }
+
+    // Re-apply glow classes after re-render
+    updateObjectGlowsWithGradient();
 
     // 3) Re-attach observers (same as openTagsGallery did)
     window.__galleryIO__?.onOpen?.();
@@ -5600,20 +5606,21 @@ function initMobileSlideInsToggle() {
         // Small helper so we don’t duplicate the mapping logic
         const renderTagList = (selector, source) => {
           const host = detailEl.querySelector(selector);
-          if (!host) return;
+          if (!host) return 0;
           const list = Array.isArray(source) ? source : [];
           const uniq = Array.from(new Set(list));
           host.innerHTML = uniq.map(t => `<li>${esc(t)}</li>`).join('');
+          return uniq.length;
         };
 
-        // Topics (top row) still use regular tags
         renderTagList('#topics-list', obj.tags);
 
         // Content-section tags now use CONNECTING TAGS
-        renderTagList('#detail-tags-lower', obj.connectingTags);
-
-        // Make lower connecting tags clickable to jump back into clustered view + open adhoc panel
+        const lowerCount = renderTagList('#detail-tags-lower', obj.connectingTags);
         const lowerHost = detailEl.querySelector('#detail-tags-lower');
+        setDetailSectionVisibility(lowerHost, lowerCount > 0);
+
+
         if (lowerHost && !lowerHost.dataset.clickWired) {
           lowerHost.dataset.clickWired = '1';
 
@@ -5989,20 +5996,29 @@ function initMobileSlideInsToggle() {
 
     }
 
+    function setDetailSectionVisibility(hostEl, shouldShow) {
+      if (!hostEl) return;
+    
+      // Target the big “content-section … sub-section” wrapper in the detail page
+      const section =
+        hostEl.closest('.content-section.multi-column.sub-section') ||
+        hostEl.closest('.content-section');
+    
+      if (!section) return;
+    
+      section.hidden = !shouldShow;
+    }
+
     function renderReferencesSection(obj) {
       const host = document.getElementById('detail-references');
       if (!host || !obj) return;
     
-      // Use the shared Strapi → <p>…</p> helper so References behaves
-      // like Content and other rich text fields.
       const html = toParagraphHtml(obj.references);
+      const hasContent = !!(html && html.trim());
     
-      if (html && html.trim()) {
-        host.innerHTML = html;
-      } else {
-        host.innerHTML = '<p>No references.</p>';
-      }
-    } 
+      host.innerHTML = hasContent ? html : '';
+      setDetailSectionVisibility(host, hasContent);
+    }
 
     function renderRelatedThemes(obj) {
       const host = document.getElementById('related-themes');
@@ -6016,7 +6032,7 @@ function initMobileSlideInsToggle() {
     
       const list = Array.isArray(obj?.themes) ? obj.themes : [];
     
-      host.innerHTML = list.map(t => {
+      const items = list.map(t => {
         const rawName = t.name ?? '';
         const name    = esc(rawName);
         const desc    = esc(t.description);
@@ -6026,23 +6042,26 @@ function initMobileSlideInsToggle() {
         if (!name && !desc) return '';
     
         return `
-        <div class="related-theme-item">
-          ${name ? `<h4>${name}</h4>` : ''}
-          ${desc ? `<p>${desc}</p>` : ''}
-          <div class="related-theme-actions">
-            <a href="#"
-               class="button related-theme-explore"
-               data-theme-id="${idAttr}"
-               data-theme-name="${nameAttr}">
-              <span class="text">Explore Theme</span>
-              <span class="icon" aria-hidden="true"></span>
-            </a>
+          <div class="related-theme-item">
+            ${name ? `<h4>${name}</h4>` : ''}
+            ${desc ? `<p>${desc}</p>` : ''}
+            <div class="related-theme-actions">
+              <a href="#"
+                 class="button related-theme-explore"
+                 data-theme-id="${idAttr}"
+                 data-theme-name="${nameAttr}">
+                <span class="text">Explore Theme</span>
+                <span class="icon" aria-hidden="true"></span>
+              </a>
+            </div>
           </div>
-        </div>
-      `;      
-      }).join('');
+        `;
+      }).filter(Boolean);
     
-      // One delegated click handler per host
+      host.innerHTML = items.join('');
+      setDetailSectionVisibility(host, items.length > 0);
+    
+      // Keep your existing delegated click handler (bind once)
       if (!host._themeExploreBound) {
         host._themeExploreBound = true;
     
@@ -6061,7 +6080,7 @@ function initMobileSlideInsToggle() {
           }
         });
       }
-    }    
+    }
 
     // Helper: get all objects in a group (single source of truth)
     function getGroupObjects(groupId) {
@@ -6083,26 +6102,33 @@ function initMobileSlideInsToggle() {
     
       // Render
       host.innerHTML = '';
+    
+      // ✅ Hide the whole section if there’s nothing to show
+      if (!ordered.length) {
+        setDetailSectionVisibility(host, false);
+        return;
+      }
+    
+      setDetailSectionVisibility(host, true);
+    
       ordered.forEach(o => {
-        // Reuse your existing gallery visuals
         const el = window.__ui.makeGalleryItem(o);
     
-        // Jump straight to detail on click
         el.addEventListener('click', () => {
           window.openObjectDetail?.({
             objectId: o.id,
-            from: 'related',          // context tag; nav still works
+            from: 'related',
             gid: obj.groupId
           });
         });
     
         el.classList.add('visible');
-
         host.appendChild(el);
       });
-
+    
+      // Only init when we actually rendered items
       window.__relatedStripAudio?.init();
-    }    
+    }
 
     let __detailWS = null;
     let __detailWS_RO = null;
@@ -6347,6 +6373,10 @@ function initMobileSlideInsToggle() {
       window.markObjectVisited?.(obj ? obj.id : objectId);
       
       if (obj) {      
+        // Tag the detail screen with the current object type (used by CSS for sticky layout)
+        detailEl.dataset.objectType = obj.type || '';
+        detailEl.classList.toggle('detail--text', obj.type === 'text');
+  
         // Sync the 3 content sidebars with this object's group
         const contentGroupId = gid || obj.groupId || null;
         if (contentGroupId && typeof updateContentSidebarsForGroup === 'function') {
@@ -6363,8 +6393,14 @@ function initMobileSlideInsToggle() {
           window.enhanceContentSections(detailEl);
         }
       } else {
+        // Ensure type-specific layout classes don't linger if lookup fails
+        detailEl.classList.remove('detail--text');
+        detailEl.dataset.objectType = '';
+
         console.warn('[detail] object not found for id:', objectId);
       }
+
+
 
       // If we came from gallery: hide it (and detach observers) so nothing interferes
       if (from === 'gallery' && groupGalleryEl?.classList.contains('active')) {
@@ -7070,134 +7106,144 @@ function initMobileSlideInsToggle() {
 
   function createGalleryItem(o) {
     const tooltip = getObjectTooltipLabel(o);
-    // IMAGE (allow up to 1.5x intrinsic CSS width, DPR-aware)
-    // REPLACE the whole image case with this:
-    if (o.type === 'image') {
+  
+    // Wrapper so we can attach the same .object-glow layer as the grid
+    // (img/video can’t host pseudo-element-based glow reliably).
+    const type = String(o?.type || '').toLowerCase() || 'text';
+    const item = document.createElement('div');
+    item.className = `item ${type}`;
+    item.style.display = 'block';
+  
+    // id for click-to-detail
+    item.dataset.oid = o.id || '';
+  
+    // Tag data: use the SAME source as the filter system (connectingTags-only).
+    const tagList =
+      (typeof getObjectFilterTags === 'function')
+        ? (getObjectFilterTags(o) || [])
+        : (Array.isArray(o?.connectingTags) ? o.connectingTags : []);
+    item.dataset.tags = Array.isArray(tagList) ? tagList.join(',') : '';
+  
+    if (tooltip) item.dataset.cursorLabelSingle = tooltip;
+  
+    // Glow layer (JS toggles has-glow / glow-full / glow-partial on the wrapper)
+    const glowDiv = document.createElement('div');
+    glowDiv.className = 'object-glow';
+    item.appendChild(glowDiv);
+  
+    // IMAGE
+    if (type === 'image') {
       const img = document.createElement('img');
-      img.className = 'item image';
       img.alt = o.alt || '';
       img.loading = 'lazy';
-
+  
       // Desired CSS width for this gallery item (same logic as before)
       const desiredCss = randItemWidth(120, 200); // 120..200 px
+      item.style.width = `${desiredCss}px`;
+  
       const dpr = window.devicePixelRatio || 1;
-      const needPx = Math.round(desiredCss * dpr * 1.5); // small headroom for zoom/hover
-
-      // Look up Strapi file meta (added in step 2). Keyed by the original/master URL.
-      // Falls back gracefully if meta isn't present yet.
+      const needPx = Math.round(desiredCss * dpr * 1.5);
+  
       const meta = (window.__mediaMeta__ && window.__mediaMeta__.get(o.image)) || o._mediaMeta || null;
-
+  
       let chosenUrl = o.image || o.src || o.url || '';
       let chosenW, chosenH;
-
+  
       if (meta && meta.formats) {
-        // Use the helper from step 2
         const best = pickImageVariant(meta.formats, needPx);
         if (best && best.url) {
           chosenUrl = best.url;
           chosenW = best.width;
           chosenH = best.height;
         }
-
-        // Optional: give the browser choices
+  
         const candidates = Object.values(meta.formats)
           .filter(v => v && v.url && v.width)
           .sort((a, b) => a.width - b.width)
           .map(v => `${v.url} ${v.width}w`)
           .join(', ');
+  
         if (candidates) {
           img.srcset = candidates;
           img.sizes = `${desiredCss}px`;
         }
       }
-
+  
       img.src = chosenUrl;
-
-      // Size the box in CSS (keeps your layout)
-      img.style.width = `${desiredCss}px`;
+  
+      // Fill wrapper width; height stays natural (CSS also caps max-height)
+      img.style.width = '100%';
       img.style.height = 'auto';
       img.style.display = 'block';
-
-      // Optional: width/height attributes help reduce CLS if we know them
+  
       if (chosenW && chosenH) {
         img.width = chosenW;
         img.height = chosenH;
       }
-
-      img.dataset.oid = o.id || '';
-      if (tooltip) img.dataset.cursorLabelSingle = tooltip;
-      return img;
+  
+      item.appendChild(img);
+      return item;
     }
-
+  
     // VIDEO
-    if (o.type === 'video') {
+    if (type === 'video') {
       const vid = document.createElement('video');
-      vid.className = 'item';
       vid.setAttribute('playsinline', '');
       vid.setAttribute('muted', '');
       vid.setAttribute('loop', '');
       vid.dataset.src = o.video || o.src || o.url || '';
       vid.preload = 'none';
       vid.poster = window.getVideoPlaceholderPoster?.() || '';
-      vid.style.width  = `${randItemWidth()}px`;   // ← random width
-      vid.style.height = 'auto';                   // ← auto height
+  
+      item.style.width = `${randItemWidth()}px`;
+  
+      vid.style.width = '100%';
+      vid.style.height = 'auto';
       vid.style.display = 'block';
-      //vid.addEventListener('mouseover', () => { try { vid.play(); } catch {} });
-      //vid.addEventListener('mouseout',  () => { try { vid.pause(); } catch {} });
-
-      vid.dataset.oid = o.id || '';
-      if (tooltip) vid.dataset.cursorLabelSingle = tooltip;
-      return vid;
+  
+      item.appendChild(vid);
+      return item;
     }
-
+  
     // TEXT
-    if (o.type === 'text') {
-      const d = document.createElement('div');
-      d.className = 'item text';
-      d.style.width = `${randItemWidth(120, 200)}px`;      // ← random width
+    if (type === 'text') {
+      item.style.width = `${randItemWidth(120, 200)}px`;
+  
       const span = document.createElement('span');
       span.className = 'scaling-text';
       span.textContent = o.text || o.caption || o.title || '';
-      d.appendChild(span);
-
-      d.dataset.oid = o.id || '';
-      if (tooltip) d.dataset.cursorLabelSingle = tooltip;
-      return d;
+      item.appendChild(span);
+  
+      return item;
     }
-
+  
     // AUDIO (WaveSurfer picks these up via IO)
-    if (o.type === 'audio') {
-      const item = document.createElement('div');
-      item.className = 'item audio';
-      item.style.width = `${randItemWidth()}px`;   // ← random width for the whole item
-      item.style.display = 'block';
-
+    if (type === 'audio') {
+      item.style.width = `${randItemWidth()}px`;
+  
       const wave = document.createElement('div');
       wave.className = 'wave';
       wave.id = `wave_${o.id || uid()}_g`;
-      wave.style.width = '100%';                   // fill the item’s random width
+      wave.style.width = '100%';
       wave.style.height = '50px';
+  
       item.dataset.audioSrc = o.audio || o.src || o.url || '';
       if (window.addAudioPlaceholder) window.addAudioPlaceholder(wave);
+  
       item.appendChild(wave);
-
-      item.dataset.oid = o.id || '';
-      if (tooltip) item.dataset.cursorLabelSingle = tooltip;
       return item;
     }
-
+  
     // Fallback
-    const d = document.createElement('div');
-    d.className = 'item text';
-    d.style.width = `${randItemWidth(120, 200)}px`;        // ← random width
+    item.classList.add('text');
+    item.style.width = `${randItemWidth(120, 200)}px`;
+  
     const span = document.createElement('span');
     span.className = 'scaling-text';
     span.textContent = o.title || '[unknown]';
-    d.appendChild(span);
-
-    d.dataset.oid = o.id || '';
-    if (tooltip) d.dataset.cursorLabelSingle = tooltip;
-    return d;
+    item.appendChild(span);
+  
+    return item;
   }
 
   // Make the gallery item builder reusable outside the gallery IIFE
@@ -7243,6 +7289,13 @@ function initMobileSlideInsToggle() {
   // --- Gallery layout config (override via window.GALLERY_LAYOUT_CONFIG before script.js) ---
   const GALLERY_LAYOUT = {
     itemsPerCol: 3,              // keeps your old "3 items per column" rule as the baseline
+    // Small galleries: limit how many items can stack in one column
+    // N <= 4  -> 1 per column
+    // N <= 6  -> 2 per column
+    smallGroupRules: [
+      { maxN: 4, maxItemsPerCol: 1 },
+      { maxN: 6, maxItemsPerCol: 2 },
+    ],
     maxCols: 28,                 // safety: avoid absurdly many columns
     heightBudgetRatio: 0.92,     // how much of the visible gallery height we consider "usable"
     weightUnitPx: 100,           // 1.0 "weight" ≈ 100px (makes viewport budgeting easy)
@@ -7302,6 +7355,28 @@ function initMobileSlideInsToggle() {
     return idx;
   }
 
+  function smallGroupCapForCount(N) {
+    const rules = Array.isArray(GALLERY_LAYOUT.smallGroupRules)
+      ? GALLERY_LAYOUT.smallGroupRules
+      : [];
+    for (const r of rules) {
+      if (N <= (r.maxN ?? -1)) return (r.maxItemsPerCol ?? null);
+    }
+    return null; // no cap -> default behavior
+  }
+
+  function pickLightestIndexWithCap(weights, counts, cap) {
+    // Returns -1 if no column has free space under the cap.
+    let idx = -1;
+    let min = Infinity;
+    for (let i = 0; i < weights.length; i++) {
+      if ((counts[i] ?? 0) >= cap) continue;
+      const v = weights[i] ?? 0;
+      if (v < min) { min = v; idx = i; }
+    }
+    return idx;
+  }
+
   function clamp(n, lo, hi) {
     return Math.max(lo, Math.min(hi, n));
   }
@@ -7313,14 +7388,17 @@ function initMobileSlideInsToggle() {
     return usablePx / GALLERY_LAYOUT.weightUnitPx;
   }
 
-  function computeInitialColCount(list) {
+  function computeInitialColCount(list, { capItemsPerCol = null } = {}) {
     const N = Array.isArray(list) ? list.length : 0;
     if (!N) return 1;
 
-    // Old rule baseline: ceil(N/3)
-    const baseByCount = Math.ceil(N / (GALLERY_LAYOUT.itemsPerCol || 3));
+    // Default: your existing baseline
+    const perCol = capItemsPerCol || (GALLERY_LAYOUT.itemsPerCol || 3);
 
-    // New rule: add columns when estimated total height exceeds the per-column budget
+    // Baseline: how many columns needed by count
+    const baseByCount = Math.ceil(N / perCol);
+
+    // Keep your existing height-based expansion logic
     const maxColW = getMaxColWeight();
     const totalW = list.reduce((sum, o) => sum + estimateGalleryWeight(o), 0);
     const byHeight = Math.ceil(totalW / Math.max(0.1, maxColW));
@@ -7348,32 +7426,58 @@ function initMobileSlideInsToggle() {
     }
 
     const maxColW = getMaxColWeight();
-    const initialCols = computeInitialColCount(objs);
 
+    // Apply special distribution rules only for small galleries
+    const cap = smallGroupCapForCount(objs.length);
+
+    const initialCols = computeInitialColCount(objs, { capItemsPerCol: cap });
     const cols = makeColumns(initialCols);
+
     const colWeights = new Array(cols.length).fill(0);
+    const colCounts  = cap ? new Array(cols.length).fill(0) : null;
 
     objs.forEach((o) => {
       const w = estimateGalleryWeight(o);
-      let idx = pickLightestIndex(colWeights);
 
-      // Safety net: if even the lightest column would exceed the budget, add a new column
+      let idx;
+      if (cap) {
+        idx = pickLightestIndexWithCap(colWeights, colCounts, cap);
+
+        // If all columns are "full" under the cap, add one
+        if (idx === -1 && cols.length < GALLERY_LAYOUT.maxCols) {
+          const c = document.createElement('div');
+          c.className = 'column';
+          cols.push(c);
+          box.appendChild(c);
+          colWeights.push(0);
+          colCounts.push(0);
+          idx = cols.length - 1;
+        }
+
+        // Last-resort fallback (should be rare)
+        if (idx === -1) idx = pickLightestIndex(colWeights);
+      } else {
+        idx = pickLightestIndex(colWeights);
+      }
+
+      // Keep your existing height-budget safety net
       if ((colWeights[idx] + w) > maxColW && cols.length < GALLERY_LAYOUT.maxCols) {
         const c = document.createElement('div');
         c.className = 'column';
         cols.push(c);
         box.appendChild(c);
         colWeights.push(0);
+        if (colCounts) colCounts.push(0);
         idx = cols.length - 1;
       }
 
       const el = createGalleryItem(o);
 
-      applyGalleryXJitter(el, cols[idx]); // NEW: restore left/right shift
+      applyGalleryXJitter(el, cols[idx]); // keep existing behavior
 
       cols[idx].appendChild(el);
       colWeights[idx] += w;
-
+      if (colCounts) colCounts[idx] += 1;
     });
 
     requestAnimationFrame(() => {
@@ -9352,6 +9456,14 @@ window.addEventListener('DOMContentLoaded', async () => {
     dynamicHeight: true
   });
 
+  initSlideInAccordion('#detail-content', {
+    mode: 'collapsible',
+    dynamicHeight: false,
+    releaseAfterOpen: true, // NEW: prevents “content cut too early”
+    initialOpen: 'all',
+    sectionSelector: '.content-section.sub-section'
+  });
+
   attachSecondaryAutoClose('#discover-connections');
 
   // Close secondary when any section is opened in this slide-in
@@ -9763,17 +9875,35 @@ function updateObjectGlowsWithGradient() {
   const gridEl = document.getElementById('grid');
   if (!gridEl) return;
 
+  const ggEl = document.getElementById('group-gallery');
+  const adhocActive =
+    !!ggEl &&
+    ggEl.classList.contains('active') &&
+    document.body.classList.contains('in-adhoc-gallery');
+
   const anyGlowActive = (themeFilter != null) || (selected.length > 0);
+
+  // Grid always reflects glow state
   gridEl.setAttribute('data-glow', anyGlowActive ? 'on' : 'off');
 
-  // If nothing active, hide glows cheaply and clear classes on previously glowing objects
+  // Gallery glows are ONLY allowed in the ad-hoc tags gallery
+  if (ggEl) ggEl.setAttribute('data-glow', (adhocActive && anyGlowActive) ? 'on' : 'off');
+
+  // Helper: remove glow classes from a node list
+  const clearGlowClasses = (nodes) => {
+    nodes.forEach(el => el.classList.remove('has-glow', 'glow-partial', 'glow-full'));
+  };
+
+  // If nothing active: hard clear and bail
   if (!anyGlowActive) {
     gridEl.style.removeProperty('--grid-glow');
+    if (ggEl) ggEl.style.removeProperty('--grid-glow');
 
-    document
-      .querySelectorAll('.object.has-glow, .object.glow-partial, .object.glow-full')
-      .forEach(el => el.classList.remove('has-glow', 'glow-partial', 'glow-full'));
+    clearGlowClasses(document.querySelectorAll('.object.has-glow, .object.glow-partial, .object.glow-full'));
 
+    if (ggEl) {
+      clearGlowClasses(ggEl.querySelectorAll('.item.has-glow, .item.glow-partial, .item.glow-full'));
+    }
     return;
   }
 
@@ -9783,7 +9913,7 @@ function updateObjectGlowsWithGradient() {
     themedIds = new Set(objs.map(o => String(o.id)));
   }
 
-  // Helper: build a conic gradient from ALL selected tag colors (once per update)
+  // Helper: build a conic gradient from ALL selected tag colors
   const conicFrom = (colors) => {
     const n = Math.max(1, colors.length);
     const stops = colors.map((c, i) => {
@@ -9794,56 +9924,77 @@ function updateObjectGlowsWithGradient() {
     return `conic-gradient(from 0deg at 50% 50%, ${stops.join(", ")})`;
   };
 
-  // === Set the glow paint ONCE on the grid (inherited by all .object-glow) ===
+  // Compute the glow paint ONCE
+  let glowPaint = 'transparent';
+
   if (themeFilter && themedIds) {
     const color = (typeof getThemeCounterColor === 'function')
       ? getThemeCounterColor()
       : (getComputedStyle(document.documentElement).getPropertyValue('--offgrid-theme-color').trim() || '#000');
 
-    // Use a gradient form even for single colors so Safari border-image stays happy
-    gridEl.style.setProperty('--grid-glow', `linear-gradient(${color}, ${color})`);
+    glowPaint = `linear-gradient(${color}, ${color})`;
   } else {
     const colors = selected.map(t => tagColors[t]).filter(Boolean);
 
-    if (!colors.length) {
-      gridEl.style.setProperty('--grid-glow', 'transparent');
-    } else if (colors.length === 1) {
-      gridEl.style.setProperty('--grid-glow', `linear-gradient(${colors[0]}, ${colors[0]})`);
-    } else {
-      gridEl.style.setProperty('--grid-glow', conicFrom(colors));
-    }
+    if (!colors.length) glowPaint = 'transparent';
+    else if (colors.length === 1) glowPaint = `linear-gradient(${colors[0]}, ${colors[0]})`;
+    else glowPaint = conicFrom(colors);
   }
 
-  // === Toggle glow per object (no per-object gradient computations) ===
-  document.querySelectorAll(".object").forEach(div => {
-    // If some object ever missed the glow child, don't toggle anything
-    if (!div.querySelector(".object-glow")) return;
+  // Apply paint to grid, and to ad-hoc gallery (only)
+  gridEl.style.setProperty('--grid-glow', glowPaint);
+  if (ggEl) {
+    if (adhocActive) ggEl.style.setProperty('--grid-glow', glowPaint);
+    else ggEl.style.removeProperty('--grid-glow');
+  }
 
-    const tags = (div.dataset.tags || '').split(",").filter(Boolean);
+  // Shared state resolver (same logic as the grid used before)
+  const glowStateFor = (tagsCsv, idForTheme = '') => {
+    const tags = String(tagsCsv || '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
 
-    let state = 'off'; // off | full | partial
-
-    // Theme mode wins over tag mode
+    // Theme mode wins
     if (themeFilter && themedIds) {
-      state = themedIds.has(String(div.id)) ? 'full' : 'off';
-    } else {
-      if (selected.length === 0) {
-        state = 'off';
-      } else if (TAG_MODE === TAG_MODES.OR) {
-        state = tags.some(t => activeTags.has(t)) ? 'full' : 'off';
-      } else {
-        // AND mode: keep your current behavior (full intersection vs partial overlap)
-        const matchesAll  = selected.every(t => tags.includes(t));
-        const matchesSome = tags.some(t => activeTags.has(t));
-        state = !matchesSome ? 'off' : (matchesAll ? 'full' : 'partial');
-      }
+      return themedIds.has(String(idForTheme)) ? 'full' : 'off';
     }
 
+    if (selected.length === 0) return 'off';
+
+    if (TAG_MODE === TAG_MODES.OR) {
+      return tags.some(t => activeTags.has(t)) ? 'full' : 'off';
+    }
+
+    // AND mode
+    const matchesAll  = selected.every(t => tags.includes(t));
+    const matchesSome = tags.some(t => activeTags.has(t));
+    return !matchesSome ? 'off' : (matchesAll ? 'full' : 'partial');
+  };
+
+  const applyGlowClassesToEl = (el, state) => {
     const on = state !== 'off';
-    div.classList.toggle('has-glow', on);
-    div.classList.toggle('glow-full', state === 'full');
-    div.classList.toggle('glow-partial', state === 'partial');
+    el.classList.toggle('has-glow', on);
+    el.classList.toggle('glow-full', state === 'full');
+    el.classList.toggle('glow-partial', state === 'partial');
+  };
+
+  // === Grid objects ===
+  document.querySelectorAll('.object').forEach(div => {
+    if (!div.querySelector('.object-glow')) return;
+    const state = glowStateFor(div.dataset.tags, div.id);
+    applyGlowClassesToEl(div, state);
   });
+
+  // === Ad-hoc gallery items (ONLY) ===
+  if (adhocActive && ggEl) {
+    ggEl.querySelectorAll('.gallery-box .item').forEach(item => {
+      if (!item.querySelector('.object-glow')) return;
+      const id = item.dataset.oid || item.id || '';
+      const state = glowStateFor(item.dataset.tags, id);
+      applyGlowClassesToEl(item, state);
+    });
+  }
 }
 
 function initSlideInTags() {
@@ -10201,14 +10352,49 @@ function initSlideInAccordion(slideInSelector, opts = {}) {
   if (mode === 'static') return;
 
   const singleOpen = (mode === 'accordion');
-  // only the real sidebar sections, skip the big multi-column block at the top
+
+  // Allow callers to control which sections participate.
+  // Default keeps the old behavior (skip .multi-column) so sidebars don't change.
+  const sectionSelector = opts.sectionSelector || '.content-section';
+  const sectionFilter =
+    (typeof opts.sectionFilter === 'function')
+      ? opts.sectionFilter
+      : (opts.sectionSelector ? (() => true) : (sec) => !sec.classList.contains('multi-column'));
+
   const sections = Array
-    .from(root.querySelectorAll('.content-section'))
-    .filter(sec => !sec.classList.contains('multi-column'));
+    .from(root.querySelectorAll(sectionSelector))
+    .filter(sectionFilter);
+
   if (!sections.length) return;
 
   const observers = new WeakMap();
   const dynamicHeight = opts.dynamicHeight ?? true;
+
+  // NEW: for natural-height accordions (detail page), remove max-height after opening
+  const releaseAfterOpen = opts.releaseAfterOpen ?? (!dynamicHeight);
+  const RELEASE_MS = 360; // keep in sync with CSS transition (~0.3s)
+  
+  function releaseNaturalHeightAfterOpen(sec) {
+    if (!releaseAfterOpen) return;
+  
+    const content = sec.querySelector('.section-content');
+    if (!content) return;
+  
+    const finish = () => {
+      if (!sec.classList.contains('is-open')) return;
+      // Let the section grow naturally so late-loading content can’t be clipped
+      content.style.maxHeight = 'none';
+      content.style.overflow = 'visible';
+    };
+  
+    // Prefer the real transition end; fallback handles reduced-motion / missing events
+    content.addEventListener('transitionend', (e) => {
+      if (e && e.propertyName && e.propertyName !== 'max-height') return;
+      finish();
+    }, { once: true });
+  
+    window.setTimeout(finish, RELEASE_MS);
+  }
 
   // NEW: optional scroll-to-top on open (off by default)
   const scrollOnOpen = opts.scrollOnOpen ?? false;
@@ -10361,8 +10547,11 @@ function initSlideInAccordion(slideInSelector, opts = {}) {
     // compute height from remaining space
     measureOpenHeight(sec);
 
-    // keep in sync
-    if (content && !observers.get(content) && 'ResizeObserver' in window) {
+    // NEW: if this is a natural-height accordion, release max-height after it opens
+    releaseNaturalHeightAfterOpen(sec);
+
+    // keep in sync (ONLY makes sense for dynamicHeight=true)
+    if (dynamicHeight && content && !observers.get(content) && 'ResizeObserver' in window) {
       const ro = new ResizeObserver(() => {
         if (sec.classList.contains('is-open')) {
           measureOpenHeight(sec);
@@ -10388,7 +10577,18 @@ function initSlideInAccordion(slideInSelector, opts = {}) {
     header?.setAttribute('aria-expanded', 'false');
 
     if (content) {
-      content.style.maxHeight = content.scrollHeight + 'px';
+      // If we released to "none", pin to a pixel value so collapse animation works
+      if (releaseAfterOpen) {
+        content.style.overflow = 'hidden';
+        if (content.style.maxHeight === 'none') {
+          content.style.maxHeight = content.scrollHeight + 'px';
+        } else {
+          content.style.maxHeight = content.scrollHeight + 'px';
+        }
+      } else {
+        content.style.maxHeight = content.scrollHeight + 'px';
+      }
+    
       requestAnimationFrame(() => { content.style.maxHeight = '0px'; });
     }
     sec.classList.remove('is-open');
@@ -10418,12 +10618,29 @@ function initSlideInAccordion(slideInSelector, opts = {}) {
   // initial open behavior
   // default stays the same: open first section (index 0)
   // set opts.initialOpen to -1 (or null/false) to start fully collapsed
-  const initialOpen = (opts.initialOpen ?? 0);
+  // initial open behavior
+  // - accordion: default open first section
+  // - collapsible: default open ALL sections (keeps existing "everything visible" behavior)
+  const initialOpen = (opts.initialOpen ?? (singleOpen ? 0 : 'all'));
 
   if (initialOpen === -1 || initialOpen === null || initialOpen === false) {
     // all closed
     sections.forEach(closeSection);
+
+  } else if (initialOpen === 'all') {
+    // all open
+    sections.forEach(openSection);
+
+  } else if (Array.isArray(initialOpen)) {
+    // open only listed indices
+    sections.forEach(closeSection);
+    initialOpen.forEach(i => {
+      const idx = Math.max(0, Math.min(sections.length - 1, Number(i) || 0));
+      openSection(sections[idx]);
+    });
+
   } else {
+    // open only one index
     const idxToOpen =
       Math.max(0, Math.min(sections.length - 1, Number(initialOpen) || 0));
 
@@ -10746,6 +10963,9 @@ function initOverlayMenu() {
 
   const mainItems = overlay.querySelectorAll('.menu-item');
   const subMenu   = document.getElementById('sub-menu');
+
+  // Used for CSS stagger timing (0,1,2,3,...)
+  mainItems.forEach((el, idx) => el.style.setProperty('--menu-i', idx));
 
   const overlayContent = overlay.querySelector('.overlay-content');
   const mainMenuEl     = overlay.querySelector('.main-menu');
@@ -11086,12 +11306,22 @@ function initOverlayMenu() {
   const openOverlay = (e) => {
     e?.preventDefault();
     previousFocus = document.activeElement;
+
+    // Reset animation state so it can replay every time
+    overlay.classList.remove('menu-anim-in');
+
+    // Show overlay (your existing behavior)
     overlay.classList.add('active');
     document.body.classList.add('menu-open');           // <-- mode class for header
 
+    // Kick the stagger animation one frame later (ensures transitions run)
+    requestAnimationFrame(() => {
+      if (!overlay.classList.contains('active')) return; // in case it got closed quickly
+      overlay.classList.add('menu-anim-in');
+    });
+
     // Reset menu state: no active main item, no sub-items visible
     mainItems.forEach((i) => i.classList.remove('active'));
-
     resetSubMenu({ animate: false });
 
     headerClose?.focus?.();
@@ -11099,10 +11329,14 @@ function initOverlayMenu() {
   
   const closeOverlay = (e) => {
     e?.preventDefault();
+
+    // Clean up animation class (so next open starts from hidden state)
+    overlay.classList.remove('menu-anim-in');
+
     overlay.classList.remove('active');
     document.body.classList.remove('menu-open');        // <-- remove mode class
     previousFocus?.focus?.();
-  };  
+  }; 
 
   // Expose for other handlers (e.g., footer links that open subpages)
   window.closeOverlayMenu = closeOverlay;
