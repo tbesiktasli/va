@@ -1076,7 +1076,7 @@
     border-radius: var(--object-radius, 0px);
   
   /* fed once per filter change on #grid (JS sets these) */
-  --glow: var(--grid-glow, transparent);
+  --glow: var(--object-glow, var(--grid-glow, transparent));
 
   /* knobs */
   --ring: 2px;                   /* Safari fallback border thickness */
@@ -3305,7 +3305,7 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
   padding: 6px 10px;
   border-radius: 16px; /* Rounded corners */
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
   display: inline-block; /* Ensures button-like appearance */
   background-color: var(--main-bright-bg-color);
   letter-spacing: 0.06em;
@@ -3326,7 +3326,13 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 }
 
 .tags li:hover {
-  background-color: #EED9C4; /* Darker blue on hover */
+  background-color: #EED9C4; /* default hover for tags that do not opt into custom hover */
+}
+
+.tags li.tag-pill-hover--tag-outline:hover:not(.disabled) {
+  background-color: var(--main-bright-bg-color);
+  border-color: var(--tag-pill-hover-border-color, var(--main-button-outline-color));
+  color: var(--tag-pill-hover-text-color, var(--main-font-color));
 }
 
 .tag-button {
@@ -3674,7 +3680,7 @@ ul.tag-group-switch {
   gap: 90px; /* space between group entries */
 
   /* Match the normal submenu sizing (same as Viral Atmospheres sub-items) */
-  font-size: 1em;
+  font-size: calc(1em * var(--overlay-episodes-font-scale));
 }
 
 .sub-menu .episode-entry {
@@ -4219,6 +4225,21 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   grid-template-columns: 25% 60%;
   column-gap: 15%;   /* remaining 15% becomes the gutter */
   align-items: start;
+}
+
+/* Content slide-ins: keep the left column sticky while the right column scrolls */
+@media (min-width: 769px) {
+  /* configurable: adjust if you want a bit more/less top breathing room */
+  .slide-in[data-mode="content"] { 
+    --two-col-sticky-top: 20px;
+  }
+
+  /* sticky works best when the grid item is aligned to the start */
+  .slide-in[data-mode="content"] .text-page .two-col-row > .left {
+    position: sticky;
+    top: var(--two-col-sticky-top);
+    align-self: start;
+  }
 }
 
 .text-page .two-col-row .left h3 {
