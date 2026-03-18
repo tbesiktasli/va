@@ -811,10 +811,9 @@ export class Grid {
           tagList.querySelectorAll('li').forEach(li => {
             const t = li.dataset.tag;
             const on = !!(window.activeTags && window.activeTags.has(t));
-            const c  = (window.tagColors && window.tagColors[t]) || '';
+            const c = window.getTagColor?.(t) || '';
         
-            // Use the shared rule: outline + text only, no glow
-            window.setTagPillVisualState(li, { active: on, color: c });
+            window.setTagPillVisualState(li, { active: on, color: c, variant: 'filled' });
           });
         };
 
@@ -823,18 +822,33 @@ export class Grid {
         repaint();
 
         tagList.addEventListener('click', (ev) => {
-          const li = ev.target.closest('li');
+          const targetEl = (ev.target instanceof Element) ? ev.target : ev.target?.parentElement;
+          const li = targetEl?.closest?.('li');
           if (!li) return;
+        
+          ev.preventDefault();
           ev.stopPropagation();
-          const tag = li.dataset.tag;
-
-          // call whichever exists
-          if (typeof window.toggleTagFromDetail === 'function') {
-            window.toggleTagFromDetail(tag);
-          } else if (typeof toggleTagFromDetail === 'function') {
-            toggleTagFromDetail(tag);
+        
+          const tag = (li.dataset.tag || li.textContent || '').trim();
+          if (!tag) return;
+        
+          // Toggle tag (multi-select), same semantics as Discover Connections sidebar
+          // (and ignore disabled chips, if any)
+          if (li.classList.contains('disabled') || li.getAttribute('aria-disabled') === 'true') {
+            return;
           }
 
+          if (typeof window.toggleTagFromDetail === 'function') {
+            window.toggleTagFromDetail(tag);
+          } else if (typeof window.reseedTagsFromDetail === 'function') {
+            // fallback for older builds
+            window.reseedTagsFromDetail(tag);
+          } else if (typeof toggleTagFromDetail === 'function') {
+            toggleTagFromDetail(tag);
+          } else if (typeof reseedTagsFromDetail === 'function') {
+            reseedTagsFromDetail(tag);
+          }
+        
           // Rebuild list so active tags jump to the front when active tags exist,
           // and revert to original order when the last active tag is cleared.
           rerender();
