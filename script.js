@@ -1941,140 +1941,71 @@ TAG_GROUPS.forEach(g => g.tags.forEach(t => tagToGroup.set(t, g.id)));
 // Colors for ALL tags (stable per label)
 const ALL_TAGS = TAG_GROUPS.flatMap(g => g.tags);
 
-// === Tag color assignment (maximize distinction among *selected* tags) ======
-// Instead of pre-coloring ALL tags (which guarantees collisions),
-// we only assign colors to the CURRENTLY selected tags.
-// Each new selected tag gets the color that is maximally different from the colors already in use.
-
+// === Tag color assignment (stable per tag label) ===========================
+// One tag label always resolves to one palette color.
+// The palette can still be overridden from HTML before this script loads.
 const TAG_COLOR_CONFIG = {
   // Optional override from HTML before this script loads:
   // window.TAG_COLOR_PALETTE = ['#...', ...]
   palette: Array.isArray(window.TAG_COLOR_PALETTE) && window.TAG_COLOR_PALETTE.length
     ? window.TAG_COLOR_PALETTE
-    : [
-      // Distinct, readable (avoid very light yellows that vanish on bright chips)
-      '#005F73', '#0A9396', '#2B9348', '#3A0CA3', '#4361EE',
-      '#9B2226', '#AE2012', '#BB3E03', '#CA6702', '#6D597A',
-      '#1B4965', '#6A994E', '#5A189A', '#F72585', '#2D6A4F'
-    ]
+    : []
 };
 
 // Active colors only: tag -> color (CSS color string)
 const tagColors = {};
 window.tagColors = tagColors;
 
-// --- Perceptual distance (OKLab) -------------------------------------------
-const __colorCtx = document.createElement('canvas').getContext('2d');
-const __oklabCache = new Map();
+// Stable string hash (FNV-1a, 32-bit)
+function getStableHash(str) {
+  let h = 2166136261;
+  const s = String(str || '').trim();
 
-function __rgbStringToRgb01(rgb) {
-  // supports: rgb(r,g,b) or rgba(r,g,b,a)
-  const m = String(rgb).match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
-  if (!m) return null;
-  return [Number(m[1]) / 255, Number(m[2]) / 255, Number(m[3]) / 255];
-}
-
-function __hexToRgb01(hex) {
-  let h = String(hex).trim().replace('#', '');
-  if (h.length === 3) h = h.split('').map(ch => ch + ch).join('');
-  if (h.length !== 6) return null;
-  const n = parseInt(h, 16);
-  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
-}
-
-function __colorToRgb01(color) {
-  if (!color) return null;
-  const c = String(color).trim();
-
-  // Fast paths
-  if (c[0] === '#') return __hexToRgb01(c);
-  if (c.startsWith('rgb')) return __rgbStringToRgb01(c);
-
-  // Resolve any CSS color (e.g. hsl(...), named colors) via canvas
-  __colorCtx.fillStyle = '#000';
-  __colorCtx.fillStyle = c;
-  const resolved = __colorCtx.fillStyle; // usually '#rrggbb' or 'rgb(...)'
-  if (resolved[0] === '#') return __hexToRgb01(resolved);
-  if (resolved.startsWith('rgb')) return __rgbStringToRgb01(resolved);
-  return null;
-}
-
-function __srgbToLinear(u) {
-  return (u <= 0.04045) ? (u / 12.92) : Math.pow((u + 0.055) / 1.055, 2.4);
-}
-
-function __rgb01ToOklab(rgb01) {
-  const r = __srgbToLinear(rgb01[0]);
-  const g = __srgbToLinear(rgb01[1]);
-  const b = __srgbToLinear(rgb01[2]);
-
-  // linear sRGB -> LMS
-  const l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
-  const m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
-  const s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
-
-  const l_ = Math.cbrt(l);
-  const m_ = Math.cbrt(m);
-  const s_ = Math.cbrt(s);
-
-  return [
-    0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_, // L
-    1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_, // a
-    0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_  // b
-  ];
-}
-
-function __oklab(color) {
-  if (__oklabCache.has(color)) return __oklabCache.get(color);
-  const rgb01 = __colorToRgb01(color);
-  const lab = rgb01 ? __rgb01ToOklab(rgb01) : [0, 0, 0];
-  __oklabCache.set(color, lab);
-  return lab;
-}
-
-function __oklabDistance(c1, c2) {
-  const a = __oklab(c1), b = __oklab(c2);
-  const dL = a[0] - b[0], da = a[1] - b[1], db = a[2] - b[2];
-  return Math.sqrt(dL*dL + da*da + db*db);
-}
-
-// Pick candidate that maximizes its MIN distance to all used colors
-function pickMostDistinctColor(usedColors) {
-  const used = (usedColors || []).filter(Boolean);
-  const usedSet = new Set(used);
-
-  const palette = TAG_COLOR_CONFIG.palette;
-  const candidates = palette.filter(c => !usedSet.has(c));
-
-  // If palette is exhausted, fall back to evenly spaced HSL hues
-  if (!candidates.length) {
-    const idx = used.length;
-    const hue = (idx * 137.50776405003785) % 360; // golden angle
-    return `hsl(${hue.toFixed(2)} 85% 52%)`;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
   }
 
-  if (!used.length) return candidates[0];
-
-  let best = candidates[0];
-  let bestScore = -Infinity;
-
-  for (const cand of candidates) {
-    let minD = Infinity;
-    for (const u of used) {
-      const d = __oklabDistance(cand, u);
-      if (d < minD) minD = d;
-    }
-    if (minD > bestScore) {
-      bestScore = minD;
-      best = cand;
-    }
-  }
-  return best;
+  return h >>> 0;
 }
 
-// Keep tagColors in sync with CURRENT selection:
-// - remove colors for deselected tags
-// - assign unique/maximally distinct colors for selected tags
+function buildStableTagColorMap(tags, palette) {
+  const uniqueTags = Array.from(
+    new Set((Array.isArray(tags) ? tags : []).map(t => String(t || '').trim()).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
+
+  const colors = (Array.isArray(palette) ? palette : [])
+    .map(c => String(c || '').trim())
+    .filter(Boolean);
+
+  const map = Object.create(null);
+  if (!colors.length) return map;
+
+  const usedSlots = new Set();
+  const size = colors.length;
+
+  uniqueTags.forEach((tag) => {
+    let slot = getStableHash(tag) % size;
+
+    // Keep colors unique while the palette still has spare capacity.
+    if (usedSlots.size < size) {
+      while (usedSlots.has(slot)) {
+        slot = (slot + 1) % size;
+      }
+      usedSlots.add(slot);
+    }
+
+    map[tag] = colors[slot];
+  });
+
+  return map;
+}
+
+const TAG_COLOR_BY_TAG = buildStableTagColorMap(ALL_TAGS, TAG_COLOR_CONFIG.palette);
+window.TAG_COLOR_BY_TAG = TAG_COLOR_BY_TAG;
+
+// Keep tagColors in sync with CURRENT selection.
+// We keep the existing tagColors object because the rest of the UI already reads from it.
 function syncActiveTagColors() {
   const active = window.activeTags;
   if (!active || typeof active.forEach !== 'function') return;
@@ -2084,27 +2015,22 @@ function syncActiveTagColors() {
     if (!active.has(t)) delete tagColors[t];
   });
 
-  // ensure every active tag has a unique, distinct color
-  const used = [];
+  // fill active from the stable global mapping
   active.forEach((t) => {
-    const existing = tagColors[t];
-    if (existing && !used.includes(existing)) {
-      used.push(existing);
-      return;
-    }
-    const next = pickMostDistinctColor(used);
-    tagColors[t] = next;
-    used.push(next);
+    const color = getTagColor(t);
+    if (color) tagColors[t] = color;
   });
 }
 window.syncActiveTagColors = syncActiveTagColors;
 
 // Convenience: safe lookup anywhere you need a color
 function getTagColor(tag) {
-  if (!tag) return '';
-  if (!tagColors[tag]) syncActiveTagColors();
-  return tagColors[tag] || '';
+  const key = String(tag || '').trim();
+  if (!key) return '';
+  return TAG_COLOR_BY_TAG[key] || '';
 }
+
+window.getTagColor = getTagColor;
 
 // Helper: extract tag names from a Strapi relation (v4/v5, populated or not)
 function extractTagNamesFromRelation(rel) {
@@ -4985,8 +4911,14 @@ function initMobileSlideInsToggle() {
     window.__galleryVideos__?.onOpen?.();
     //window.__galleryImages__?.onOpen?.();
     try {
-      if (!history.state || !history.state.gallery) {
-        history.pushState({ gallery: true, adhoc: true }, '', appUrl('#group-gallery'));
+      const url = appUrl('#group-gallery');
+      const cur = history.state || null;
+    
+      // If we’re already in a gallery state, replace it (don’t stack history entries).
+      if (cur && cur.gallery) {
+        history.replaceState({ gallery: true, adhoc: true }, '', url);
+      } else {
+        history.pushState({ gallery: true, adhoc: true }, '', url);
       }
     } catch {}
 
@@ -5625,7 +5557,8 @@ function initMobileSlideInsToggle() {
           lowerHost.dataset.clickWired = '1';
 
           lowerHost.addEventListener('click', (e) => {
-            const li = e.target.closest('li');
+            const targetEl = (e.target instanceof Element) ? e.target : e.target?.parentElement;
+            const li = targetEl?.closest?.('li');
             if (!li) return;
 
             e.preventDefault();
@@ -7289,12 +7222,12 @@ function initMobileSlideInsToggle() {
   // --- Gallery layout config (override via window.GALLERY_LAYOUT_CONFIG before script.js) ---
   const GALLERY_LAYOUT = {
     itemsPerCol: 3,              // keeps your old "3 items per column" rule as the baseline
+    maxItemsPerCol: 3,          // hard cap: never allow >3 items in any column
     // Small galleries: limit how many items can stack in one column
     // N <= 4  -> 1 per column
     // N <= 6  -> 2 per column
     smallGroupRules: [
-      { maxN: 4, maxItemsPerCol: 1 },
-      { maxN: 6, maxItemsPerCol: 2 },
+      { maxN: 5, maxItemsPerCol: 1 },
     ],
     maxCols: 28,                 // safety: avoid absurdly many columns
     heightBudgetRatio: 0.92,     // how much of the visible gallery height we consider "usable"
@@ -7393,7 +7326,7 @@ function initMobileSlideInsToggle() {
     if (!N) return 1;
 
     // Default: your existing baseline
-    const perCol = capItemsPerCol || (GALLERY_LAYOUT.itemsPerCol || 3);
+    const perCol = capItemsPerCol || (GALLERY_LAYOUT.maxItemsPerCol || GALLERY_LAYOUT.itemsPerCol || 3);
 
     // Baseline: how many columns needed by count
     const baseByCount = Math.ceil(N / perCol);
@@ -7427,8 +7360,18 @@ function initMobileSlideInsToggle() {
 
     const maxColW = getMaxColWeight();
 
-    // Apply special distribution rules only for small galleries
-    const cap = smallGroupCapForCount(objs.length);
+    // Cap rules:
+    // - If N < 6, force 1 per column (via smallGroupRules)
+    // - Always enforce a hard max of 3 per column overall
+    const hardMax = Math.min(
+      3,
+      (GALLERY_LAYOUT.maxItemsPerCol ?? GALLERY_LAYOUT.itemsPerCol ?? 3)
+    );
+
+    const cap = Math.min(
+      hardMax,
+      (smallGroupCapForCount(objs.length) ?? hardMax)
+    );
 
     const initialCols = computeInitialColCount(objs, { capItemsPerCol: cap });
     const cols = makeColumns(initialCols);
@@ -9891,7 +9834,10 @@ function updateObjectGlowsWithGradient() {
 
   // Helper: remove glow classes from a node list
   const clearGlowClasses = (nodes) => {
-    nodes.forEach(el => el.classList.remove('has-glow', 'glow-partial', 'glow-full'));
+    nodes.forEach(el => {
+      el.classList.remove('has-glow', 'glow-partial', 'glow-full');
+      el.style?.removeProperty?.('--object-glow');
+    });
   };
 
   // If nothing active: hard clear and bail
@@ -9924,6 +9870,17 @@ function updateObjectGlowsWithGradient() {
     return `conic-gradient(from 0deg at 50% 50%, ${stops.join(", ")})`;
   };
 
+  const paintFromColors = (colors) => {
+    if (!colors.length) return 'transparent';
+    if (colors.length === 1) return `linear-gradient(${colors[0]}, ${colors[0]})`;
+    return conicFrom(colors);
+  };
+  
+  const parseTagsCsv = (tagsCsv) => String(tagsCsv || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+
   // Compute the glow paint ONCE
   let glowPaint = 'transparent';
 
@@ -9948,13 +9905,8 @@ function updateObjectGlowsWithGradient() {
     else ggEl.style.removeProperty('--grid-glow');
   }
 
-  // Shared state resolver (same logic as the grid used before)
-  const glowStateFor = (tagsCsv, idForTheme = '') => {
-    const tags = String(tagsCsv || '')
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean);
-
+  // Shared state resolver (now receives parsed tags array)
+  const glowStateFor = (tags, idForTheme = '') => {
     // Theme mode wins
     if (themeFilter && themedIds) {
       return themedIds.has(String(idForTheme)) ? 'full' : 'off';
@@ -9972,6 +9924,21 @@ function updateObjectGlowsWithGradient() {
     return !matchesSome ? 'off' : (matchesAll ? 'full' : 'partial');
   };
 
+  const paintFor = (tags, idForTheme = '') => {
+    // Theme mode: single-color glow for themed objects only
+    if (themeFilter && themedIds) {
+      return themedIds.has(String(idForTheme)) ? glowPaint : 'transparent';
+    }
+
+    // Tag mode: ONLY colors for tags the object actually has + are active
+    const colors = tags
+      .filter(t => activeTags.has(t))
+      .map(t => tagColors[t])
+      .filter(Boolean);
+
+    return paintFromColors(colors);
+  };
+
   const applyGlowClassesToEl = (el, state) => {
     const on = state !== 'off';
     el.classList.toggle('has-glow', on);
@@ -9982,17 +9949,27 @@ function updateObjectGlowsWithGradient() {
   // === Grid objects ===
   document.querySelectorAll('.object').forEach(div => {
     if (!div.querySelector('.object-glow')) return;
-    const state = glowStateFor(div.dataset.tags, div.id);
+
+    const tags = parseTagsCsv(div.dataset.tags);
+    const state = glowStateFor(tags, div.id);
     applyGlowClassesToEl(div, state);
+
+    if (state === 'off') div.style.removeProperty('--object-glow');
+    else div.style.setProperty('--object-glow', paintFor(tags, div.id));
   });
 
   // === Ad-hoc gallery items (ONLY) ===
   if (adhocActive && ggEl) {
     ggEl.querySelectorAll('.gallery-box .item').forEach(item => {
       if (!item.querySelector('.object-glow')) return;
+
       const id = item.dataset.oid || item.id || '';
-      const state = glowStateFor(item.dataset.tags, id);
+      const tags = parseTagsCsv(item.dataset.tags);
+      const state = glowStateFor(tags, id);
       applyGlowClassesToEl(item, state);
+
+      if (state === 'off') item.style.removeProperty('--object-glow');
+      else item.style.setProperty('--object-glow', paintFor(tags, id));
     });
   }
 }
@@ -10120,7 +10097,7 @@ function initSlideInTags() {
 
       activeTags.add(tag);
       const color = getTagColor(tag);
-      window.setTagPillVisualState(li, { active: true, color });
+      window.setTagPillVisualState(li, { active: true, color, variant: 'filled' });
 
       if (TAG_GROUP_POLICY === TAG_GROUP_POLICIES.SCOPED) {
         activeTagGroupId = li.dataset.group;
@@ -10160,24 +10137,27 @@ function initSlideInTags() {
 // Sync .active styling of tag pills inside detail cards with global activeTags
 function syncDetailTagHighlights() {
   const active = window.activeTags || new Set();
-  const colors = window.tagColors || {};
 
-  // Select any tag chip rendered in detail cards (works whether they use data-tag or innerText)
   const candidates = document.querySelectorAll(
     '.detail-card [data-tag], .detail-tags [data-tag], .detail-card .tag, .detail-tags .tag'
   );
 
   candidates.forEach(el => {
-    // prefer data-tag; fallback to text
     const tag = (el.dataset?.tag || el.textContent || '').trim();
     if (!tag) return;
 
     const isActive = active.has(tag);
+    const c = getTagColor(tag);
+    const isInlineDetailTag = !!el.closest('.detail-panel');
+
     el.classList.toggle('active', isActive);
 
-    // Apply the same color treatment you use elsewhere
-    const c = colors[tag];
-    window.setTagPillVisualState(el, { active: isActive, color: c });
+    window.setTagPillVisualState(el, {
+      active: isActive,
+      color: c,
+      variant: isInlineDetailTag ? 'filled' : 'outline',
+      hoverVariant: isInlineDetailTag ? 'tag-outline' : ''
+    });
   });
 }
 
@@ -10827,8 +10807,13 @@ function renderTagsForCurrentGroup() {
     li.textContent = tag;
 
     const isActive = activeTags.has(tag);
-    const color = tagColors[tag] || '';
-    window.setTagPillVisualState(li, { active: isActive, color });
+    const color = getTagColor(tag);
+    window.setTagPillVisualState(li, {
+      active: isActive,
+      color,
+      variant: 'filled',
+      hoverVariant: 'tag-outline'
+    });
 
     ul.appendChild(li);
   });
@@ -12255,7 +12240,11 @@ window.restoreGridStateFromDetail = restoreGridStateFromDetail;
 
 function isAdhocGalleryActive() {
   const gg = document.getElementById('group-gallery');
-  return !!(gg?.classList.contains('active') && document.body.classList.contains('in-adhoc-gallery'));
+  if (!gg || !gg.classList.contains('active')) return false;
+
+  // Treat as ad-hoc if either the body marker is set OR history state says "adhoc".
+  // This prevents the selection bar from showing "View together" while already in the tag gallery.
+  return document.body.classList.contains('in-adhoc-gallery') || !!history.state?.adhoc;
 }
 
 // Where the bottom selection bar is allowed (no galleries)
@@ -12268,11 +12257,14 @@ function selectionBarIsAllowed() {
     state = window.gridObject?.prevState || state;
   }
 
-  // NEW: never show the selection bar on text pages / research page
+  // Never show the selection bar on text pages / research page
   if (typeof isTextPageActive === 'function' && isTextPageActive()) return false;
 
-  // Never in galleries
-  if (b.classList.contains('in-group-gallery'))  return false;
+  // ✅ NEW: never show the selection bar on the full object detail page
+  if (b.classList.contains('in-detail-page')) return false;
+
+  // Never in galleries (except ad-hoc tag gallery where we intentionally keep the bar)
+  if (b.classList.contains('in-group-gallery')) return false;
   if (isAdhocGalleryActive()) return true;
 
   // Allowed grid states (instant show during clustering)
@@ -12460,18 +12452,88 @@ const HeaderTyper = (() => {
   return { type, cancel };
 })();
 
-// Tag pills: apply active coloring WITHOUT glow (no colored box-shadow)
-function setTagPillVisualState(el, { active = false, color = '' } = {}) {
+// Tag pills: shared visual state helper
+// - outline: current behavior (border + text color only)
+// - filled: active pill uses the tag color as background with readable text color
+function setTagPillVisualState(
+  el,
+  { active = false, color = '', variant = 'outline', hoverVariant = '' } = {}
+) {
   if (!el) return;
+
+  const cfg = {
+    brightLuminanceThreshold: 0.62,
+    lightTextColor: '#ffffff',
+    darkTextColor: '#000000',
+    ...(window.TAG_PILL_VISUAL_CONFIG || {})
+  };
+
+  const parseHexColor = (input) => {
+    const hex = String(input || '').trim();
+    const m = hex.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+    if (!m) return null;
+
+    let raw = m[1];
+    if (raw.length === 3) {
+      raw = raw.split('').map(ch => ch + ch).join('');
+    }
+
+    const n = parseInt(raw, 16);
+    return {
+      r: (n >> 16) & 255,
+      g: (n >> 8) & 255,
+      b: n & 255,
+    };
+  };
+
+  const getRelativeLuminance = ({ r, g, b }) => {
+    const toLinear = (v) => {
+      const s = v / 255;
+      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    };
+
+    const R = toLinear(r);
+    const G = toLinear(g);
+    const B = toLinear(b);
+
+    return 0.2126 * R + 0.7152 * G + 0.0722 * B;
+  };
+
+  const getReadableTextColor = (input) => {
+    const rgb = parseHexColor(input);
+    if (!rgb) return cfg.lightTextColor;
+
+    return getRelativeLuminance(rgb) >= cfg.brightLuminanceThreshold
+      ? cfg.darkTextColor
+      : cfg.lightTextColor;
+  };
 
   el.classList.toggle('active', !!active);
 
   if (active && color) {
     el.style.borderColor = color;
-    el.style.color = color;
+
+    if (variant === 'filled') {
+      el.style.backgroundColor = color;
+      el.style.color = getReadableTextColor(color);
+    } else {
+      el.style.removeProperty('background-color');
+      el.style.color = color;
+    }
   } else {
     el.style.removeProperty('border-color');
+    el.style.removeProperty('background-color');
     el.style.removeProperty('color');
+  }
+
+  if (hoverVariant === 'tag-outline' && color) {
+    el.classList.add('tag-pill-hover--tag-outline');
+    el.style.setProperty('--tag-pill-hover-border-color', color);
+    el.style.setProperty('--tag-pill-hover-text-color', color);
+  } else {
+    el.classList.remove('tag-pill-hover--tag-outline');
+    el.style.removeProperty('--tag-pill-hover-border-color');
+    el.style.removeProperty('--tag-pill-hover-text-color');
   }
 
   // Key requirement: NEVER apply glow to pills
