@@ -104,6 +104,10 @@
   --prepage-bg-perspective: 900px;
   --detail-description-max-height: 6rem; /* max height of inline detail text */
   --detail-sticky-top: 20px; /* sticky offset for detail meta (desktop) */
+
+  --detail-media-max-h: 70vh;                 /* single source of truth */
+  --detail-media-frame-h: var(--detail-media-max-h); /* reserved hero slot height */
+
   --content-section-pad-top: 20px; /* matches .content-section padding-top */
   --prepage-side-w: 220px;      /* smaller side “padding” columns */
   --prepage-main-max: 900px;    /* wider middle content */  
@@ -1654,7 +1658,8 @@ header {
 }   
 
 /* Jump marks: keep space above anchor targets when scrollIntoView() runs */
-.text-page .two-col-row[id] {
+.text-page .two-col-row[id],
+.text-page .footnote-target {
   scroll-margin-top: var(--jump-scroll-offset, 0px);
 }
 
@@ -2006,12 +2011,11 @@ body.in-adhoc-gallery #group-gallery .title-box h2 {
   max-width: 100%;
   white-space: normal;
 
-  hyphens: auto;            /* insert hyphens when language is known */
-  overflow-wrap: normal;    /* don't break anywhere (lets hyphenation happen) */
-  word-break: normal;       /* keep normal word breaking */
+  -webkit-hyphens: auto;
+  hyphens: auto;
 
-  /* fallback for “no hyphenation dictionary” cases: */
-  overflow-wrap: break-word;
+  overflow-wrap: normal;
+  word-break: normal;
 
   line-height: 1.3;
 }
@@ -2189,7 +2193,7 @@ and pin the expanded panel to the right edge. */
   padding-bottom: 55px;
 }
 
-.vertical-content #section-notes, .vertical-content #section-references {
+.vertical-content .section-notes, .vertical-content .section-references {
   word-break: break-all;
 }
 
@@ -2463,6 +2467,21 @@ and pin the expanded panel to the right edge. */
     box-sizing: border-box;
   }
 
+  /* NEW: reserve stable hero height for media so the page doesn't "jump" between objects */
+  #detail-content #detail-primary > figure.detail-media.image,
+  #detail-content #detail-primary > figure.detail-media.video {
+    height: var(--detail-media-frame-h);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+  }
+
+  /* Inside the fixed frame, cap by the frame (not by viewport fallback) */
+  #detail-content #detail-primary > figure.detail-media.image .hero-media,
+  #detail-content #detail-primary > figure.detail-media.video .hero-media {
+    max-height: 100%;
+  }
+
 /* The hero media itself:
    - never exceeds the column width
    - never exceeds a portion of the viewport height
@@ -2471,7 +2490,7 @@ and pin the expanded panel to the right edge. */
 #detail-content .hero-media {
   display: block;
   max-width: 100%;
-  max-height: var(--detail-media-max-h, 70vh);   /* cap height responsively */
+  max-height: var(--detail-media-max-h);
   width: auto;
   height: auto;
   object-fit: contain;                           /* safe for video; harmless for img */
@@ -2879,12 +2898,32 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 }
 
 /* Clickable footnote markers (superscript digits) */
-.detail-footnote-ref {
+.detail-footnote-ref,
+.footnote-ref {
   cursor: pointer;
 }
 
-.detail-footnote-ref:hover {
+.detail-footnote-ref:hover,
+.footnote-ref:hover {
   text-decoration: underline;
+}
+
+/* Keep superscript footnote links clean by default (no permanent underline) */
+.text-page sup .footnote-ref {
+  text-decoration: none;
+}
+
+/* Flash the target note when jumping */
+.footnote-target-flash {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
+  border-radius: 8px;
+  animation: footnoteTargetFlash 1200ms ease-out 1;
+}
+
+@keyframes footnoteTargetFlash {
+  0% { outline-color: currentColor; }
+  100% { outline-color: transparent; }
 }
 
 .content-section .detail-content .detail-footnotes {
@@ -3168,6 +3207,20 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
   margin-bottom: 20px;
 }
 .secondary-pane p { margin: 0 0 12px; line-height: 1.6; font-size: .9rem; }
+
+.secondary-pane-author {
+  display: block;
+  margin-top: -10px;
+  margin-bottom: 20px;
+  font-family: "Albert Sans", sans-serif;
+  font-size: 0.9rem;
+  color: var(--main-light-font-color);
+}
+
+.secondary-pane-author a {
+  color: inherit;
+  text-decoration: underline;
+}
 
 /* Content + sticky footer inside secondary pane */
 .secondary-pane-content {
@@ -4119,6 +4172,10 @@ body.menu-open .header-right .menu-trigger { display: none; }
 body.menu-open .header-right .theme-toggle { display: none; }
 body.menu-open .header-right .header-close { display: inline-grid; }
 
+body.menu-open header {
+  border-bottom-color: transparent;
+}
+
 /* === Research text page === */
 .text-subpage { display: none; }              /* follow your .active toggling convention */
 .text-subpage.active { display: block; }
@@ -4527,7 +4584,7 @@ body.menu-open .header-right .header-close { display: inline-grid; }
   text-transform: uppercase;
 }
 
-#section-notes, #section-references {
+.section-notes, .section-references {
   margin-top: 50px;
   padding-top: 50px;
   border-top: 1px solid var(--main-font-color);
