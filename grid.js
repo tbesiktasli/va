@@ -1629,8 +1629,8 @@ export class Grid {
           v.dataset.src = object.video || '';
           v.preload = 'none';                 // ensures no metadata fetch before we set src
         
-          // ✅ SVG poster while unloaded
-          v.poster = (window.getVideoPlaceholderPoster?.() || '');
+          // ✅ Prefer per-video poster; fallback stays the SVG placeholder
+          v.poster = (window.getVideoPosterUrl?.(object) || window.getVideoPlaceholderPoster?.() || '');
         
           v.muted = true;                     // required for hover/autoplay
           v.playsInline = true;
