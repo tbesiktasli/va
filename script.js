@@ -390,18 +390,59 @@ function resolveObjectByToken(token, allObjects) {
 }
 
 // 1) detect early (safe: does NOT touch SUBPAGE_INITS / openTextSubpage)
+function parseHashParts(hash) {
+  const raw = (hash || '').trim();
+  if (!raw) return { path: '', params: new URLSearchParams() };
+
+  const withoutHash = raw.startsWith('#') ? raw.slice(1) : raw;
+  const [path, query = ''] = withoutHash.split('?');
+  return { path: (path || '').trim(), params: new URLSearchParams(query) };
+}
+
+function buildGroupGalleryHash(gid, sidebarId) {
+  const sp = new URLSearchParams();
+  if (gid != null && gid !== '') sp.set('gid', String(gid));
+  if (sidebarId) sp.set('sidebar', String(sidebarId));
+  const qs = sp.toString();
+  return '#group-gallery' + (qs ? `?${qs}` : '');
+}
+
+function isGroupGalleryHash(h = location.hash) {
+  return (h || '').trim() === '#group-gallery' || (h || '').trim().startsWith('#group-gallery?');
+}
+
+// Deep-link behavior (override with a tiny inline script BEFORE script.js):
+//   <script>window.GALLERY_DEEPLINKS_CONFIG = { updateSidebarParamOnToggle: false };</script>
+const GALLERY_DEEPLINKS = {
+  updateSidebarParamOnToggle: true,
+  ...(typeof window !== 'undefined' && window.GALLERY_DEEPLINKS_CONFIG && typeof window.GALLERY_DEEPLINKS_CONFIG === 'object'
+    ? window.GALLERY_DEEPLINKS_CONFIG
+    : {})
+};
+
 function getInitialStaticHashRoute() {
   // If you’re on an object detail route, let that logic win.
   if (typeof isObjectDetailPath === 'function' && isObjectDetailPath(location.pathname)) return null;
 
-  const h = (location.hash || '').trim();
+  const { path, params } = parseHashParts(location.hash);
 
-  if (h.startsWith('#subpage-')) {
-    return { type: 'subpage', sectionId: h.slice(1) }; // strip '#'
+  if (path.startsWith('subpage-')) {
+    return { type: 'subpage', sectionId: path };
   }
 
-  if (h === '#research') {
+  if (path === 'research') {
     return { type: 'research' };
+  }
+
+  // Deep link into a specific group gallery, optionally with a sidebar opened
+  if (path === 'group-gallery' || path === 'gallery') {
+    const gid = params.get('gid');
+    if (!gid) return null;
+    return {
+      type: 'groupGallery',
+      gid,
+      sidebar: params.get('sidebar') || null,
+    };
   }
 
   return null;
@@ -781,6 +822,17 @@ function getVideoPlaceholderPoster() {
 }
 
 window.getVideoPlaceholderPoster ??= getVideoPlaceholderPoster;
+
+// Prefer per-video posters when available; fallback stays the SVG placeholder.
+function getVideoPosterUrl(o) {
+  const p =
+    o?.videoPoster ||                 // ✅ our canonical field in app schema
+    o?.poster ||                      // optional fallback if you ever use it
+    o?.previewImage ||                // optional fallback if you ever use it
+    '';
+  return String(p || '').trim();
+}
+window.getVideoPosterUrl ??= getVideoPosterUrl;
 
 // Optional: if true, we unload the video src on mouseleave (like freeing memory)
 window.VIDEO_UNLOAD_ON_LEAVE ??= false;
@@ -2221,7 +2273,7 @@ async function fetchStrapiThemes() {
     const a = (r && (r.attributes || r)) || {};
     const name = a.Name || a.name || a.Title || a.title || '';
     const desc = a.Description || a.description || '';
-
+  
     // split Description into paragraphs (supports CRLF/LF and blank-line breaks)
     const paragraphs = Array.isArray(desc)
       ? desc.filter(Boolean)
@@ -2229,11 +2281,24 @@ async function fetchStrapiThemes() {
           .split(/\r?\n\r?\n|\r?\n/)
           .map(s => s.trim())
           .filter(Boolean);
-
+  
     // id: prefer Strapi id; fallback to slugified name
     const id = String(r?.id ?? name.toLowerCase().replace(/\s+/g, '-'));
-
-    return { id, title: name || 'Untitled', paragraphs };
+  
+    return {
+      id,
+      title: name || 'Untitled',
+      paragraphs,
+  
+      // configurable sidebar byline
+      sidebarAuthorName:
+        a.SidebarAuthorName ||
+        a.sidebarAuthorName ||
+        'Jacqueline Häußler',
+  
+      sidebarAuthorSubpageId: 'subpage-team',
+      sidebarAuthorHeader: 'Meet our Team'
+    };
   }).filter(t => t.title);
 }
 
@@ -2810,6 +2875,7 @@ async function resolveUploadUrlsForObjects(objs) {
     }
     if (ph.video && !o.video) { want.video = splitPathHint(ph.video); needed.push(want.video.name); }
     if (ph.audio && !o.audio) { want.audio = splitPathHint(ph.audio); needed.push(want.audio.name); }
+    if (ph.poster && !o.videoPoster) { want.poster = splitPathHint(ph.poster); needed.push(want.poster.name); }
     hints.set(o, want);
   }
 
@@ -2885,6 +2951,10 @@ async function resolveUploadUrlsForObjects(objs) {
     if (!o.audio && want.audio) {
       const url = pickBest(want.audio.name, want.audio.dir)?.url;
       if (url) o.audio = url;
+    }
+    if (!o.videoPoster && want.poster) {
+      const url = pickBest(want.poster.name, want.poster.dir)?.url;
+      if (url) o.videoPoster = url;
     }
   }  
 }
@@ -3301,6 +3371,8 @@ function handleAuthorLinkClick(ev, anchor) {
     ev.stopPropagation?.();
   }
 
+  closeOverlayMenuIfOpen?.();
+
   const authorName =
     anchor.dataset.authorName ||
     (anchor.textContent || '').trim();
@@ -3311,11 +3383,9 @@ function handleAuthorLinkClick(ev, anchor) {
 }
 
 function initAuthorBylineLinks() {
-  // Delegate clicks for any author byline inside .subpage-author
+  // Delegate clicks for any author link carrying a stable author name
   document.addEventListener('click', (ev) => {
-    const anchor = ev.target.closest(
-      '.subpage-author a, #group-gallery .gallery-authors a, #group-gallery .gallery-contributors a'
-    );
+    const anchor = ev.target.closest('a[data-author-name]');
     if (!anchor) return;
 
     // If someone else already fully handled this event, don't double-trigger
@@ -3603,6 +3673,26 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
     const audStr = a.AudioPath || a.audioPath || a.audio_path || null;
 
 
+    // Video poster / preview image (recommended Strapi field: `videoPoster` as single media)
+    const posterStr =
+      a.VideoPosterPath || a.videoPosterPath || a.video_poster_path ||
+      a.VideoPreviewPath || a.videoPreviewPath || a.video_preview_path ||
+      a.PreviewImagePath || a.previewImagePath || a.preview_image_path ||
+      null;
+
+    const posterUploadUrl =
+      tryUploadUrl(a.videoPoster) ||
+      tryUploadUrl(a.VideoPoster) ||
+      tryUploadUrl(a.videoPreviewImage) ||
+      tryUploadUrl(a.VideoPreviewImage) ||
+      tryUploadUrl(a.previewImage) ||
+      tryUploadUrl(a.PreviewImage) ||
+      undefined;
+
+    // If it’s an upload relation, make it absolute now; if it’s a path string, resolver will handle it later.
+    const videoPoster = posterUploadUrl ? strapiAssetUrl(posterUploadUrl) : undefined;
+
+
     // Text-to-speech (string field or upload relation)
     const ttsStr =
       a.TextToSpeech || a.textToSpeech || a.text_to_speech || null;
@@ -3673,7 +3763,8 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
     const pathHints = {
       image: imgStr || null,
       video: vidStr || null,
-      audio: audStr || null
+      audio: audStr || null,
+      poster: posterStr || null
     };
 
     // ---- tags (split: connecting vs regular)
@@ -3732,7 +3823,7 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
       content: a.Content || a.content || '',
       grid_x: 0, grid_y: 0,
       width, height,
-      image, video, audio,
+      image, video, audio, videoPoster,
       textToSpeech,
       text,
       tags: regularTags,
@@ -3905,11 +3996,16 @@ window.gridObject = null;
       LOADING.onComplete?.(() => LOADING.hide?.());
     }
 
-    // Deep link to static hash pages (#subpage-... / #research) should also skip intro.
-    // No preload needed: these pages can render immediately.
+    // Deep link to static hash pages (#subpage-... / #research / #group-gallery?gid=...) should skip intro.
     if (INITIAL_STATIC_HASH_ROUTE) {
       closePrepage();
-    }    
+
+      // ✅ Group gallery deeplink needs Strapi data → show preload until loader completes
+      if (INITIAL_STATIC_HASH_ROUTE.type === 'groupGallery') {
+        LOADING.show?.();
+        LOADING.onComplete?.(() => LOADING.hide?.());
+      }
+    }   
 
     const loaded = await loadData(DATA_MODE);
     // Use the chosen data source
@@ -4198,6 +4294,31 @@ function updateContentSidebarsForGroup(groupId) {
   });
 }
 
+function updateThemeDescriptionSidebar(theme) {
+  const sidebar = document.getElementById('theme-description');
+  if (!sidebar) return;
+
+  const h1 = sidebar.querySelector('.theme-description-title');
+  if (h1) h1.textContent = theme?.title || theme?.name || '';
+
+  const body = sidebar.querySelector('.theme-description-body');
+  if (!body) return;
+
+  const paras = Array.isArray(theme?.paragraphs) ? theme.paragraphs : [];
+
+  body.innerHTML = paras
+    .filter(Boolean)
+    .map(p => `<p>${escapeHtml(p)}</p>`)
+    .join('');
+
+  // Reset scroll whenever we repaint
+  if (typeof resetSlideInScroll === 'function') {
+    resetSlideInScroll(sidebar);
+  } else {
+    sidebar.querySelector('.vertical-content')?.scrollTo?.(0, 0);
+  }
+}
+
 function refreshSlideInsVisibility() {
   const slideIns = document.getElementById('slide-ins');
   if (!slideIns) return;
@@ -4235,16 +4356,30 @@ function refreshSlideInsVisibility() {
     (!galleryActive || isAdhoc) &&
     !detailActive;
 
-  // 2) CONTENT slide-ins (the 3 new ones)
-  const shouldShowContent =
+  // 2) CONTENT slide-ins
+  // - group sidebars (3): shown in group gallery + multi-object detail
+  // - theme description (1): shown only in theme gallery
+  const shouldShowGroupContent =
     !isThemeGallery &&
     ((detailActive && detailGroupHasMultiple) || (galleryActive && !isAdhoc));
+
+  const shouldShowThemeContent =
+    isThemeGallery && galleryActive; // theme gallery uses the same #group-gallery container
+
+  const shouldShowAnyContent = shouldShowGroupContent || shouldShowThemeContent;
 
   let anyAllowed = false;
 
   slideIns.querySelectorAll('.slide-in').forEach(el => {
     const mode = el.dataset.mode || 'content'; // default all non-menu to content
-    const allowed = (mode === 'menu') ? shouldShowMenu : shouldShowContent;
+
+    const allowed =
+      (mode === 'menu')
+        ? shouldShowMenu
+        : (el.id === 'theme-description'
+            ? shouldShowThemeContent
+            : shouldShowGroupContent);
+
     anyAllowed = anyAllowed || allowed;
 
     el.classList.toggle('is-hidden', !allowed);
@@ -4282,11 +4417,9 @@ function refreshSlideInsVisibility() {
 
     // In your current layout, these two should be mutually exclusive,
     // but we keep the checks explicit for clarity.
-    if (shouldShowMenu && !shouldShowContent) {
-      // Discover Connections (menu sidebar)
+    if (shouldShowMenu && !shouldShowAnyContent) {
       expandEl.classList.add('is-menu');
-    } else if (shouldShowContent && !shouldShowMenu) {
-      // Group of 3 content sidebars (detail/gallery)
+    } else if (shouldShowAnyContent && !shouldShowMenu) {
       expandEl.classList.add('is-content');
     }
     // If neither is true (no sidebars), we leave it without a variant class.
@@ -4744,11 +4877,14 @@ function initMobileSlideInsToggle() {
     }, true);
   });
 
-  function openGallery(gid) {
+  function openGallery(gid, options = {}) {
     if (!groupGalleryEl) {
       console.warn('[gallery] #group-gallery not found');
       return;
     }
+
+    const historyMode = options.historyMode || 'push';
+    const sidebarId = options.sidebarId || null;
   
     // Hide the grid shell, then show gallery
     if (gridShellEl) gridShellEl.style.display = 'none';
@@ -4796,10 +4932,26 @@ function initMobileSlideInsToggle() {
     window.__galleryVideos__?.onOpen?.();
     //window.__galleryImages__?.onOpen?.();
   
-    // 4) Push a history state so browser Back closes the gallery
+    // 4) Push/replace a history state so browser Back closes the gallery
     try {
+      const nextState = {
+        ...(history.state || {}),
+        gallery: true,
+        gid: String(gid ?? ''),
+        sidebarId: sidebarId ? String(sidebarId) : '',
+      };
+
+      const hash = buildGroupGalleryHash(gid, sidebarId);
+
+      // Entering gallery => push (default). Switching group while in gallery => replace.
       if (!history.state || !history.state.gallery) {
-        history.pushState({ gallery: true, gid: String(gid ?? '') }, '', appUrl('#group-gallery'));
+        if (historyMode === 'replace') {
+          history.replaceState(nextState, '', appUrl(hash));
+        } else {
+          history.pushState(nextState, '', appUrl(hash));
+        }
+      } else {
+        history.replaceState(nextState, '', appUrl(hash));
       }
     } catch {}
   
@@ -4808,6 +4960,13 @@ function initMobileSlideInsToggle() {
     document.body.classList.add('in-group-gallery');      // was: in-gallery
     document.body.dataset.currentGroupId = String(gid);
     window.__dispatchViewChange();
+
+    // If this was a deeplink, open the requested sidebar immediately
+    if (sidebarId) {
+      requestAnimationFrame(() => {
+        openSlideInById(sidebarId, { updateGalleryHash: false });
+      });
+    }
 
     requestAnimationFrame(() => {
       const tb = groupGalleryEl?.querySelector('.title-box');
@@ -5039,6 +5198,7 @@ function initMobileSlideInsToggle() {
       });
     }
 
+    updateThemeDescriptionSidebar(theme);
     refreshSlideInsVisibility();
 
     console.log('[gallery] opened (theme)', {
@@ -5158,9 +5318,10 @@ function initMobileSlideInsToggle() {
         delete nextState.gallery;
         delete nextState.adhoc;
         delete nextState.gid;
-  
+        delete nextState.sidebarId;
+        
         let newHash = location.hash;
-        if (newHash === '#group-gallery' || newHash === '#gallery') newHash = '';
+        if (newHash === '#gallery' || (newHash || '').startsWith('#group-gallery')) newHash = '';
   
         history.replaceState(nextState, '', appUrl(newHash || ''));
       } catch {}
@@ -6574,6 +6735,12 @@ function initMobileSlideInsToggle() {
       span.style.whiteSpace = 'normal';
       span.style.display = 'block';
       span.style.maxWidth = maxW + 'px';
+
+      // Prefer natural wrapping / hyphenation; avoid breaking inside words during fit
+      span.style.overflowWrap = 'normal';
+      span.style.wordBreak = 'normal';
+      span.style.hyphens = 'auto';
+      span.style.webkitHyphens = 'auto';
  
       // helper: does the span overflow the target box?
       const overflows = () => (span.scrollWidth > maxW + 0.5) || (span.scrollHeight > maxH + 0.5);
@@ -6593,6 +6760,17 @@ function initMobileSlideInsToggle() {
           fs /= 1.03;
           span.style.fontSize = fs + 'px';
           break;
+        }
+      }
+
+      // If we STILL overflow at the minimum size, allow breaking as a last resort
+      if (overflows()) {
+        span.style.overflowWrap = 'break-word';
+
+        let attempts2 = 0;
+        while (attempts2++ < 30 && overflows() && fs > 6) {
+          fs *= 0.9;
+          span.style.fontSize = fs + 'px';
         }
       }
     }
@@ -7045,7 +7223,7 @@ function initMobileSlideInsToggle() {
     const type = String(o?.type || '').toLowerCase() || 'text';
     const item = document.createElement('div');
     item.className = `item ${type}`;
-    item.style.display = 'block';
+    //item.style.display = 'block';
   
     // id for click-to-detail
     item.dataset.oid = o.id || '';
@@ -7126,7 +7304,7 @@ function initMobileSlideInsToggle() {
       vid.setAttribute('loop', '');
       vid.dataset.src = o.video || o.src || o.url || '';
       vid.preload = 'none';
-      vid.poster = window.getVideoPlaceholderPoster?.() || '';
+      vid.poster = (window.getVideoPosterUrl?.(o) || window.getVideoPlaceholderPoster?.() || '');
   
       item.style.width = `${randItemWidth()}px`;
   
@@ -7229,7 +7407,7 @@ function initMobileSlideInsToggle() {
     smallGroupRules: [
       { maxN: 5, maxItemsPerCol: 1 },
     ],
-    maxCols: 28,                 // safety: avoid absurdly many columns
+    maxCols: 80,                 // safety: avoid absurdly many columns
     heightBudgetRatio: 0.92,     // how much of the visible gallery height we consider "usable"
     weightUnitPx: 100,           // 1.0 "weight" ≈ 100px (makes viewport budgeting easy)
     mediaWidthEstimatePx: 200,   // be defensive: assume gallery media might be at the upper random width
@@ -7647,7 +7825,8 @@ function initMobileSlideInsToggle() {
     // 2) Listen for back/forward to restore the grid when leaving the gallery state
     window.addEventListener('popstate', () => {
       const active = groupGalleryEl?.classList.contains('active');
-      const stillInGallery = !!history.state?.gallery || location.hash === '#gallery' || location.hash === '#group-gallery';
+      const h = (location.hash || '');
+      const stillInGallery = !!history.state?.gallery || h === '#gallery' || h.startsWith('#group-gallery');
       if (active && !stillInGallery) {
         window.closeGallery?.({ viaPopstate: true });
       }
@@ -10161,7 +10340,12 @@ function syncDetailTagHighlights() {
   });
 }
 
-function openMenuSecondary(slideInSelector, { title, paragraphs, showSelectButton = false } = {}) {
+function openMenuSecondary(slideInSelector, {
+  title,
+  paragraphs,
+  author = null,
+  showSelectButton = false
+} = {}) {
   const host  = document.querySelector(slideInSelector);
   const panel = document.querySelector(`${slideInSelector} .secondary-pane`);
   if (!host || !panel) return;
@@ -10171,10 +10355,28 @@ function openMenuSecondary(slideInSelector, { title, paragraphs, showSelectButto
 
   panel.setAttribute('aria-hidden', 'false');
 
+  const esc = (s) => String(s ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;');
+
   const contentHtml = `
     <div class="secondary-pane-content">
-      <h3>${title}</h3>
-      ${paragraphs.map(p => `<p>${p}</p>`).join('')}
+      <h3>${esc(title)}</h3>
+      ${author?.name ? `
+        <span class="secondary-pane-author">
+          Written by
+          <a href="#${esc(author.subpageId || 'subpage-team')}"
+            class="intro-author-link"
+            data-subpage-id="${esc(author.subpageId || 'subpage-team')}"
+            data-subpage-header="${esc(author.subpageHeader || 'Meet our Team')}"
+            data-author-name="${esc(author.name)}">
+            ${esc(author.name)}
+          </a>
+        </span>
+      ` : ''}
+      ${(paragraphs || []).map(p => `<p>${esc(p)}</p>`).join('')}
     </div>
   `;
 
@@ -10697,6 +10899,11 @@ function renderThemesUI() {
       openMenuSecondary('#discover-connections', {
         title: theme.title,
         paragraphs: theme.paragraphs,
+        author: {
+          name: theme.sidebarAuthorName || 'Jacqueline Häußler',
+          subpageId: theme.sidebarAuthorSubpageId || 'subpage-team',
+          subpageHeader: theme.sidebarAuthorHeader || 'Meet our Team'
+        },
         showSelectButton: true
       });
     });
@@ -10843,6 +11050,96 @@ function resetSlideInScroll(slideInEl) {
   if (scroller) scroller.scrollTop = 0;
 }
 
+function softCloseSlideInEl(wrap) {
+  if (!wrap) return;
+  wrap.classList.remove('expanded', 'secondary-open');
+  wrap.querySelector('.vertical-content')?.classList.remove('visible');
+
+  // ✅ When a content sidebar gets closed, reset its scroll for next open
+  resetSlideInScroll(wrap);
+}
+
+function hardCloseSlideInEl(wrap) {
+  if (!wrap) return;
+
+  softCloseSlideInEl(wrap);
+
+  const panel = wrap.querySelector('.secondary-pane');
+  if (panel) {
+    panel.setAttribute('aria-hidden', 'true');
+    panel.innerHTML = '';
+  }
+  if (typeof clearThemesActiveState === 'function') {
+    clearThemesActiveState();
+  }
+
+  // If this sidebar was encoded in the gallery deeplink, clear it
+  if (GALLERY_DEEPLINKS.updateSidebarParamOnToggle) {
+    const { path, params } = parseHashParts(location.hash);
+    if ((path === 'group-gallery' || path === 'gallery') && params.get('sidebar') === wrap.id) {
+      const gid = params.get('gid') || document.body.dataset.currentGroupId || history.state?.gid;
+      if (gid) {
+        try {
+          const nextState = { ...(history.state || {}) };
+          if (nextState.gallery) nextState.sidebarId = '';
+          history.replaceState(nextState, '', appUrl(buildGroupGalleryHash(gid, null)));
+        } catch {}
+      }
+    }
+  }
+}
+
+function openSlideInEl(wrap, { updateGalleryHash = true } = {}) {
+  document.querySelectorAll('#slide-ins .slide-in').forEach(el => {
+    if (el === wrap) {
+      el.classList.add('expanded');
+      el.querySelector('.vertical-content')?.classList.add('visible');
+    } else {
+      softCloseSlideInEl(el);
+    }
+  });
+
+  // Update the URL so it becomes a copy/pasteable deep link:
+  //   #group-gallery?gid=123&sidebar=about-the-fieldsite
+  if (updateGalleryHash && GALLERY_DEEPLINKS.updateSidebarParamOnToggle) {
+    const gid =
+      document.body.dataset.currentGroupId ||
+      history.state?.gid ||
+      parseHashParts(location.hash).params.get('gid');
+
+    if (document.body.classList.contains('in-group-gallery') && gid && wrap?.id) {
+      try {
+        const nextState = {
+          ...(history.state || {}),
+          gallery: true,
+          gid: String(gid),
+          sidebarId: String(wrap.id),
+        };
+        history.replaceState(nextState, '', appUrl(buildGroupGalleryHash(gid, wrap.id)));
+      } catch {}
+    }
+  }
+}
+
+function openSlideInById(id, opts = {}) {
+  const wrap = document.getElementById(id);
+  if (!wrap) {
+    console.warn('[slide-in] not found:', id);
+    return false;
+  }
+  openSlideInEl(wrap, opts);
+  requestAnimationFrame(() => syncSlideInsViewport('slidein-open-byid'));
+  return true;
+}
+
+function closeSlideInById(id) {
+  const wrap = document.getElementById(id);
+  if (!wrap) return false;
+  hardCloseSlideInEl(wrap);
+  requestAnimationFrame(() => syncSlideInsViewport('slidein-close-byid'));
+  return true;
+}
+
 // --- Slide-ins: expand/collapse ---
 function initSlideIns() {
   const container = document.getElementById('slide-ins');
@@ -10880,37 +11177,9 @@ function initSlideIns() {
     const isExpanded = wrap.classList.contains('expanded');
     const closeBtn = e.target.closest('.close-btn');
   
-    const openThisAndCloseOthers = () => {
-      document.querySelectorAll('#slide-ins .slide-in').forEach(el => {
-        if (el === wrap) {
-          el.classList.add('expanded');
-          el.querySelector('.vertical-content')?.classList.add('visible');
-        } else {
-          el.classList.remove('expanded', 'secondary-open');
-          el.querySelector('.vertical-content')?.classList.remove('visible');
-    
-          // ✅ When a content sidebar gets closed, reset its scroll for next open
-          resetSlideInScroll(el);
-        }
-      });
-    };
-    
-    const closeThis = () => {
-      wrap.classList.remove('expanded', 'secondary-open');
-      wrap.querySelector('.vertical-content')?.classList.remove('visible');
-    
-      // ✅ When a content sidebar gets closed, reset its scroll for next open
-      resetSlideInScroll(wrap);
-    
-      const panel = wrap.querySelector('.secondary-pane');
-      if (panel) {
-        panel.setAttribute('aria-hidden', 'true');
-        panel.innerHTML = '';
-      }
-      if (typeof clearThemesActiveState === 'function') {
-        clearThemesActiveState();
-      }
-    };
+    const openThisAndCloseOthers = () => openSlideInEl(wrap);
+
+    const closeThis = () => hardCloseSlideInEl(wrap);
   
     if (closeBtn) {
       e.stopPropagation();
@@ -11199,12 +11468,7 @@ function initOverlayMenu() {
       // Author / contributor name → Team page (close menu first)
       const authorLink = ev.target.closest('a[data-author-name]');
       if (authorLink) {
-        ev.preventDefault();
-        ev.stopPropagation();
-
-        const name = authorLink.dataset.authorName || (authorLink.textContent || '').trim();
-        closeOverlay(ev);
-        window.openAuthorSubpageForName?.(name);
+        handleAuthorLinkClick(ev, authorLink);
         return;
       }
 
@@ -11401,9 +11665,37 @@ function applyStaticHashRoute(route) {
   }
 
   if (route.type === 'research') {
-    // If you updated openResearchPage to accept options, this is perfect:
     window.openResearchPage?.({ skipHistory: true });
-    // If you did NOT update it, use: window.openResearchPage?.();
+    return true;
+  }
+
+  if (route.type === 'groupGallery') {
+    const gid = route.gid;
+    const sidebarId = route.sidebar || null;
+  
+    const openWhenReady = () => {
+      // Abort if user changed the hash while we were waiting
+      if (!isGroupGalleryHash(location.hash)) return;
+  
+      const loadingDone =
+        (typeof LOADING !== 'undefined' && typeof LOADING.isComplete === 'function')
+          ? LOADING.isComplete()
+          : !!window.gridObject;
+  
+      const opener = window.openGroupGallery;
+  
+      if (loadingDone && typeof opener === 'function') {
+        opener(gid, {
+          historyMode: 'replace',
+          sidebarId,
+        });
+        return;
+      }
+  
+      requestAnimationFrame(openWhenReady);
+    };
+  
+    openWhenReady();
     return true;
   }
 
@@ -11557,6 +11849,12 @@ function closeOverlayMenuIfOpen() {
 // Generic handler: any element with data-subpage-id will open that text subpage
 function initSubpageLinkShortcuts() {
   document.addEventListener('click', (event) => {
+    const authorLink = event.target.closest('a[data-author-name]');
+    if (authorLink) {
+      handleAuthorLinkClick(event, authorLink);
+      return;
+    }
+
     const link = event.target.closest('[data-subpage-id]');
     if (!link) return;
 
@@ -11686,6 +11984,120 @@ function initArrowListScrolling() {
   });
 }
 
+function initTextSubpageFootnotes() {
+  // Avoid double-binding if this gets called from multiple places
+  if (window.__textSubpageFootnotesInit) return;
+  window.__textSubpageFootnotesInit = true;
+
+  // Prepare all configured text subpages
+  document
+    .querySelectorAll('.text-subpage[data-footnote-prefix]')
+    .forEach(setupTextSubpageFootnotes);
+
+  // Delegated click handler (so we don’t attach N listeners)
+  document.addEventListener('click', (event) => {
+    const ref = event.target.closest('a.footnote-ref');
+    if (!ref) return;
+
+    const subpage = ref.closest('.text-subpage[data-footnote-prefix]');
+    if (!subpage) return;
+
+    const noteNum = ref.dataset.note;
+    if (!noteNum) return;
+
+    const prefix = subpage.getAttribute('data-footnote-prefix') || '';
+    const targetId = `fn-${prefix}-${noteNum}`;
+
+    // IMPORTANT: scope inside the subpage to avoid the duplicate-ID issue
+    const target = subpage.querySelector(`#${targetId}`);
+    if (!target) {
+      console.warn('[footnotes] target note not found', {
+        subpage: subpage.id,
+        targetId
+      });
+      return;
+    }
+
+    // Fully override default behavior (do NOT update the URL hash)
+    event.preventDefault();
+    event.stopPropagation?.();
+
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    flashFootnoteTarget(target);
+  });
+}
+
+function setupTextSubpageFootnotes(subpageEl) {
+  if (!subpageEl) return;
+  if (subpageEl.dataset && subpageEl.dataset.footnotesReady === '1') return;
+
+  const prefix = subpageEl.getAttribute('data-footnote-prefix');
+  if (!prefix) return;
+
+  // 1) Tag each [n] note paragraph as a jump target
+  const notesRow = subpageEl.querySelector('.section-notes');
+  const notesBody = notesRow?.querySelector('.right');
+
+  if (notesBody) {
+    notesBody.querySelectorAll('p').forEach((p) => {
+      const m = (p.textContent || '').match(/^\s*\[(\d+)\]/);
+      if (!m) return;
+
+      const n = m[1];
+      p.dataset.note = n;
+      p.classList.add('footnote-target');
+      p.id = `fn-${prefix}-${n}`;
+    });
+  }
+
+  // 2) Turn <sup>n</sup> markers into clickable links
+  subpageEl.querySelectorAll('.text-page sup').forEach((sup) => {
+    if (!sup) return;
+    if (sup.dataset && sup.dataset.subpageFootnoteLink === '1') return;
+
+    // If someone already wrapped this in a link, don’t touch it
+    if (sup.closest('a')) return;
+
+    const n = (sup.textContent || '').trim();
+    if (!/^[0-9]+$/.test(n)) return;
+
+    sup.dataset.subpageFootnoteLink = '1';
+
+    const a = document.createElement('a');
+    a.href = '#';
+    a.className = 'footnote-ref';
+    a.dataset.note = n;
+    a.setAttribute('aria-label', `Jump to note ${n}`);
+    a.textContent = n;
+
+    sup.textContent = '';
+    sup.appendChild(a);
+  });
+
+  subpageEl.dataset.footnotesReady = '1';
+}
+
+function flashFootnoteTarget(el) {
+  if (!el) return;
+
+  // Restart animation
+  el.classList.remove('footnote-target-flash');
+  // Force reflow so the animation can re-run
+  void el.offsetWidth;
+  el.classList.add('footnote-target-flash');
+
+  const cleanup = () => {
+    el.classList.remove('footnote-target-flash');
+    el.removeEventListener('animationend', cleanup);
+  };
+  el.addEventListener('animationend', cleanup);
+
+  // Fallback (e.g. reduced motion / no animationend fired)
+  window.setTimeout(() => {
+    el.classList.remove('footnote-target-flash');
+  }, 1500);
+}
+
 // Run once DOM is ready (keep your existing DOMContentLoaded handlers)
 document.addEventListener('DOMContentLoaded', () => {
   initSlideIns();
@@ -11694,6 +12106,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initSubpageBackButtons();
   initIntroObjectLinks();
   initArrowListScrolling();   // ← add this line
+  initTextSubpageFootnotes(); // footnote superscripts → Notes jump
   initAuthorBylineLinks();
   // Theme toggle: header + overlay footer
   renderThemeToggle(document.querySelector('.header-right'));
