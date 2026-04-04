@@ -2865,7 +2865,8 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 }
 
 /* Animate content height */
-.content-section.collapsible .section-content {
+.content-section.collapsible .section-content,
+.text-subpage .two-col-row.collapsible .section-content {
   max-height: 0;
   overflow: hidden;
   transition: max-height .3s ease;
@@ -2934,7 +2935,8 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 
 /* Make header a flex row so the chevron can sit at the far right */
 .content-section.collapsible h3,
-.content-section.collapsible .section-header {
+.content-section.collapsible .section-header,
+.text-subpage .two-col-row.collapsible h3 {
   display: flex;
   align-items: center;
   cursor: pointer;
@@ -2943,7 +2945,8 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 
 /* sidebar section expand/collapse icon (mask-based, inherits currentColor) */
 .content-section.collapsible h3::after,
-.content-section.collapsible .section-header::after {
+.content-section.collapsible .section-header::after,
+.text-subpage .two-col-row.collapsible h3::after {
   content: '';
   margin-left: auto;
   margin-right: var(--section-divider-right, 0px);
@@ -2951,20 +2954,18 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
   height: var(--section-icon-size, 8px);
   display: inline-block;
 
-  /* fill color = current text color by default, configurable via --section-toggle-icon-color */
   background-color: var(--section-toggle-icon-color, currentColor);
 
-  /* use the same asset as a mask so it can be tinted */
   -webkit-mask: var(--icon-section-toggle, url('img/icons/arrow_expand.svg')) no-repeat center / contain;
           mask: var(--icon-section-toggle, url('img/icons/arrow_expand.svg')) no-repeat center / contain;
 
   transition: transform .2s ease;
-  /* closed = SVG as-is (points right) */
 }
 
 /* open = opposite direction of the SVG (right → left) */
 .content-section.collapsible.is-open h3::after,
-.content-section.collapsible.is-open .section-header::after {
+.content-section.collapsible.is-open .section-header::after,
+.text-subpage .two-col-row.collapsible.is-open h3::after {
   transform: rotate(180deg);
 }
 
