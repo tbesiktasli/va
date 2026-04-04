@@ -11646,6 +11646,9 @@ function initOverlayMenu() {
 
 // === Subpage initializers (run when a subpage is opened) ===
 const SUBPAGE_INITS = {
+  'subpage-introduction': initTextSubpageNotesAndReferences,
+  'subpage-archive-architecture': initTextSubpageNotesAndReferences,
+
   'subpage-references': initLiteratureSubpage,
   'subpage-team': initTeamSubpage,
 };
@@ -11746,6 +11749,23 @@ async function initLiteratureSubpage(root) {
     console.error('[literature] load failed', err);
     right.innerHTML = '<p>Failed to load literature.</p>';
   }
+}
+
+function initTextSubpageNotesAndReferences(root) {
+  // Prevent duplicate listeners if the user opens the subpage multiple times
+  if (root.__notesRefsAccordionInit) return;
+  root.__notesRefsAccordionInit = true;
+
+  // Notes + References: collapsible (default collapsed)
+  requestAnimationFrame(() => {
+    initSlideInAccordion(`#${root.id}`, {
+      mode: 'collapsible',
+      dynamicHeight: false,
+      releaseAfterOpen: true,
+      initialOpen: -1,
+      sectionSelector: '.two-col-row.section-notes, .two-col-row.section-references'
+    });
+  });
 }
 
 function initTeamSubpage(root) {
