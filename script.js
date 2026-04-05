@@ -9586,6 +9586,16 @@ window.addEventListener('DOMContentLoaded', async () => {
     sectionSelector: '.content-section.sub-section'
   });
 
+  CONTENT_SIDEBAR_CONFIG.forEach(({ id }) => {
+    initSlideInAccordion(`#${id}`, {
+      mode: 'collapsible',
+      dynamicHeight: false,
+      releaseAfterOpen: true,
+      initialOpen: -1,
+      sectionSelector: '.two-col-row.section-notes, .two-col-row.section-references'
+    });
+  });
+
   attachSecondaryAutoClose('#discover-connections');
 
   // Close secondary when any section is opened in this slide-in
