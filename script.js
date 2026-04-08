@@ -2348,9 +2348,9 @@ window.activeThemeFilter = null;
   const _add = s.add.bind(s);
   const _del = s.delete.bind(s);
   const _clr = s.clear.bind(s);
-  s.add    = (...a) => { const r = _add(...a); window.syncActiveTagColors?.(); window.renderSelectionBar?.(); return r; };
-  s.delete = (...a) => { const r = _del(...a); window.syncActiveTagColors?.(); window.renderSelectionBar?.(); return r; };
-  s.clear  = (...a) => { const r = _clr(...a); window.syncActiveTagColors?.(); window.renderSelectionBar?.(); return r; };
+  s.add    = (...a) => { const r = _add(...a); window.syncActiveTagColors?.(); window.renderSelectionBar?.(); window.syncDiscoverTagSelectBar?.(); return r; };
+  s.delete = (...a) => { const r = _del(...a); window.syncActiveTagColors?.(); window.renderSelectionBar?.(); window.syncDiscoverTagSelectBar?.(); return r; };
+  s.clear  = (...a) => { const r = _clr(...a); window.syncActiveTagColors?.(); window.renderSelectionBar?.(); window.syncDiscoverTagSelectBar?.(); return r; };
 })();
 
 // Central helper: remove one tag from the global selection and keep all tag-based UI in sync.
@@ -4445,6 +4445,13 @@ function collapseDiscoverSidebar() {
     el.querySelector('.vertical-content')?.classList.remove('visible');
   });
 
+  // Reset Episodes "Select" bar gating (so it only appears after a new click)
+  const epBar = document.querySelector('#discover-connections .dc-episodes-selectbar');
+  if (epBar) {
+    epBar.dataset.armed = '0';
+    epBar.hidden = true;
+  }
+
   // keep layout math in sync with the new (collapsed) width
   if (typeof syncSlideInsViewport === 'function') syncSlideInsViewport('collapseDiscoverSidebar');
 }
@@ -6127,26 +6134,33 @@ function initMobileSlideInsToggle() {
       const list = Array.isArray(obj?.themes) ? obj.themes : [];
     
       const items = list.map(t => {
-        const rawName = t.name ?? '';
-        const name    = esc(rawName);
-        const desc    = esc(t.description);
-        const idAttr  = escAttr(t.id ?? t.Id ?? t.ID ?? '');
+        const rawName  = t.name ?? '';
+        const name     = esc(rawName);
+        const title    = name || 'Theme';
+        const desc     = esc(t.description);
+        const idAttr   = escAttr(t.id ?? t.Id ?? t.ID ?? '');
         const nameAttr = escAttr(rawName);
-    
+      
         if (!name && !desc) return '';
-    
+      
         return `
-          <div class="related-theme-item">
-            ${name ? `<h4>${name}</h4>` : ''}
-            ${desc ? `<p>${desc}</p>` : ''}
-            <div class="related-theme-actions">
-              <a href="#"
-                 class="button related-theme-explore"
-                 data-theme-id="${idAttr}"
-                 data-theme-name="${nameAttr}">
-                <span class="text">Explore Theme</span>
-                <span class="icon" aria-hidden="true"></span>
-              </a>
+          <div class="content-section related-theme-item">
+            <div class="section-header">
+              <h4>${title}</h4>
+            </div>
+      
+            <div class="section-content">
+              ${desc ? `<p>${desc}</p>` : ''}
+      
+              <div class="related-theme-actions">
+                <a href="#"
+                   class="button related-theme-explore"
+                   data-theme-id="${idAttr}"
+                   data-theme-name="${nameAttr}">
+                  <span class="text">Explore Theme</span>
+                  <span class="icon" aria-hidden="true"></span>
+                </a>
+              </div>
             </div>
           </div>
         `;
@@ -6154,6 +6168,16 @@ function initMobileSlideInsToggle() {
     
       host.innerHTML = items.join('');
       setDetailSectionVisibility(host, items.length > 0);
+
+      if (items.length) {
+        initSlideInAccordion('#related-themes', {
+          mode: 'collapsible',
+          dynamicHeight: false,
+          releaseAfterOpen: true,
+          initialOpen: -1,
+          sectionSelector: '.related-theme-item'
+        });
+      }
     
       // Keep your existing delegated click handler (bind once)
       if (!host._themeExploreBound) {
@@ -10313,15 +10337,88 @@ function initSlideInTags() {
 
   });
 
-  // 3) Match toggle (last)
-  renderTagModeToggle(section);
+  // 3) Sticky footer: mobile "Select" (when tags selected) + match toggle
+  const footer = document.createElement('div');
+  footer.className = 'dc-tags-footer';
+
+  const selectBar = document.createElement('div');
+  selectBar.className = 'dc-tags-selectbar';
+  selectBar.hidden = true;
+  selectBar.innerHTML = `
+    <button type="button" class="button dc-tags-select-btn">
+      <span class="text">Select</span><span class="icon" aria-hidden="true"></span>
+    </button>
+  `;
+  footer.appendChild(selectBar);
+
+  // Select: close the sidebar (mobile)
+  const selectBtn = selectBar.querySelector('.dc-tags-select-btn');
+  if (selectBtn) {
+    selectBtn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      if (typeof collapseSlideInsStrip === 'function') {
+        collapseSlideInsStrip();
+      } else if (typeof collapseDiscoverSidebar === 'function') {
+        collapseDiscoverSidebar();
+      }
+    });
+  }
+
+  section.appendChild(footer);
+
+  // Match toggle lives under the Select bar inside the same sticky footer
+  renderTagModeToggle(footer);
   syncTagModeToggleUI();
 
   // Initial paint
   renderTagsForCurrentGroup();
   markActiveGroupButton();
   updateTagAvailability();
+  syncDiscoverTagSelectBar();
 }
+
+function syncDiscoverTagSelectBar() {
+  const el = document.querySelector('#discover-connections .dc-tags-selectbar');
+  if (!el) return;
+
+  const isMobile =
+    (typeof isMobileViewportForSlideIns === 'function' && isMobileViewportForSlideIns()) ||
+    (window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
+
+  const hasTags = !!(window.activeTags && window.activeTags.size > 0);
+
+  // Only show on mobile + when at least one tag is selected
+  el.hidden = !(isMobile && hasTags);
+
+  // Bind once so rotate/resize keeps it correct
+  if (!syncDiscoverTagSelectBar._bound) {
+    syncDiscoverTagSelectBar._bound = true;
+    window.addEventListener('resize', () => syncDiscoverTagSelectBar());
+  }
+}
+window.syncDiscoverTagSelectBar = syncDiscoverTagSelectBar;
+
+function syncDiscoverEpisodeSelectBar() {
+  const el = document.querySelector('#discover-connections .dc-episodes-selectbar');
+  if (!el) return;
+
+  const isMobile =
+    (typeof isMobileViewportForSlideIns === 'function' && isMobileViewportForSlideIns()) ||
+    (window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
+
+    const hasSelection = !!document.querySelector('#discover-connections .dc-project-item.is-selected');
+    const armed = (el.dataset.armed === '1');
+    
+    // Only show on mobile + when user actually clicked an episode (armed) + selection exists
+    el.hidden = !(isMobile && armed && hasSelection);
+
+  // Bind once so rotate/resize keeps it correct
+  if (!syncDiscoverEpisodeSelectBar._bound) {
+    syncDiscoverEpisodeSelectBar._bound = true;
+    window.addEventListener('resize', () => syncDiscoverEpisodeSelectBar());
+  }
+}
+window.syncDiscoverEpisodeSelectBar = syncDiscoverEpisodeSelectBar;
 
 // Sync .active styling of tag pills inside detail cards with global activeTags
 function syncDetailTagHighlights() {
@@ -10986,22 +11083,75 @@ function renderDiscoverProjectsFromGroups() {
 
   content.appendChild(ul);
 
-  // click handling: select + open gallery
+  // --- Sticky footer: mobile "Select" for Episodes ---
+  const footer = document.createElement('div');
+  footer.className = 'dc-episodes-footer';
+
+  const selectBar = document.createElement('div');
+  selectBar.className = 'dc-episodes-selectbar';
+  selectBar.hidden = true;
+  selectBar.dataset.armed = '0'; // only show after a real click
+  selectBar.innerHTML = `
+    <button type="button" class="button dc-episodes-select-btn">
+      <span class="text">Select</span><span class="icon" aria-hidden="true"></span>
+    </button>
+  `;
+  footer.appendChild(selectBar);
+  content.appendChild(footer);
+
+  // Select: open the currently selected episode (group)
+  const selectBtn = selectBar.querySelector('.dc-episodes-select-btn');
+  if (selectBtn) {
+    selectBtn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+
+      const selected = ul.querySelector('.dc-project-item.is-selected');
+      const gid = selected?.dataset?.gid;
+      if (!gid) return;
+
+      // Trigger the same action you currently trigger on episode click (moved here)
+      if (typeof window.openGroupGallery === 'function') {
+        window.openGroupGallery(gid);
+      }
+    });
+  }
+
+  // click handling:
+  // - ALWAYS set selected (radio-like)
+  // - DESKTOP: keep current behavior (open immediately)
+  // - MOBILE: do NOT open immediately; instead show Select bar
   ul.addEventListener('click', (e) => {
     const li = e.target.closest('.dc-project-item');
     if (!li) return;
     const gid = li.dataset.gid;
 
-    // set selected (radio-like)
     ul.querySelectorAll('.dc-project-item.is-selected')
       .forEach(n => n.classList.remove('is-selected'));
     li.classList.add('is-selected');
 
-    // open gallery
+    selectBar.dataset.armed = '1';
+
+    const isMobile =
+      (typeof isMobileViewportForSlideIns === 'function' && isMobileViewportForSlideIns()) ||
+      (window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
+
+    if (isMobile) {
+      if (typeof syncDiscoverEpisodeSelectBar === 'function') {
+        syncDiscoverEpisodeSelectBar();
+      }
+      return;
+    }
+
+    // Desktop/tablet: preserve old immediate navigation
     if (typeof window.openGroupGallery === 'function') {
       window.openGroupGallery(gid);
     }
   });
+
+  // Initial paint (keep bar hidden until a selection exists on mobile)
+  if (typeof syncDiscoverEpisodeSelectBar === 'function') {
+    syncDiscoverEpisodeSelectBar();
+  }
 }
 
 function renderTagsForCurrentGroup() {
@@ -11572,6 +11722,9 @@ function initOverlayMenu() {
     // Show overlay (your existing behavior)
     overlay.classList.add('active');
     document.body.classList.add('menu-open');           // <-- mode class for header
+    trigger?.setAttribute('aria-expanded', 'true');
+    trigger?.setAttribute('aria-label', 'Close menu');
+    window.__dispatchViewChange?.();
 
     // Kick the stagger animation one frame later (ensures transitions run)
     requestAnimationFrame(() => {
@@ -11583,7 +11736,7 @@ function initOverlayMenu() {
     mainItems.forEach((i) => i.classList.remove('active'));
     resetSubMenu({ animate: false });
 
-    headerClose?.focus?.();
+    trigger?.focus?.();
   };
   
   const closeOverlay = (e) => {
@@ -11594,15 +11747,31 @@ function initOverlayMenu() {
 
     overlay.classList.remove('active');
     document.body.classList.remove('menu-open');        // <-- remove mode class
+    trigger?.setAttribute('aria-expanded', 'false');
+    trigger?.setAttribute('aria-label', 'Open menu');
+    window.__dispatchViewChange?.();
     previousFocus?.focus?.();
   }; 
 
   // Expose for other handlers (e.g., footer links that open subpages)
   window.closeOverlayMenu = closeOverlay;
 
-  trigger?.addEventListener('click', openOverlay);
-  trigger?.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') openOverlay(e); });
+  const toggleOverlay = (e) => {
+    const isOpen = overlay.classList.contains('active');
+    if (isOpen) {
+      closeOverlay(e);
+    } else {
+      openOverlay(e);
+    }
+  };
+  
+  trigger?.addEventListener('click', toggleOverlay);
+  trigger?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') toggleOverlay(e);
+  });
+  
   headerClose?.addEventListener('click', closeOverlay);
+
   overlay.addEventListener('click', (e) => { if (e.target === overlay) closeOverlay(e); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeOverlay(e); });
   mainItems.forEach(i => i.addEventListener('click', () => {
@@ -12613,6 +12782,11 @@ window.setHeaderLeftText = (t) => setHeaderLeft('custom', { text: t });
 function refreshHeaderLeftFromState() {
   const body = document.body;
   const grid = window.gridObject; 
+
+  // Overlay menu open → header-left should be empty
+  if (body.classList.contains('menu-open')) {
+    return setHeaderLeft('custom', { text: '' });
+  }
 
   // If a text subpage (About, References, Team, etc.) is active,
   // keep whatever header openTextSubpage() already set.
