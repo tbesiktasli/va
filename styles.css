@@ -61,7 +61,10 @@
   --hover-bot-right: 0.5px; /* bottom nudges right by 0.5px */
   /* NEW: thickness control (increase these for thicker lines) */
   --burger-bar-thickness: 1.3px;   /* ← tweak this */
-  --burger-bar-radius:    0.65px;  /* corner radius to match thickness/2 */
+  --burger-bar-radius: 0.65px;  /* corner radius to match thickness/2 */
+  --burger-anim-ms: 220ms;
+  --burger-open-shift: 7px;
+  --burger-open-scale-mid: 0;
   --nav-icon-size: 18px;
   --slidein-icon-size: 20px;
   --icon-slidein-closed:          url('img/icons/arrow_counter_10x12px.svg');
@@ -109,6 +112,8 @@
   --detail-media-frame-h: var(--detail-media-max-h); /* reserved hero slot height */
 
   --content-section-pad-top: 20px; /* matches .content-section padding-top */
+  --detail-section-header-pad-y: 12px;
+  --detail-section-collapsed-gap: calc(var(--content-section-pad-top) + var(--detail-section-header-pad-y));
   --prepage-side-w: 220px;      /* smaller side “padding” columns */
   --prepage-main-max: 900px;    /* wider middle content */  
   --prepage-actions-reserve: 120px;
@@ -2250,13 +2255,20 @@ and pin the expanded panel to the right edge. */
   --vc-pad-right: 0px;              /* set if you ever add right padding */
   padding-left: var(--vc-pad-left);
 
-  /* Desktop: shorten section dividers so they don't visually touch the slide-in handles */
-  --detail-divider-inset-right: 20px; /* tweak: 16–32px usually feels good */
+  --section-icon-size: 12px;
+
+  /* single source of truth for right-side shortening on detail sub-sections */
+  --detail-divider-inset-right: 50px;
+  --detail-subsection-content-inset-right: var(--detail-divider-inset-right);
 }
 
 @media (min-width: 769px) {
-  #detail-content .content-section {
+  #detail-content .content-section.multi-column {
     --section-divider-right: var(--detail-divider-inset-right);
+  }
+
+  #detail-content .content-section.sub-section:not(.sub-section--wide-content) .section-content > .right {
+    padding-right: var(--detail-subsection-content-inset-right);
   }
 }
 
@@ -2779,7 +2791,7 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
   font-weight: 200;
 }
 
-.content-section.multi-column .section-content {
+.content-section.multi-column > .section-content {
   display: flex;
 }
 
@@ -2836,8 +2848,8 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
     
       /* Pull the header up into the section's top padding so there's no see-through gap */
       margin-top: calc(-1 * var(--content-section-pad-top));
-      padding-top: calc(12px + var(--content-section-pad-top));
-      padding-bottom: 12px;
+      padding-top: calc(var(--detail-section-header-pad-y) + var(--content-section-pad-top));
+      padding-bottom: var(--detail-section-header-pad-y);
     }
   }
 
@@ -2935,8 +2947,8 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 }
 
 /* Make header a flex row so the chevron can sit at the far right */
-.content-section.collapsible h3,
-.content-section.collapsible .section-header,
+.content-section.collapsible > h3,
+.content-section.collapsible > .section-header,
 .text-subpage .two-col-row.collapsible h3,
 .slide-in[data-mode="content"] .two-col-row.collapsible h3 {
   display: flex;
@@ -2946,8 +2958,8 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 }
 
 /* sidebar section expand/collapse icon (mask-based, inherits currentColor) */
-.content-section.collapsible h3::after,
-.content-section.collapsible .section-header::after,
+.content-section.collapsible > h3::after,
+.content-section.collapsible > .section-header::after,
 .text-subpage .two-col-row.collapsible h3::after,
 .slide-in[data-mode="content"] .two-col-row.collapsible h3::after {
   content: '';
@@ -2966,15 +2978,29 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 }
 
 /* open = opposite direction of the SVG (right → left) */
-.content-section.collapsible.is-open h3::after,
-.content-section.collapsible.is-open .section-header::after,
-.text-subpage .two-col-row.collapsible.is-open h3::after {
+.content-section.collapsible.is-open > h3::after,
+.content-section.collapsible.is-open > .section-header::after,
+.text-subpage .two-col-row.collapsible.is-open h3::after,
+.slide-in[data-mode="content"] .two-col-row.collapsible.is-open h3::after {
   transform: rotate(180deg);
+}
+
+/* Related Themes on detail page: invert the default chevron only here */
+#detail-content #related-themes .related-theme-item > .section-header::after {
+  transform: rotate(180deg);
+}
+
+#detail-content #related-themes .related-theme-item.collapsible.is-open > .section-header::after {
+  transform: none;
 }
 
 /* Detail page: make sub-section headers a full-row click target */
 #detail-content .content-section.sub-section .section-header {
-  padding: 12px 0;
+  padding: var(--detail-section-header-pad-y) 0;
+}
+
+#detail-content .content-section.sub-section.collapsible:not(.is-open) .section-header {
+  padding-bottom: var(--detail-section-collapsed-gap);
 }
 
 #detail-content .content-section.sub-section .section-header h2 {
@@ -3420,6 +3446,57 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
   color: var(--main-outline-color);
 }
 
+/* Discover Connections (Tags): sticky footer on mobile
+   that stacks "Select" above the match toggle */
+   #discover-connections .dc-tags-footer, #discover-connections .dc-episodes-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    background: var(--main-bg-color);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  
+  /* The new "Select" bar (JS toggles [hidden]) */
+  #discover-connections .dc-tags-selectbar,
+  #discover-connections .dc-episodes-selectbar {
+    display: flex;
+    justify-content: center;
+    padding: 10px 0 6px;
+    background: var(--main-bg-color);
+    border-top: 1px solid var(--main-light-outline-color);
+  }
+  
+  #discover-connections .dc-tags-selectbar[hidden] {
+    display: none !important;
+  }
+  
+  /* Make the Select button look like your existing .button links */
+  #discover-connections .dc-tags-select-btn,
+  #discover-connections .dc-episodes-select-btn {
+    appearance: none;
+    -webkit-appearance: none;
+    font: inherit;
+    cursor: pointer;
+  }
+  
+  /* Inside our sticky footer, the match toggle should NOT be sticky by itself */
+  #discover-connections .dc-tags-footer .tag-match-toggle {
+    position: static;
+    bottom: auto;
+    margin: 0;
+    padding: 8px 0 10px;
+    background: var(--main-bg-color);
+    border-top: 1px solid var(--main-light-outline-color);
+  }
+  
+  /* Desktop: never show the Select bar (extra safety) */
+  @media (min-width: 769px) {
+    #discover-connections .dc-tags-selectbar,
+    #discover-connections .dc-episodes-selectbar {
+      display: none !important;
+    }
+  }
+
 .tag-mode-btn {
   background: none;
   border: none;
@@ -3603,18 +3680,25 @@ ul.tag-group-switch {
   font-weight: 300;
 }
 
-.menu-item:hover {
+.menu-item:hover,
+.menu-item.active {
   font-weight: 500;
 }
 
-.menu-item.active {
-  font-weight: 500;
-  position: relative;
+@media (min-width: 769px) {
+  .main-menu .menu-item:hover,
+  .main-menu .menu-item.active {
+    position: relative;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
 
-  /* ✅ makes the dash a separate “column”, so wrapped lines align after it */
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
+  .main-menu .menu-item:hover::before,
+  .main-menu .menu-item.active::before {
+    content: "—";
+    flex: 0 0 auto;
+  }
 }
 
 /* Animate main navigation items on menu open (staggered fade + slight downward slide) */
@@ -3644,12 +3728,6 @@ ul.tag-group-switch {
     opacity: 1 !important;
     transform: none !important;
   }
-}
-
-/* Main menu: show dash only for the active main item */
-.main-menu .menu-item.active::before {
-  content: "—";        /* no trailing space; we use gap instead */
-  flex: 0 0 auto;      /* prevent the dash from shrinking */
 }
 
 .sub-menu {
@@ -3707,27 +3785,30 @@ ul.tag-group-switch {
   }
 }
 
-.sub-menu .sub-item:hover {
-  font-weight: 700;
-}
-
 .sub-menu .sub-item {
   cursor: pointer;
   font-weight: 200;
 }
 
+.sub-menu .sub-item:hover,
 .sub-menu .sub-item.active {
   font-weight: 700;
-  position: relative;
-
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
 }
 
-.sub-menu .sub-item.active::before {
-  content: "—";
-  flex: 0 0 auto;
+@media (min-width: 769px) {
+  .sub-menu .sub-item:hover,
+  .sub-menu .sub-item.active {
+    position: relative;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  .sub-menu .sub-item:hover::before,
+  .sub-menu .sub-item.active::before {
+    content: "—";
+    flex: 0 0 auto;
+  }
 }
 
 /* Episodes list (Overlay menu → Episodes) */
@@ -4117,29 +4198,65 @@ html.no-ken-burns .kb-img {
 
 .burger { overflow: visible; }
 
-
-/* Rect bars: use fill only; never scale → thickness stays constant */
+/* Rect bars: keep thickness stable, animate only transform/opacity */
 .burger--rect .bar {
   fill: currentColor;
   stroke: none;
-  height: var(--burger-bar-thickness); /* ← thickness here */
-  rx: var(--burger-bar-radius);        /* rounded ends that match */
-  transform: translateX(0);             /* base transform */
-  transition: transform 220ms cubic-bezier(.2,.8,.2,1);
-  shape-rendering: crispEdges;          /* crisp 1px edges */
+  height: var(--burger-bar-thickness);
+  rx: var(--burger-bar-radius);
+  transform-box: fill-box;
+  transform-origin: center;
+  transition:
+    transform var(--burger-anim-ms) cubic-bezier(.2,.8,.2,1),
+    opacity 140ms ease;
+  shape-rendering: crispEdges;
 }
 
-/* Middle bar offset (your look) */
-.burger .bar--mid { transform: translateX(var(--burger-offset)); }
+/* Closed state */
+.burger .bar--top {
+  transform: translateX(0) translateY(0) rotate(0deg);
+}
 
-/* Hover (reverse): middle moves slightly LEFT; top/bottom slightly RIGHT */
-.menu-trigger:hover .burger--rect .bar--mid { transform: translateX(var(--hover-mid-left)); }
-.menu-trigger:hover .burger--rect .bar--top { transform: translateX(var(--hover-top-right)); }
-.menu-trigger:hover .burger--rect .bar--bot { transform: translateX(var(--hover-bot-right)); }
+.burger .bar--mid {
+  transform: translateX(var(--burger-offset)) scaleX(1);
+  opacity: 1;
+}
 
-/* Reduced motion: no animation */
+.burger .bar--bot {
+  transform: translateX(0) translateY(0) rotate(0deg);
+}
+
+/* Keep your subtle hover only while the menu is CLOSED */
+body:not(.menu-open) .menu-trigger:hover .burger--rect .bar--mid {
+  transform: translateX(var(--hover-mid-left)) scaleX(1);
+}
+
+body:not(.menu-open) .menu-trigger:hover .burger--rect .bar--top {
+  transform: translateX(var(--hover-top-right));
+}
+
+body:not(.menu-open) .menu-trigger:hover .burger--rect .bar--bot {
+  transform: translateX(var(--hover-bot-right));
+}
+
+/* OPEN state: morph burger into X */
+body.menu-open .menu-trigger .burger--rect .bar--top {
+  transform: translateY(var(--burger-open-shift)) rotate(45deg);
+}
+
+body.menu-open .menu-trigger .burger--rect .bar--mid {
+  transform: scaleX(var(--burger-open-scale-mid));
+  opacity: 0;
+}
+
+body.menu-open .menu-trigger .burger--rect .bar--bot {
+  transform: translateY(calc(var(--burger-open-shift) * -1)) rotate(-45deg);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .burger--rect .bar { transition: none; }
+  .burger--rect .bar {
+    transition: none;
+  }
 }
 
 /* Size you already had for the header-right area */
@@ -4172,9 +4289,9 @@ html.no-ken-burns .kb-img {
 }
 
 /* Overlay state toggles the header controls */
-body.menu-open .header-right .menu-trigger { display: none; }
+body.menu-open .header-right .menu-trigger { display: inline-grid; }
 body.menu-open .header-right .theme-toggle { display: none; }
-body.menu-open .header-right .header-close { display: inline-grid; }
+body.menu-open .header-right .header-close { display: none; }
 
 body.menu-open header {
   border-bottom-color: transparent;
@@ -4185,7 +4302,7 @@ body.menu-open header {
 .text-subpage.active { display: block; }
 
 .text-subpage .text-page {
-  padding: 80px 200px 0 200px;                        /* 150 top/bottom, 100 left/right */
+  padding: 120px 200px 0 200px;                        /* 150 top/bottom, 100 left/right */
   box-sizing: border-box;
   width: 100%;
 }
@@ -4272,7 +4389,13 @@ body.menu-open header {
 }
 
 .slide-in .text-page .two-col-table {
-  margin-top: 50px;
+  margin-top: var(--slidein-textpage-table-offset, 50px);
+}
+
+#about-the-fieldsite,
+#about-the-research-project,
+#viral-atmospheres {
+  --slidein-textpage-table-offset: 100px; /* 50 -> 100 = twice as low */
 }
 
 .slide-in .text-page h1 {
@@ -4599,28 +4722,56 @@ body.menu-open header {
   text-decoration: underline;
 }
 
-.related-theme-item {
-  margin-bottom: 50px;
-}
-.related-theme-item:last-child {
-  margin-bottom: 0;
-}
-
 #detail-content #related-themes {
+  --related-theme-gap: 24px;
+  --related-theme-content-bottom-space: 20px;
   padding-bottom: 8px;
 }
 
-/* Related Themes (detail page) */
+#detail-content #related-themes .related-theme-item {
+  --section-icon-size: 6px; /* smaller than the main section icon */
+  margin: 0;
+  padding-top: 0; /* override generic .content-section top padding */
+}
+
+#detail-content #related-themes .related-theme-item + .related-theme-item {
+  margin-top: var(--related-theme-gap);
+  padding-top: 0;
+  border-top: none;
+}
+
+#detail-content #related-themes .related-theme-item:last-child::after {
+  content: none;
+}
+
+#detail-content #related-themes .related-theme-item .section-header {
+  padding: 0;
+}
+
+#detail-content #related-themes .related-theme-item .section-content {
+  height: auto;
+}
+
+#detail-content #related-themes .related-theme-item.collapsible.is-open .section-content {
+  padding-bottom: var(--related-theme-content-bottom-space);
+}
+
 #detail-content #related-themes .related-theme-item h4 {
+  margin: 0;
   font-size: 1em;
   font-weight: 400;
 }
 
 /* Align the Explore Theme button to the same right edge as paragraph text */
 #detail-content #related-themes .related-theme-actions {
-  padding: 0 100px;              /* matches .vertical-content p padding */
+  padding: 0 100px;
   display: flex;
-  justify-content: flex-end;      /* right-align within padded text width */
+  justify-content: flex-end;
+  align-items: center;
+}
+
+#detail-content #related-themes .related-theme-actions .button {
+  align-self: flex-start;
 }
 
 
@@ -4846,8 +4997,14 @@ body.menu-open header {
     }
 
     .slide-in[data-mode="content"] .two-col-table {
-      margin-top: 24px;              /* was 50px from desktop rule */
+      margin-top: var(--slidein-textpage-table-offset-mobile, 24px);
       row-gap: 16px;
+    }
+    
+    #about-the-fieldsite,
+    #about-the-research-project,
+    #viral-atmospheres {
+      --slidein-textpage-table-offset-mobile: 48px; /* 24 -> 48 */
     }
 
     /* Stack the left (label) and right (content) blocks vertically */
@@ -5101,7 +5258,7 @@ body.menu-open header {
     }
 
     /* Stack multi-column sections (left/right) vertically */
-    #detail-content .content-section.multi-column .section-content {
+    #detail-content .content-section.multi-column > .section-content {
       flex-direction: column;        /* was: row (default flex) */
     }
 
