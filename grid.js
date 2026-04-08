@@ -1,4 +1,6 @@
-function fitTextToContainer(container, maxFontSize = 100, minFontSize = 7) {
+function fitTextToContainer(container, maxFontSize = 100, minFontSize = 7, opts = {}) {
+  const { allowPlaceholder = true } = opts;
+
   // Prefer the scaling-text span if you have it, but fall back to any span
   const span = container.querySelector('.scaling-text') || container.querySelector('span');
   if (!span) return;
@@ -9,6 +11,22 @@ function fitTextToContainer(container, maxFontSize = 100, minFontSize = 7) {
 
   // Optional: burger icon we added for the fallback state
   const placeholder = container.querySelector('.text-placeholder-icon');
+
+  const applyTooSmallState = () => {
+    if (allowPlaceholder) {
+      container.classList.add('text-too-small');
+      span.style.display = 'none';
+      if (placeholder) placeholder.style.display = 'block';
+      return;
+    }
+  
+    // Transitional fit during zoom:
+    // do NOT mark as text-too-small, because that CSS hides the span.
+    container.classList.remove('text-too-small');
+    span.style.display = 'inline-block';
+    span.style.opacity = '';
+    if (placeholder) placeholder.style.display = 'none';
+  };
 
   // --- Reset visual state so we can measure correctly ---
   container.classList.remove('text-too-small');
@@ -37,9 +55,7 @@ function fitTextToContainer(container, maxFontSize = 100, minFontSize = 7) {
 
   // If there is literally no space, fall back immediately
   if (availW <= 0 || availH <= 0) {
-    container.classList.add('text-too-small');
-    span.style.display = 'none';
-    if (placeholder) placeholder.style.display = 'block';
+    applyTooSmallState();
     return;
   }
 
@@ -51,9 +67,7 @@ function fitTextToContainer(container, maxFontSize = 100, minFontSize = 7) {
 
   if (!minFits) {
     // Even the smallest size does not fit → show burger icon instead of text
-    container.classList.add('text-too-small');
-    span.style.display = 'none';
-    if (placeholder) placeholder.style.display = 'block';
+    applyTooSmallState();
     return;
   }
 
@@ -128,6 +142,8 @@ export class Grid {
         textPadMin:  6,  // px floor when zooming out
 
         textMinFontSize: 8, // px: grid tiles should not go below this (best-effort; clamped to section size)
+        textFitGrowthBufferPx: 8, // extra width cushion after min-font fit is found
+        textFitGrowthBufferYpx: 4, // extra height cushion after min-font fit is found
       
         // Pan/drag "rubber band" tuning (lower bounce)
         pan: {
@@ -2077,9 +2093,9 @@ export class Grid {
     }
 
     // Single place to call text fitting (keeps min font size consistent everywhere)
-    _fitText(el) {
+    _fitText(el, opts = {}) {
       if (!el) return;
-      fitTextToContainer(el, 100, this.display?.textMinFontSize ?? 7);
+      fitTextToContainer(el, 100, this.display?.textMinFontSize ?? 7, opts);
     }
 
     // Hidden DOM node used to measure text at a given font size without touching real tiles
@@ -2136,6 +2152,8 @@ export class Grid {
       const minFs = (this.display?.textMinFontSize ?? 7);
       const maxW = this.gridSectionDimension?.width ?? 200;
       const maxH = this.gridSectionDimension?.height ?? 180;
+      const growX = Math.max(0, this.display?.textFitGrowthBufferPx ?? 0);
+      const growY = Math.max(0, this.display?.textFitGrowthBufferYpx ?? 0);
 
       for (const o of this.objects) {
         if (o.type !== 'text') continue;
@@ -2167,7 +2185,7 @@ export class Grid {
           }
         }
         if (bestW != null) {
-          o.width = bestW;
+          o.width = Math.min(maxW, bestW + growX);
           o.height = h0;
           continue;
         }
@@ -2188,7 +2206,7 @@ export class Grid {
 
         // If even max box can't fit at min font → keep max box (your existing placeholder logic will kick in)
         o.width = w1;
-        o.height = (bestH != null) ? bestH : maxH;
+        o.height = (bestH != null) ? Math.min(maxH, bestH + growY) : maxH;
       }
     }
 
@@ -2401,7 +2419,7 @@ export class Grid {
         el.style.top    = `${scaledTop}px`;
     
         if (obj.type === 'text') {
-          this._fitText(el);
+          this._fitText(el, { allowPlaceholder: false });
         }
       }
     
