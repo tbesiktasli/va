@@ -394,7 +394,23 @@
   .prepage-actions {
     display: flex;
     gap: 12px;
-    margin-top: 20px;
+    margin-top: 18px;
+  
+    position: sticky;
+    bottom: 0;                 /* pins to bottom of the scrollable .prepage-center */
+    z-index: 3;
+  
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  
+    padding-top: 12px;
+  
+    /* iOS safe area support */
+    padding-bottom: calc(12px + constant(safe-area-inset-bottom));
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  
+    background: var(--main-bg-color);
   }
 
   /* neutralize global .button margin-top in this context */
@@ -1079,27 +1095,24 @@
 
   .object-glow {
     position: absolute;
-    inset: 0;                      /* flush with the object box */
+    inset: 0;
     pointer-events: none;
     z-index: -2;
     border-radius: var(--object-radius, 0px);
   
-  /* fed once per filter change on #grid (JS sets these) */
-  --glow: var(--object-glow, var(--grid-glow, transparent));
-
-  /* knobs */
-  --ring: 2px;                   /* Safari fallback border thickness */
+    --glow: var(--object-glow, var(--grid-glow, transparent));
   
-  /* Glow knobs (2-layer halo = more “glow”, less “ring”) */
-  --halo-opacity: 0.35;     /* outer, soft */
-  --halo-blur: 30px;
-  --halo-spread: 22px;
-
-  --halo2-opacity: 0.70;    /* inner, stronger */
-  --halo2-blur: 14px;
-  --halo2-spread: 12px;
+    --ring: 2px;
   
-    /* default off; JS toggles .has-glow on the .object */
+    /* softer + tighter glow */
+    --halo-opacity: 0.20;
+    --halo-blur: 18px;
+    --halo-spread: 10px;
+  
+    --halo2-opacity: 0.42;
+    --halo2-blur: 8px;
+    --halo2-spread: 4px;
+  
     opacity: 0;
   }
   
@@ -1108,13 +1121,13 @@
   }
   
   .object.glow-partial .object-glow {
-    --halo-opacity: 0.18;
-    --halo-blur: 22px;
-    --halo-spread: 16px;
+    --halo-opacity: 0.12;
+    --halo-blur: 14px;
+    --halo-spread: 8px;
   
-    --halo2-opacity: 0.35;
-    --halo2-blur: 10px;
-    --halo2-spread: 8px;
+    --halo2-opacity: 0.24;
+    --halo2-blur: 6px;
+    --halo2-spread: 3px;
   }
   
 /* Non-Safari: multi-color glow ONLY (no ring).
@@ -1221,13 +1234,13 @@ body.in-adhoc-gallery #group-gallery .item.has-glow:is(:hover, :active, :focus-v
 
 /* Partial glow tuning (same as grid’s partial state) */
 body.in-adhoc-gallery #group-gallery .item.glow-partial .object-glow {
-  --halo-opacity: 0.18;
-  --halo-blur: 22px;
-  --halo-spread: 16px;
+  --halo-opacity: 0.12;
+  --halo-blur: 14px;
+  --halo-spread: 8px;
 
-  --halo2-opacity: 0.35;
-  --halo2-blur: 10px;
-  --halo2-spread: 8px;
+  --halo2-opacity: 0.24;
+  --halo2-blur: 6px;
+  --halo2-spread: 3px;
 }
   
 #controls {
@@ -3466,7 +3479,8 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
     border-top: 1px solid var(--main-light-outline-color);
   }
   
-  #discover-connections .dc-tags-selectbar[hidden] {
+  #discover-connections .dc-tags-selectbar[hidden],
+  #discover-connections .dc-episodes-selectbar[hidden] {
     display: none !important;
   }
   
@@ -4812,27 +4826,6 @@ body.menu-open header {
     /* On mobile: show the "Coming soon to mobile" text */
     .prepage-actions .prepage-mobile-message {
       display: none;
-    }
-
-    /* Prepage: keep the two CTA buttons sticky above the prepage-bottom */
-    #prepage .prepage-actions {
-      position: sticky;
-      bottom: 0;                 /* pins to bottom of the scrollable .prepage-center */
-      z-index: 3;
-
-      width: 100%;
-
-      justify-content: center;
-      flex-wrap: wrap;
-
-      margin-top: 18px;
-      padding-top: 12px;
-
-      /* iOS safe area support (the supported one will apply) */
-      padding-bottom: calc(12px + constant(safe-area-inset-bottom));
-      padding-bottom: calc(12px + env(safe-area-inset-bottom));
-
-      background: var(--main-bg-color);
     }
 
     /* PREPAGE bottom row:
