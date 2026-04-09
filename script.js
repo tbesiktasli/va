@@ -11,6 +11,55 @@ import { Grid, getObjectTooltipLabel } from './grid.js';
 const DATA_MODE = 'strapi'; // change to 'mixed' or 'strapi' as needed
 const SHOULD_USE_STRAPI = (DATA_MODE === 'strapi' || DATA_MODE === 'mixed');
 
+const TEXT_TILE_SIZE = {
+  baseMinWidth: 120,
+  baseMaxWidth: 180,
+  baseMinHeight: 120,
+  baseMaxHeight: 160,
+  growAfterChars: 48,
+  charsPerStep: 55,
+  widthStep: 18,
+  heightStep: 14,
+  maxGrowSteps: 4,
+  ...(typeof window !== 'undefined' && window.TEXT_TILE_SIZE_CONFIG && typeof window.TEXT_TILE_SIZE_CONFIG === 'object'
+    ? window.TEXT_TILE_SIZE_CONFIG
+    : {})
+};
+
+function randomIntInclusive(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function getTextTileCharCount(text) {
+  return String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .length;
+}
+
+function getTextTileSize(text, randInt = randomIntInclusive) {
+  const cfg = TEXT_TILE_SIZE;
+  const charCount = getTextTileCharCount(text);
+  const growSteps = Math.max(
+    0,
+    Math.min(
+      cfg.maxGrowSteps ?? 0,
+      Math.floor(Math.max(0, charCount - (cfg.growAfterChars ?? 0)) / Math.max(1, cfg.charsPerStep ?? 1))
+    )
+  );
+
+  const widthMin = cfg.baseMinWidth + growSteps * cfg.widthStep;
+  const widthMax = cfg.baseMaxWidth + growSteps * cfg.widthStep;
+  const heightMin = cfg.baseMinHeight + growSteps * cfg.heightStep;
+  const heightMax = cfg.baseMaxHeight + growSteps * cfg.heightStep;
+
+  return {
+    width: randInt(widthMin, widthMax),
+    height: randInt(heightMin, heightMax),
+    charCount,
+  };
+}
+
 // ===== RUNTIME FEATURE FLAGS / UA HINTS =====
 const UA = navigator.userAgent || '';
 // crude but effective Safari detection (excludes Chrome/Edge on macOS + iOS Chrome)
@@ -2541,9 +2590,8 @@ const THEMES = [
 for(let i=0; i<100; i++) {
 
   let objectType = objectTypes[Math.floor(Math.random() * objectTypes.length)];
-  // explicit size corridors (dummy)
-  const textW  = Math.floor(Math.random() * (110 - 60 + 1)) + 60;
-  const textH  = Math.floor(Math.random() * (150 - 60 + 1)) + 60;
+  const dummyText = 'hello world! This is some text. I am too long by the way';
+  const { width: textW, height: textH } = getTextTileSize(dummyText);
 
   const imageW = Math.floor(Math.random() * (110 - 72 + 1)) + 72; // 60 -> 72
   const imageH = Math.floor(Math.random() * (150 - 72 + 1)) + 72; // 60 -> 72
@@ -2584,9 +2632,9 @@ for(let i=0; i<100; i++) {
       grid_x: 0,
       grid_y: 0,
       width: textW,
-      height: textH,      
+      height: textH,
       image: '',
-      text: 'hello world! This is some text. I am too long by the way',
+      text: dummyText,
     }
   } else if (objectType === 'video') {
     const w = Math.floor(Math.random() * (180 - 144 + 1)) + 144; // 120 -> 144
@@ -3786,12 +3834,16 @@ function normalizeStrapiToAppSchema(groups, objectsArr) {
       ...regularTags
     ]));
 
-    // ---- dimensions (same as before)
+    // ---- dimensions (same as before, but text grows with content length)
     let width, height;
     if (type === 'image') { width = rand(144, 200); height = rand(144, 160); }
     if (type === 'video') { width = rand(144, 180); height = rand(108, 160); }
     if (type === 'audio') { width = rand(140, 200); height = 60; }
-    if (type === 'text')  { width = rand(120, 180); height = rand(120, 160); }
+    if (type === 'text')  {
+      const textSize = getTextTileSize(text, rand);
+      width = textSize.width;
+      height = textSize.height;
+    }
 
     // enforce per-group cap
     const prev = perGroupCounts.get(appGroupId) || 0;
