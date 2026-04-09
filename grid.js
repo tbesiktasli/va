@@ -1,6 +1,4 @@
-function fitTextToContainer(container, maxFontSize = 100, minFontSize = 7, opts = {}) {
-  const { allowPlaceholder = true } = opts;
-
+function fitTextToContainer(container, maxFontSize = 100, minFontSize = 7) {
   // Prefer the scaling-text span if you have it, but fall back to any span
   const span = container.querySelector('.scaling-text') || container.querySelector('span');
   if (!span) return;
@@ -13,19 +11,10 @@ function fitTextToContainer(container, maxFontSize = 100, minFontSize = 7, opts 
   const placeholder = container.querySelector('.text-placeholder-icon');
 
   const applyTooSmallState = () => {
-    if (allowPlaceholder) {
-      container.classList.add('text-too-small');
-      span.style.display = 'none';
-      if (placeholder) placeholder.style.display = 'block';
-      return;
-    }
-  
-    // Transitional fit during zoom:
-    // do NOT mark as text-too-small, because that CSS hides the span.
-    container.classList.remove('text-too-small');
-    span.style.display = 'inline-block';
-    span.style.opacity = '';
-    if (placeholder) placeholder.style.display = 'none';
+    container.classList.add('text-too-small');
+    span.style.display = 'none';
+    span.style.opacity = '0';
+    if (placeholder) placeholder.style.display = 'block';
   };
 
   // --- Reset visual state so we can measure correctly ---
@@ -144,6 +133,8 @@ export class Grid {
         textMinFontSize: 8, // px: grid tiles should not go below this (best-effort; clamped to section size)
         textFitGrowthBufferPx: 8, // extra width cushion after min-font fit is found
         textFitGrowthBufferYpx: 4, // extra height cushion after min-font fit is found
+        textBoxMaxWidth: 240, // allow long-text tiles to grow a bit wider before placeholder fallback
+        textBoxMaxHeight: 220, // allow long-text tiles to grow a bit taller before placeholder fallback
       
         // Pan/drag "rubber band" tuning (lower bounce)
         pan: {
@@ -474,6 +465,26 @@ export class Grid {
       this._pan.currentY = this._pan.targetY = top;
     }
 
+    _getCameraBounds() {
+      const zoom = this.zoomLevel || 1;
+
+      const w = parseFloat(this.htmlGridElement.style.width)  || (this.gridDimension.width  * zoom);
+      const h = parseFloat(this.htmlGridElement.style.height) || (this.gridDimension.height * zoom);
+
+      const vw = this._vw();
+      const vh = this._vh();
+
+      // If the grid is smaller than the viewport, lock it to the centered position.
+      // If it is larger, allow panning between the normal edges.
+      const minX = (w <= vw) ? (vw - w) / 2 : (vw - w);
+      const maxX = (w <= vw) ? (vw - w) / 2 : 0;
+
+      const minY = (h <= vh) ? (vh - h) / 2 : (vh - h);
+      const maxY = (h <= vh) ? (vh - h) / 2 : 0;
+
+      return { minX, maxX, minY, maxY, w, h, vw, vh };
+    }
+
     // Estimate a circular radius needed to place this group's objects without overlap
     estimateClusterRadius(objs, buffer = 10) {
       let area = 0;
@@ -507,55 +518,42 @@ export class Grid {
 
     centerViewportOnWorldPoint(worldX, worldY, animate = true) {
       const zoom = this.zoomLevel || 1;
-      const desiredLeft = (this._vw()/2) - worldX * zoom;
-      const desiredTop  = (this._vh()/2) - worldY * zoom;
-    
-      const w = parseFloat(this.htmlGridElement.style.width)  || (this.gridDimension.width  * zoom);
-      const h = parseFloat(this.htmlGridElement.style.height) || (this.gridDimension.height * zoom);
-    
-      const baseMinX = Math.min(0, this._vw() - w);
-      const baseMinY = Math.min(0, this._vh() - h);
-    
-      const needSlackX = Math.max(0, desiredLeft - 0, baseMinX - desiredLeft);
-      const needSlackY = Math.max(0, desiredTop  - 0, baseMinY - desiredTop);
+      const desiredLeft = (this._vw() / 2) - worldX * zoom;
+      const desiredTop  = (this._vh() / 2) - worldY * zoom;
+
+      const { minX, maxX, minY, maxY } = this._getCameraBounds();
+
+      const needSlackX = Math.max(0, minX - desiredLeft, desiredLeft - maxX);
+      const needSlackY = Math.max(0, minY - desiredTop,  desiredTop  - maxY);
       const needSlack  = Math.max(needSlackX, needSlackY);
-    
+
       if (this._pan && animate) {
         const maxSlack = this.display?.pan?.maxSlack ?? Infinity;
         this._pan.slack = Math.min(maxSlack, Math.max(this._pan.slack || 0, needSlack));
 
         this._pan.targetX = desiredLeft;
         this._pan.targetY = desiredTop;
-        this._pan.vx = 0; this._pan.vy = 0;
+        this._pan.vx = 0;
+        this._pan.vy = 0;
         this._startPanLoop?.();
       } else {
         this.htmlGridElement.style.left = `${desiredLeft}px`;
         this.htmlGridElement.style.top  = `${desiredTop}px`;
         this._syncPanStateFromDom?.();
       }
-    }    
+    } 
     
     clampCameraToBounds(animate = true, reason = 'generic') {
-      const zoom = this.zoomLevel || 1;
-      const w = parseFloat(this.htmlGridElement.style.width)  || (this.gridDimension.width  * zoom);
-      const h = parseFloat(this.htmlGridElement.style.height) || (this.gridDimension.height * zoom);
-
-      const vw = this._vw();
-      const vh = this._vh();
-
-      // legal range (no slack)
-      const minX = Math.min(0, vw - w);
-      const minY = Math.min(0, vh - h);
+      const { minX, maxX, minY, maxY, w, h, vw, vh } = this._getCameraBounds();
 
       const curLeft = parseFloat(this.htmlGridElement.style.left) || 0;
       const curTop  = parseFloat(this.htmlGridElement.style.top)  || 0;
 
-      const targetX = Math.max(minX, Math.min(0, curLeft));
-      const targetY = Math.max(minY, Math.min(0, curTop));
+      const targetX = Math.max(minX, Math.min(maxX, curLeft));
+      const targetY = Math.max(minY, Math.min(maxY, curTop));
 
       const prevSlack = this._pan?.slack;
 
-      // Optional debug logging (set window.DEBUG_GRID_CLAMP = false to turn this off)
       const debugClamp =
         (typeof window !== 'undefined') &&
         window.DEBUG_GRID_CLAMP !== false &&
@@ -564,28 +562,28 @@ export class Grid {
 
       if (debugClamp) {
         console.groupCollapsed('[grid clamp]', reason);
-        console.log('zoom', zoom, 'animate', animate);
+        console.log('zoom', this.zoomLevel || 1, 'animate', animate);
         console.log('gridDimension', this.gridDimension);
         console.log('css size', { w, h }, 'viewport', { vw, vh });
-        console.log('bounds', { minX, minY }, 'current', { curLeft, curTop }, 'target', { targetX, targetY });
+        console.log('bounds', { minX, maxX, minY, maxY }, 'current', { curLeft, curTop }, 'target', { targetX, targetY });
         console.log('panSlackBefore', prevSlack);
         console.groupEnd();
       }
 
-      // kill overscroll allowance so we glide back inside
       if (this._pan) this._pan.slack = 0;
 
       if (this._pan && animate) {
         this._pan.targetX = targetX;
         this._pan.targetY = targetY;
-        this._pan.vx = 0; this._pan.vy = 0;
-        this._startPanLoop?.();   // kick the RAF loop if needed
+        this._pan.vx = 0;
+        this._pan.vy = 0;
+        this._startPanLoop?.();
       } else {
         this.htmlGridElement.style.left = `${targetX}px`;
         this.htmlGridElement.style.top  = `${targetY}px`;
         this._syncPanStateFromDom?.();
       }
-    }    
+    }
 
     _formatDetailDate(dateLike) {
       if (!dateLike) return '';
@@ -1780,10 +1778,11 @@ export class Grid {
 
     // 1) Keep grid centered on the viewport
     recenterToViewport() {
-      const diffX = this.gridDimension.width  - this._vw();
-      const diffY = this.gridDimension.height - this._vh();
-      this.htmlGridElement.style.left = `-${Math.floor(diffX / 2)}px`;
-      this.htmlGridElement.style.top  = `-${Math.floor(diffY / 2)}px`;
+      const left = (this._vw() - this.gridDimension.width) / 2;
+      const top  = (this._vh() - this.gridDimension.height) / 2;
+
+      this.htmlGridElement.style.left = `${Math.round(left)}px`;
+      this.htmlGridElement.style.top  = `${Math.round(top)}px`;
     }
 
     // 2) Compute dynamic group centers near the grid center (radial / golden‑angle)
@@ -2093,9 +2092,9 @@ export class Grid {
     }
 
     // Single place to call text fitting (keeps min font size consistent everywhere)
-    _fitText(el, opts = {}) {
+    _fitText(el) {
       if (!el) return;
-      fitTextToContainer(el, 100, this.display?.textMinFontSize ?? 7, opts);
+      fitTextToContainer(el, 100, this.display?.textMinFontSize ?? 7);
     }
 
     // Hidden DOM node used to measure text at a given font size without touching real tiles
@@ -2150,8 +2149,8 @@ export class Grid {
     // width grows first; if still not enough, we use full width and grow height.
     _ensureTextBoxesMeetMinFontSize() {
       const minFs = (this.display?.textMinFontSize ?? 7);
-      const maxW = this.gridSectionDimension?.width ?? 200;
-      const maxH = this.gridSectionDimension?.height ?? 180;
+      const maxW = this.display?.textBoxMaxWidth ?? this.gridSectionDimension?.width ?? 200;
+      const maxH = this.display?.textBoxMaxHeight ?? this.gridSectionDimension?.height ?? 180;
       const growX = Math.max(0, this.display?.textFitGrowthBufferPx ?? 0);
       const growY = Math.max(0, this.display?.textFitGrowthBufferYpx ?? 0);
 
@@ -2419,7 +2418,7 @@ export class Grid {
         el.style.top    = `${scaledTop}px`;
     
         if (obj.type === 'text') {
-          this._fitText(el, { allowPlaceholder: false });
+          this._fitText(el);
         }
       }
     
@@ -3212,16 +3211,15 @@ export class Grid {
       const MAX_SLACK = panCfg.maxSlack ?? Infinity;
 
       const boundsX = () => {
-        const w = parseFloat(this.htmlGridElement.style.width) || (this.gridDimension.width * this.zoomLevel);
-        const baseMin = this._vw() - w;   // ≤ 0
+        const { minX, maxX } = this._getCameraBounds();
         const s = Math.min(this._pan.slack || 0, MAX_SLACK);
-        return [Math.min(0, baseMin - s), 0 + s];
+        return [minX - s, maxX + s];
       };
+
       const boundsY = () => {
-        const h = parseFloat(this.htmlGridElement.style.height) || (this.gridDimension.height * this.zoomLevel);
-        const baseMin = this._vh() - h;
+        const { minY, maxY } = this._getCameraBounds();
         const s = Math.min(this._pan.slack || 0, MAX_SLACK);
-        return [Math.min(0, baseMin - s), 0 + s];
+        return [minY - s, maxY + s];
       };
 
       const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
