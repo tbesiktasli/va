@@ -2102,8 +2102,17 @@ function buildStableTagColorMap(tags, palette) {
   return map;
 }
 
-const TAG_COLOR_BY_TAG = buildStableTagColorMap(ALL_TAGS, TAG_COLOR_CONFIG.palette);
+let TAG_COLOR_BY_TAG = buildStableTagColorMap(ALL_TAGS, TAG_COLOR_CONFIG.palette);
 window.TAG_COLOR_BY_TAG = TAG_COLOR_BY_TAG;
+
+function rebuildTagColorMap() {
+  TAG_COLOR_BY_TAG = buildStableTagColorMap(ALL_TAGS, TAG_COLOR_CONFIG.palette);
+  window.TAG_COLOR_BY_TAG = TAG_COLOR_BY_TAG;
+
+  // keep active tagColors consistent with the rebuilt stable map
+  window.syncActiveTagColors?.();
+}
+window.rebuildTagColorMap = rebuildTagColorMap;
 
 // Keep tagColors in sync with CURRENT selection.
 // We keep the existing tagColors object because the rest of the UI already reads from it.
@@ -2128,7 +2137,13 @@ window.syncActiveTagColors = syncActiveTagColors;
 function getTagColor(tag) {
   const key = String(tag || '').trim();
   if (!key) return '';
-  return TAG_COLOR_BY_TAG[key] || '';
+  const hit = TAG_COLOR_BY_TAG[key];
+  if (hit) return hit;
+  
+  // fallback: stable hash directly into palette (works even for unknown tags)
+  const colors = TAG_COLOR_CONFIG.palette || [];
+  if (!colors.length) return '';
+  return colors[getStableHash(key) % colors.length] || '';
 }
 
 window.getTagColor = getTagColor;
@@ -2248,6 +2263,8 @@ function rebuildTagCachesFromCurrentGroups() {
   TAG_GROUPS.forEach(g => {
     (g.tags || []).forEach(t => ALL_TAGS.push(t));
   });
+
+  rebuildTagColorMap();
 
 }
 
@@ -5234,12 +5251,19 @@ function initMobileSlideInsToggle() {
     window.__galleryVideos__?.onOpen?.();
     window.__galleryImages__?.onOpen?.();
     try {
-      if (!history.state || !history.state.gallery) {
-        history.pushState(
-          { gallery: true, themeId: String(theme.id ?? ''), themeGallery: true },
-          '',
-          '#group-gallery'
-        );
+      const url = (typeof appUrl === 'function') ? appUrl('#group-gallery') : '#group-gallery';
+      const nextState = {
+        gallery: true,
+        themeId: String(theme.id ?? ''),
+        themeGallery: true
+      };
+    
+      // Entering theme gallery => push.
+      // Switching themes while already in theme gallery => replace (avoid history spam).
+      if (history.state?.themeGallery) {
+        history.replaceState(nextState, '', url);
+      } else {
+        history.pushState(nextState, '', url);
       }
     } catch {}
 
@@ -6627,14 +6651,21 @@ function initMobileSlideInsToggle() {
             ? detailStacked
             : (mode === 'push' ? true : (current.detailStacked ?? false));
 
-        const nextState = {
-          ...current,
-          detail: true,
-          detailStacked: stacked,
-          from: String(from || ''),
-          gid: String((gid ?? obj.groupId ?? '') || ''),
-          objectId: String(obj.id || objectId || ''),
-        };
+            const nextState = {
+              ...current,
+            
+              // Prevent “gallery-mode” flags from leaking into the detail entry.
+              // (The *previous* history entry already represents the gallery, so we don’t need these here.)
+              gallery: false,
+              adhoc: false,
+              themeGallery: false,
+            
+              detail: true,
+              detailStacked: stacked,
+              from: String(from || ''),
+              gid: String((gid ?? obj.groupId ?? '') || ''),
+              objectId: String(obj.id || objectId || ''),
+            };
 
         if (mode === 'push') history.pushState(nextState, '', detailPath);
         else history.replaceState(nextState, '', detailPath);
