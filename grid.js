@@ -709,11 +709,45 @@ export class Grid {
       el.appendChild(panel);
       requestAnimationFrame(() => panel.classList.add('visible'));
 
-      // --- close button
-      panel.querySelector('.detail-close')?.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        onClose();
-      });
+      // Pointer-first activation helper (fixes trackpads that don't produce reliable "click")
+      const bindActivate = (node, fn) => {
+        if (!node || typeof fn !== 'function') return;
+
+        let lastFire = 0;
+
+        const fire = (ev) => {
+          try { ev?.preventDefault?.(); } catch {}
+          try { ev?.stopPropagation?.(); } catch {}
+          lastFire = performance.now();
+          fn(ev);
+        };
+
+        // Primary path: pointer interaction (mouse + touch/trackpad)
+        node.addEventListener('pointerup', (ev) => {
+          // ignore right/middle click for mouse
+          if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+          fire(ev);
+        }, { capture: true });
+
+        // Fallback: some browsers still fire click; guard against double-fire
+        node.addEventListener('click', (ev) => {
+          // If we already handled pointerup, swallow click *and* its default navigation
+          if ((performance.now() - lastFire) < 500) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            return;
+          }
+          fire(ev);
+        }, { capture: true });
+
+        // Keyboard accessibility
+        node.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' || ev.key === ' ') fire(ev);
+        });
+      };
+
+      // --- close button (pointer-first)
+      bindActivate(panel.querySelector('.detail-close'), () => onClose());
 
       // --- inline WaveSurfer for audio detail panels
       if (obj.type === 'audio' && obj.audio) {
@@ -787,24 +821,18 @@ export class Grid {
         }
       }
 
-      // --- Open → full-page detail
+      // --- Open → full-page detail (pointer-first)
       const openLink = panel.querySelector('.detail-link');
-      if (openLink) {
-        openLink.addEventListener('click', (ev) => {
-          ev.preventDefault();
-          ev.stopPropagation();
+      bindActivate(openLink, () => {
+        // ✅ stop any audio playing in the grid / inline panel before routing to full detail
+        this.pauseAllAudio({ reset: true });
 
-          // ✅ stop any audio playing in the grid / inline panel before routing to full detail
-          this.pauseAllAudio({ reset: true });
-
-          // keep your current signature
-          window.openObjectDetail?.({
-            objectId: obj.id,
-            from,
-            gid: obj.groupId,
-          });
+        window.openObjectDetail?.({
+          objectId: obj.id,
+          from,
+          gid: obj.groupId,
         });
-      }
+      });
 
       // --- tags
       const tagList = panel.querySelector('.detail-tags');
@@ -3059,6 +3087,9 @@ export class Grid {
     
       // (Touch fallback) touch-action:none should already stop it; this is a belt-and-suspenders
       this._onTouchMove = (e) => {
+        // Allow gestures inside inline detail overlay (prevents "click" cancellation on some trackpads)
+        if (e.target?.closest?.('.detail-panel')) return;
+
         if (e.target?.closest?.('[data-allow-scroll], .allow-scroll')) return;
         e.preventDefault();
         e.stopPropagation();
