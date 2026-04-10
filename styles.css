@@ -880,6 +880,7 @@
     align-items: center;
     justify-content: center;
     color: var(--main-font-color);
+    touch-action: manipulation;
   }
   
   /* New: draw close icon from currentColor */
@@ -1044,6 +1045,7 @@
     margin-top: 10px;
     font-size: 0.8em;
     font-family: "Albert Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", "DejaVu Sans", sans-serif;
+    touch-action: manipulation;
   }
   
   .detail-link-icon {
