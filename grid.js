@@ -115,9 +115,25 @@ export class Grid {
         // change this default to make everything appear larger/smaller at start
         baseZoom: 1, // e.g. 1.25 for bigger, 0.85 for smaller
 
+        // Initial camera behavior.
+        // Keeps the grouped distribution unchanged, but prevents the first viewport
+        // from landing on empty space.
+        initialFocus: {
+          view: 'grouped',
+          padding: 200,
+          strategy: 'nearest-object-to-bounds-center',
+        },
+
         // NEW: when entering cluster view, zoom out a bit (relative to baseZoom)
         // 1.0 = no change, 0.9 = 10% zoom out, 0.85 = 15% zoom out
         clusterViewZoomFactor: 0.6,
+
+        // Mode switch behavior.
+        // When entering cluster from grouped view, keep the group currently visible
+        // in the same world position and move the other groups around it.
+        modeSwitchFocus: {
+          preserveVisibleGroup: true,
+        },
       
         // NEW: hard limits for how far you can zoom in/out
         // (tweak these numbers if you want a wider/narrower zoom range)
@@ -148,6 +164,15 @@ export class Grid {
       };      
       
       this.objects = objects;
+
+      // Stable per-page-load random value for cluster placement.
+      // Do not shuffle this.objects globally; other features rely on its order.
+      for (const o of this.objects) {
+        if (o._clusterRandom == null) {
+          o._clusterRandom = Math.random();
+        }
+      }
+
       // NEW: pre-scale object widths/heights so initial zoom can remain 1
       const s = (this.display?.objectScale ?? 1);
       if (s !== 1) {
@@ -199,6 +224,11 @@ export class Grid {
           groupGap: 100,
           // global multiplier applied to cluster radii before center layout
           spread: 1.25,
+
+          // Object placement order inside each cluster:
+          // 'area' = current behavior, largest first
+          // 'random' = randomized once per page load, stable while navigating
+          itemOrder: 'random',
         }
       };
 
@@ -249,7 +279,11 @@ export class Grid {
       }
       this.computeDynamicGroupCenters();
       this.applyGroupedScatter(this.GROUPED_SPREAD, this.GROUPED_JITTER);
-      this.fitToView('grouped', 200);
+      
+      const initialFocus = this.display?.initialFocus || {};
+      this.fitToView(initialFocus.view || 'grouped', initialFocus.padding ?? 200);
+      this.focusInitialView(initialFocus.view || 'grouped', { animate: false });
+      
       this.initDrag(); // performance
       this.initWheelBlock();
       //this.groupObjects();
@@ -352,6 +386,175 @@ export class Grid {
       const left = parseFloat(this.htmlGridElement.style.left || cs.left || "0") || 0;
       const top  = parseFloat(this.htmlGridElement.style.top  || cs.top  || "0") || 0;
       return { left, top };
+    }
+
+    _getViewportWorldRect() {
+      const zoom = this.zoomLevel || 1;
+      const { left, top } = this._getCameraLeftTop();
+      const vw = this._vw();
+      const vh = this._vh();
+    
+      return {
+        minX: (0 - left) / zoom,
+        minY: (0 - top) / zoom,
+        maxX: (vw - left) / zoom,
+        maxY: (vh - top) / zoom,
+        centerX: (vw / 2 - left) / zoom,
+        centerY: (vh / 2 - top) / zoom,
+      };
+    }
+    
+    _getObjectRectForView(obj, view = this.currentState) {
+      const normalizedView = view === 'pre-cluster' ? 'grouped' : view;
+    
+      let x;
+      let y;
+    
+      if (normalizedView === 'grouped') {
+        x = obj.group_x ?? obj.grid_x;
+        y = obj.group_y ?? obj.grid_y;
+      } else if (normalizedView === 'clustered') {
+        x = obj.cluster_x ?? obj.group_x ?? obj.grid_x;
+        y = obj.cluster_y ?? obj.group_y ?? obj.grid_y;
+      } else if (normalizedView === 'ungrouped') {
+        x = obj._ungroupedX ?? obj.grid_x;
+        y = obj._ungroupedY ?? obj.grid_y;
+      } else {
+        x = obj.grid_x;
+        y = obj.grid_y;
+      }
+    
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    
+      return {
+        minX: x,
+        minY: y,
+        maxX: x + (obj.width || 0),
+        maxY: y + (obj.height || 0),
+        centerX: x + (obj.width || 0) / 2,
+        centerY: y + (obj.height || 0) / 2,
+      };
+    }
+    
+    _rectOverlapArea(a, b) {
+      if (!a || !b) return 0;
+    
+      const w = Math.max(0, Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX));
+      const h = Math.max(0, Math.min(a.maxY, b.maxY) - Math.max(a.minY, b.minY));
+    
+      return w * h;
+    }
+    
+    _getGroupCenter(groupId, view = this.currentState) {
+      const gid = String(groupId);
+    
+      // For grouped / clustered states, this.groups is the current pile center source.
+      const g = this.groups?.[gid];
+      if (g && Number.isFinite(g.x) && Number.isFinite(g.y)) {
+        return { x: g.x, y: g.y };
+      }
+    
+      // Fallback: average object centers for the group in the requested view.
+      let x = 0;
+      let y = 0;
+      let count = 0;
+    
+      for (const obj of this.objects) {
+        if (String(obj.groupId) !== gid) continue;
+    
+        const rect = this._getObjectRectForView(obj, view);
+        if (!rect) continue;
+    
+        x += rect.centerX;
+        y += rect.centerY;
+        count++;
+      }
+    
+      if (!count) return null;
+    
+      return {
+        x: x / count,
+        y: y / count,
+      };
+    }
+    
+    _getDominantVisibleGroup(view = this.currentState) {
+      const viewport = this._getViewportWorldRect();
+      const scores = new Map();
+    
+      let nearestFallback = null;
+    
+      for (const obj of this.objects) {
+        if (obj.groupId == null) continue;
+    
+        const gid = String(obj.groupId);
+        const rect = this._getObjectRectForView(obj, view);
+        if (!rect) continue;
+    
+        const overlap = this._rectOverlapArea(rect, viewport);
+        if (overlap > 0) {
+          scores.set(gid, (scores.get(gid) || 0) + overlap);
+        }
+    
+        const distanceToViewportCenter = Math.hypot(
+          rect.centerX - viewport.centerX,
+          rect.centerY - viewport.centerY
+        );
+    
+        if (!nearestFallback || distanceToViewportCenter < nearestFallback.distance) {
+          nearestFallback = {
+            groupId: gid,
+            distance: distanceToViewportCenter,
+          };
+        }
+      }
+    
+      let bestGroupId = null;
+      let bestScore = -1;
+    
+      for (const [gid, score] of scores.entries()) {
+        if (score > bestScore) {
+          bestGroupId = gid;
+          bestScore = score;
+        }
+      }
+    
+      // If no object overlaps the viewport, fall back to the group nearest the viewport center.
+      if (!bestGroupId && nearestFallback) {
+        bestGroupId = nearestFallback.groupId;
+      }
+    
+      if (!bestGroupId) return null;
+    
+      const center = this._getGroupCenter(bestGroupId, view);
+      if (!center) return null;
+    
+      return {
+        groupId: bestGroupId,
+        center,
+      };
+    }
+    
+    _shiftCentersToPreserveGroup(centers, anchor) {
+      if (!centers || !anchor?.groupId || !anchor?.center) return centers;
+    
+      const gid = String(anchor.groupId);
+      const nextCenter = centers[gid];
+      if (!nextCenter) return centers;
+    
+      const dx = anchor.center.x - nextCenter.x;
+      const dy = anchor.center.y - nextCenter.y;
+    
+      if (!Number.isFinite(dx) || !Number.isFinite(dy)) return centers;
+    
+      for (const id in centers) {
+        centers[id] = {
+          x: centers[id].x + dx,
+          y: centers[id].y + dy,
+        };
+      }
+    
+      return centers;
     }
     
     _captureCameraSnapshot() {
@@ -2265,6 +2468,57 @@ export class Grid {
       });
     }
 
+    focusInitialView(view = 'grouped', { animate = false } = {}) {
+      const cfg = this.display?.initialFocus || {};
+      const strategy = cfg.strategy || 'nearest-object-to-bounds-center';
+    
+      const bounds = this.getBoundsFor(view);
+      const fallback = {
+        x: (bounds.minX + bounds.maxX) / 2,
+        y: (bounds.minY + bounds.maxY) / 2,
+      };
+    
+      let target = fallback;
+    
+      if (strategy === 'nearest-object-to-bounds-center') {
+        let best = null;
+        let bestDistance = Infinity;
+    
+        for (const obj of this.objects) {
+          let x;
+          let y;
+    
+          if (view === 'grouped') {
+            x = obj.group_x;
+            y = obj.group_y;
+          } else if (view === 'clustered') {
+            x = obj.cluster_x ?? obj.group_x ?? obj.grid_x;
+            y = obj.cluster_y ?? obj.group_y ?? obj.grid_y;
+          } else {
+            x = obj.grid_x;
+            y = obj.grid_y;
+          }
+    
+          if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    
+          const cx = x + (obj.width || 0) / 2;
+          const cy = y + (obj.height || 0) / 2;
+          const distance = Math.hypot(cx - fallback.x, cy - fallback.y);
+    
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            best = { x: cx, y: cy };
+          }
+        }
+    
+        if (best) target = best;
+      }
+    
+      this.centerViewportOnWorldPoint(target.x, target.y, animate);
+      this.clampCameraToBounds(false, `initial-focus:${view}`);
+      this._syncPanStateFromDom?.();
+    }
+
     // Zoom/pan so that *all items for the current state* fit in the viewport.
     // Does *not* rebase world coords; only adjusts camera (zoom + pan).
     // Padding is in world units (same as your object positions/sizes).
@@ -2706,6 +2960,27 @@ export class Grid {
       if (typeof spread === 'number') this.spacing.cluster.spread   = spread;
     }
 
+    _orderObjectsForCluster(objects) {
+      const order = this.spacing?.cluster?.itemOrder || 'area';
+      const arr = objects.slice();
+
+      if (order === 'random') {
+        return arr.sort((a, b) => {
+          const ra = a._clusterRandom ?? 0;
+          const rb = b._clusterRandom ?? 0;
+          if (ra !== rb) return ra - rb;
+
+          // deterministic fallback
+          return String(a.id).localeCompare(String(b.id));
+        });
+      }
+
+      // Current behavior: largest first, best for compact packing.
+      return arr.sort(
+        (a, b) => (b.width * b.height) - (a.width * a.height)
+      );
+    }
+
     clusterGroupedObjects(event, opts = {}) {
       if (event) event.preventDefault();
     
@@ -2716,6 +2991,12 @@ export class Grid {
 
       // 🆕 remember where we are coming from
       const prevState = this.currentState;
+
+      const visibleGroupAnchor =
+        this.display?.modeSwitchFocus?.preserveVisibleGroup !== false &&
+        (prevState === 'grouped' || prevState === 'pre-cluster')
+          ? this._getDominantVisibleGroup(prevState)
+          : null;
 
       // grid.js – inside clusterGroupedObjects(event, opts = {}) { ... }
       if (this.currentState === 'clustered') {
@@ -2763,13 +3044,27 @@ export class Grid {
       }
     
       // 4) Compute new group centers with increased margin
-      const centers = this.layoutGroupCentersForFootprints(footprints, Math.round(layoutMargin * spread));
-    
-      // 5) Fit camera to the larger footprints (glide if clamping is needed)
-      this.fitToFootprints(footprints, Math.round(preFitPad * spread), { animateCamera: true, reason: 'cluster-prefit' });
-    
-      // 6) Animate piles to their new (more distant) centers
+      let centers = this.layoutGroupCentersForFootprints(
+        footprints,
+        Math.round(layoutMargin * spread)
+      );
+
+      // 5) Keep the currently visible group anchored in place.
+      // This preserves spatial continuity: the focused group stays put,
+      // all other groups move around it.
+      centers = this._shiftCentersToPreserveGroup(centers, visibleGroupAnchor);
+
+      // 6) Write the new centers before fitting, so fitToFootprints()
+      // uses the actual future cluster footprint positions.
       this.movePilesToNewCenters(centers, 18, 8);
+
+      // 7) Fit camera to the larger footprints (glide if clamping is needed)
+      this.fitToFootprints(footprints, Math.round(preFitPad * spread), {
+        animateCamera: true,
+        reason: 'cluster-prefit'
+      });
+
+      // 8) Animate piles to their new (more distant) centers
       this._applyTransformsForCurrentState?.(); // cluster animation fix
     
       // Instead of a fixed timeout, wait until the "move piles to new centers"
@@ -2784,12 +3079,11 @@ export class Grid {
           (groupedObjects[obj.groupId] ??= []).push(obj);
         }
 
-        // Place larger items first — helps reduce overlaps
+        // Order objects before cluster packing.
+        // Configurable via this.spacing.cluster.itemOrder.
         for (const groupId in groupedObjects) {
           const group = this.groups[groupId];
-          const objs = groupedObjects[groupId].slice().sort(
-            (a, b) => (b.width * b.height) - (a.width * a.height)
-          );
+          const objs = this._orderObjectsForCluster(groupedObjects[groupId]);
 
           const placed = [];
           const buffer = (this.spacing?.cluster?.itemGap ?? 12);
