@@ -3000,6 +3000,32 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
   transform: rotate(180deg);
 }
 
+/* Content sidebars: let Notes/References headers span the full row.
+   This keeps the existing h3 accordion logic and h3::after icon,
+   but makes margin-left:auto reach the far right of the sidebar row. */
+   .slide-in[data-mode="content"] .two-col-row.collapsible.section-notes > .left,
+   .slide-in[data-mode="content"] .two-col-row.collapsible.section-references > .left {
+     display: contents;
+   }
+   
+   .slide-in[data-mode="content"] .two-col-row.collapsible.section-notes > .left > h3,
+   .slide-in[data-mode="content"] .two-col-row.collapsible.section-references > .left > h3 {
+     grid-column: 1 / -1;
+     width: 100%;
+   }
+   
+   .slide-in[data-mode="content"] .two-col-row.collapsible.section-notes > .right,
+   .slide-in[data-mode="content"] .two-col-row.collapsible.section-references > .right {
+     grid-column: 2;
+   }
+   
+   @media (max-width: 768px) {
+     .slide-in[data-mode="content"] .two-col-row.collapsible.section-notes > .right,
+     .slide-in[data-mode="content"] .two-col-row.collapsible.section-references > .right {
+       grid-column: 1;
+     }
+   }
+
 /* Related Themes on detail page: invert the default chevron only here */
 #detail-content #related-themes .related-theme-item > .section-header::after {
   transform: rotate(180deg);
@@ -4520,6 +4546,16 @@ body.menu-open header {
   transition-delay:
     0ms,                      /* max-height: no delay */
     120ms;                    /* opacity: small delay for nicer feel */
+}
+
+/* Team subpage: keep content away from the closing divider line */
+#subpage-team {
+  --author-section-content-bottom-space: 40px;
+}
+
+#subpage-team .author-section .section-content > .two-col-table {
+  padding-bottom: var(--author-section-content-bottom-space);
+  box-sizing: border-box;
 }
 
 /* Author meta */
