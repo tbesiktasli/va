@@ -12000,10 +12000,124 @@ const SUBPAGE_INITS = {
   'subpage-team': initTeamSubpage,
 };
 
+// Shared reveal config for all text subpages.
+// Override from HTML before script.js if needed:
+//
+//   window.TEXT_SUBPAGE_REVEAL_CONFIG = { maxItems: 60 };
+//
+const TEXT_SUBPAGE_REVEAL = {
+  itemClass: 'content-reveal-item',
+  activeClass: 'content-reveal-in',
+  prepClass: 'content-reveal-prep',
+  maxItems: 100,
+  includeCollapsedContent: false,
+
+  selector: [
+    ':scope > .vertical-content > .text-page > h2',
+    ':scope > .vertical-content > .text-page > h1',
+    ':scope > .vertical-content > .text-page > .subpage-author',
+    ':scope > .vertical-content > .text-page > p',
+    ':scope > .vertical-content > .text-page > ul.arrow-list > li',
+
+    // Long-form two-column pages: reveal section labels and content elements.
+    ':scope > .vertical-content > .text-page > .two-col-table > .two-col-row > .left',
+    ':scope > .vertical-content > .text-page > .two-col-table > .two-col-row > .right > p',
+    ':scope > .vertical-content > .text-page > .two-col-table > .two-col-row > .right > ul',
+    ':scope > .vertical-content > .text-page > .two-col-table > .two-col-row > .right > ol',
+    ':scope > .vertical-content > .text-page > .two-col-table > .two-col-row > .right > figure',
+
+    // Team page: dynamic author sections.
+    ':scope > .vertical-content > .text-page > #authors-accordion > .author-section',
+
+    // Bottom scroll-up CTA, if present.
+    ':scope > .vertical-content > .text-page > .scroll-up-cta',
+  ].join(', '),
+
+  ...(typeof window !== 'undefined' &&
+     window.TEXT_SUBPAGE_REVEAL_CONFIG &&
+     typeof window.TEXT_SUBPAGE_REVEAL_CONFIG === 'object'
+      ? window.TEXT_SUBPAGE_REVEAL_CONFIG
+      : {})
+};
+
 function runSubpageInit(el, id) {
   // Re-run safe; if you want "once", set el.__initRan = true and guard here.
   const fn = SUBPAGE_INITS[id];
-  if (typeof fn === 'function') fn(el);
+  if (typeof fn !== 'function') return Promise.resolve();
+
+  try {
+    return Promise.resolve(fn(el));
+  } catch (err) {
+    console.warn('[subpage] init failed:', id, err);
+    return Promise.resolve();
+  }
+}
+
+function resetTextSubpageReveal(root) {
+  if (!root) return;
+
+  const cfg = TEXT_SUBPAGE_REVEAL;
+
+  root.classList.remove(cfg.prepClass, cfg.activeClass);
+
+  root.querySelectorAll(`.${cfg.itemClass}`).forEach((el) => {
+    el.classList.remove(cfg.itemClass);
+    el.style.removeProperty('--content-reveal-i');
+  });
+}
+
+function prepareTextSubpageRevealItems(root) {
+  if (!root) return [];
+
+  const cfg = TEXT_SUBPAGE_REVEAL;
+
+  root.classList.remove(cfg.activeClass);
+
+  root.querySelectorAll(`.${cfg.itemClass}`).forEach((el) => {
+    el.classList.remove(cfg.itemClass);
+    el.style.removeProperty('--content-reveal-i');
+  });
+
+  const items = Array.from(new Set(Array.from(root.querySelectorAll(cfg.selector))))
+    .filter((el) => {
+      // Important: do NOT use offsetParent here.
+      // During reload/deep-link prep, the page may still be hidden,
+      // but we still need to assign reveal classes before first paint.
+      if (
+        cfg.includeCollapsedContent !== true &&
+        el.closest('.collapsible:not(.is-open) .section-content')
+      ) {
+        return false;
+      }
+
+      return true;
+    })
+    .slice(0, cfg.maxItems);
+
+  items.forEach((el, index) => {
+    el.classList.add(cfg.itemClass);
+    el.style.setProperty('--content-reveal-i', index);
+  });
+
+  return items;
+}
+
+function revealTextSubpageContent(root) {
+  if (!root) return;
+
+  const cfg = TEXT_SUBPAGE_REVEAL;
+
+  prepareTextSubpageRevealItems(root);
+
+  // First paint the hidden item state, then reveal.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (!root.classList.contains('active')) return;
+
+      root.classList.remove(cfg.prepClass);
+      root.classList.add(cfg.activeClass);
+    });
+  });
 }
 
 function applyStaticHashRoute(route) {
@@ -12173,14 +12287,27 @@ function openTextSubpage(sectionId, headerText, options = {}) {
   document.querySelectorAll('.text-subpage').forEach(s => {
     s.hidden = true;
     s.classList.remove('active');
+    resetTextSubpageReveal(s);
   });
 
   // 2) Show the requested one (attribute + class so CSS displays it)
   const el = document.getElementById(sectionId);
   if (el) {
+    // Prevent a one-frame full-content paint on reload/deep-link open.
+    el.classList.add(TEXT_SUBPAGE_REVEAL.prepClass);
+
+    // Prepare existing static content before the page becomes visible.
+    // Dynamic pages will be prepared again after their initializer finishes.
+    prepareTextSubpageRevealItems(el);
+
     el.hidden = false;
     el.classList.add('active');
-    runSubpageInit(el, sectionId);
+
+    Promise.resolve(runSubpageInit(el, sectionId)).finally(() => {
+      // If the user navigated away while async content was loading, do nothing.
+      if (!el.classList.contains('active')) return;
+      revealTextSubpageContent(el);
+    });
   }
 
   // 3) Header & layout adjustments
