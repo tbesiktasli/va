@@ -5459,6 +5459,78 @@ function initMobileSlideInsToggle() {
       }
     }
 
+    function getDetailNavTransitionMs() {
+      const raw = getComputedStyle(document.documentElement)
+        .getPropertyValue('--detail-nav-transition-ms')
+        .trim();
+
+      if (!raw) return 180;
+
+      const value = parseFloat(raw);
+      if (!Number.isFinite(value)) return 180;
+
+      return raw.endsWith('ms') ? value : value * 1000;
+    }
+
+    function clearDetailNavTransitionClasses() {
+      if (!detailEl) return;
+
+      detailEl.classList.remove(
+        'is-detail-transitioning',
+        'is-detail-leaving-next',
+        'is-detail-leaving-prev',
+        'is-detail-entering-next',
+        'is-detail-entering-prev'
+      );
+    }
+
+    function runDetailNavTransition(delta, swapContent) {
+      if (typeof swapContent !== 'function') return;
+
+      const prefersReducedMotion =
+        window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+      const canAnimate =
+        detailEl &&
+        detailEl.classList.contains('active') &&
+        !prefersReducedMotion;
+
+      if (!canAnimate) {
+        swapContent();
+        return;
+      }
+
+      if (detailEl.__detailNavTransitioning) return;
+      detailEl.__detailNavTransitioning = true;
+
+      const direction = delta > 0 ? 'next' : 'prev';
+      const leaveClass = `is-detail-leaving-${direction}`;
+      const enterClass = `is-detail-entering-${direction}`;
+      const duration = getDetailNavTransitionMs();
+
+      clearDetailNavTransitionClasses();
+      detailEl.classList.add('is-detail-transitioning', leaveClass);
+
+      window.setTimeout(() => {
+        swapContent();
+
+        detailEl.classList.remove(leaveClass);
+        detailEl.classList.add(enterClass);
+
+        // Force the browser to apply the enter-start state before animating to normal.
+        void detailEl.offsetHeight;
+
+        requestAnimationFrame(() => {
+          detailEl.classList.remove(enterClass);
+
+          window.setTimeout(() => {
+            clearDetailNavTransitionClasses();
+            detailEl.__detailNavTransitioning = false;
+          }, duration);
+        });
+      }, duration);
+    }
+
     // --- detail-page prev/next UI (inside vertical-content) ---
     function attachDetailNavUI() {
       const vc = detailEl?.querySelector('.vertical-content');
@@ -6496,15 +6568,28 @@ function initMobileSlideInsToggle() {
     function stepDetail(delta) {
       const nav = window.__detailNav;
       if (!nav) return;
-      let nextIndex = nav.index + delta;
+
+      // Ignore repeated clicks/keydowns while the transition is running.
+      if (detailEl?.__detailNavTransitioning) return;
+
+      const nextIndex = nav.index + delta;
       if (nextIndex < 0 || nextIndex >= nav.order.length) return; // stop at ends
 
-      nav.index = nextIndex;
       const nextId = nav.order[nextIndex];
-
-      // Keep same context, but swap objectId
       const ctx = window.__detailCtx || {};
-      window.openObjectDetail({ objectId: nextId, from: ctx.from || null, gid: ctx.gid || null });
+
+      const openNextDetail = () => {
+        nav.index = nextIndex;
+
+        // Keep same context, but swap objectId.
+        window.openObjectDetail({
+          objectId: nextId,
+          from: ctx.from || null,
+          gid: ctx.gid || null
+        });
+      };
+
+      runDetailNavTransition(delta, openNextDetail);
     }
     // after the closing brace of function stepDetail(delta) { ... }
     window.stepDetail = stepDetail;
