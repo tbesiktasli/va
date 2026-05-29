@@ -22,6 +22,13 @@
   --view-switcher-demo-delay-ms: 700ms;  /* wait after load before auto-expanding */
   --view-switcher-demo-hold-ms: 900ms;   /* keep it open after fully revealed */
   --fab-edge-gap: 12px; /* distance from viewport edges */
+
+  /* Text subpage content reveal animation */
+  --text-subpage-item-in-ms: 220ms;
+  --text-subpage-item-stagger-ms: 55ms;
+  --text-subpage-item-dy: 10px;
+  --text-subpage-item-ease: cubic-bezier(.2,.8,.2,1);
+
   /* Jump-mark scrolling: default top breathing room (desktop/web) */
   --jump-scroll-offset: 18px;
 
@@ -74,6 +81,11 @@
   --icon-button-arrow: url('img/icons/arrow_button_33x18px.svg');
   --button-arrow-w: 18px;
   --button-arrow-h: 18px;
+
+  /* Back arrow hover animation */
+  --back-arrow-hover-shift: -4px;
+  --back-arrow-hover-ms: 180ms;
+  --back-arrow-hover-ease: cubic-bezier(.2,.8,.2,1);
 
   /* Cursor (hover) */
   --cursor-eye: url("img/icons/eye_bg_w.svg") 16 16, pointer;
@@ -1944,6 +1956,31 @@ body.in-adhoc-gallery #group-gallery .title-box h2 {
 /* Back button: same arrow asset, rotated */
 .theme-back-button .icon {
   transform: rotate(180deg);
+}
+
+/* Back arrow hover animation
+   Covers:
+   - theme secondary-pane back button: .theme-back-button .icon
+   - gallery/detail back buttons: #content-back-button .arrow-icon
+   - text subpage back buttons: .text-subpage-back .arrow-icon
+
+   Uses CSS translate instead of transform so we do not overwrite
+   the existing rotate(180deg) on .theme-back-button .icon.
+*/
+.theme-back-button .icon,
+#content-back-button .arrow-icon,
+.text-subpage-back .arrow-icon {
+  transition: translate var(--back-arrow-hover-ms) var(--back-arrow-hover-ease);
+  will-change: translate;
+}
+
+.theme-back-button:hover .icon,
+.theme-back-button:focus-visible .icon,
+#content-back-button:hover .arrow-icon,
+#content-back-button:focus-visible .arrow-icon,
+.text-subpage-back:hover .arrow-icon,
+.text-subpage-back:focus-visible .arrow-icon {
+  translate: var(--back-arrow-hover-shift) 0;
 }
 
 /* Back button: hidden by default (desktop / tablet) */
@@ -4402,6 +4439,41 @@ body.menu-open header {
 /* === Research text page === */
 .text-subpage { display: none; }              /* follow your .active toggling convention */
 .text-subpage.active { display: block; }
+
+/* Shared text-subpage reveal animation.
+   The prep class prevents one-frame full-content flashes on reload/deep-link open. */
+.text-subpage.content-reveal-prep .text-page {
+visibility: hidden;
+}
+
+.text-subpage .content-reveal-item {
+opacity: 0;
+transform: translate3d(0, calc(-1 * var(--text-subpage-item-dy)), 0);
+
+transition:
+  opacity var(--text-subpage-item-in-ms) ease,
+  transform var(--text-subpage-item-in-ms) var(--text-subpage-item-ease);
+
+transition-delay: calc(var(--content-reveal-i, 0) * var(--text-subpage-item-stagger-ms));
+will-change: opacity, transform;
+}
+
+.text-subpage.content-reveal-in .content-reveal-item {
+opacity: 1;
+transform: translate3d(0, 0, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+.text-subpage.content-reveal-prep .text-page {
+  visibility: visible;
+}
+
+.text-subpage .content-reveal-item {
+  transition: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+}
 
 .text-subpage .text-page {
   padding: 120px 200px 0 200px;                        /* 150 top/bottom, 100 left/right */
