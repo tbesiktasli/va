@@ -111,6 +111,11 @@
   --detail-media-max-h: 70vh;                 /* single source of truth */
   --detail-media-frame-h: var(--detail-media-max-h); /* reserved hero slot height */
 
+  /* Detail previous/next transition */
+  --detail-nav-transition-ms: 180ms;
+  --detail-nav-transition-distance: 32px;
+  --detail-nav-transition-ease: cubic-bezier(.2,.8,.2,1);
+
   --content-section-pad-top: 20px; /* matches .content-section padding-top */
   --detail-section-header-pad-y: 12px;
   --detail-section-collapsed-gap: calc(var(--content-section-pad-top) + var(--detail-section-header-pad-y));
@@ -2275,6 +2280,61 @@ and pin the expanded panel to the right edge. */
   /* single source of truth for right-side shortening on detail sub-sections */
   --detail-divider-inset-right: 50px;
   --detail-subsection-content-inset-right: var(--detail-divider-inset-right);
+}
+
+/* Detail previous/next content transition
+   Keeps the sticky nav rail stable and animates only the changing content. */
+#detail-content .content-header,
+#detail-content .vertical-content > :not(.detail-nav-arrows) {
+  transition:
+    opacity var(--detail-nav-transition-ms) var(--detail-nav-transition-ease),
+    transform var(--detail-nav-transition-ms) var(--detail-nav-transition-ease);
+  will-change: opacity, transform;
+}
+
+#detail-content.is-detail-transitioning {
+  overflow-x: hidden;
+}
+
+#detail-content.is-detail-transitioning .content-header,
+#detail-content.is-detail-transitioning .vertical-content > :not(.detail-nav-arrows) {
+  pointer-events: none;
+}
+
+/* NEXT: old content exits left, new content enters from right */
+#detail-content.is-detail-leaving-next .content-header,
+#detail-content.is-detail-leaving-next .vertical-content > :not(.detail-nav-arrows) {
+  opacity: 0;
+  transform: translateX(calc(-1 * var(--detail-nav-transition-distance)));
+}
+
+#detail-content.is-detail-entering-next .content-header,
+#detail-content.is-detail-entering-next .vertical-content > :not(.detail-nav-arrows) {
+  opacity: 0;
+  transform: translateX(var(--detail-nav-transition-distance));
+  transition: none;
+}
+
+/* PREV: old content exits right, new content enters from left */
+#detail-content.is-detail-leaving-prev .content-header,
+#detail-content.is-detail-leaving-prev .vertical-content > :not(.detail-nav-arrows) {
+  opacity: 0;
+  transform: translateX(var(--detail-nav-transition-distance));
+}
+
+#detail-content.is-detail-entering-prev .content-header,
+#detail-content.is-detail-entering-prev .vertical-content > :not(.detail-nav-arrows) {
+  opacity: 0;
+  transform: translateX(calc(-1 * var(--detail-nav-transition-distance)));
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #detail-content .content-header,
+  #detail-content .vertical-content > :not(.detail-nav-arrows) {
+    transition: none !important;
+    transform: none !important;
+  }
 }
 
 @media (min-width: 769px) {
@@ -4827,8 +4887,8 @@ body.menu-open header {
 }
 
 
-/* TABLET / iPad: shrink group gallery title earlier (prevents vertical overflow) */
-@media (max-width: 1024px) {
+/* DESKTOP / TABLET: shrink group gallery title earlier (prevents vertical overflow) */
+@media (max-width: 1400px) {
   #group-gallery .title-box {
     --title-h2-size: 3.6em;
     --title-h3-size: 1.5em;
