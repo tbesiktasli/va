@@ -255,6 +255,12 @@ export class Grid {
           inlineHeight: 350,
         },
 
+        // Inline detail reveal behavior
+        inline: {
+          descriptionRevealDelayMs: 80,
+          descriptionRevealFallbackMs: 650,
+        },
+
         // Mobile-specific behaviour
         mobile: {
           // match your CSS: @media (max-width: 768px)
@@ -803,12 +809,18 @@ export class Grid {
     _createInlineDetailPanel(el, obj, {
       from = this.currentState,
       onClose = () => {},
+      delayDescriptionReveal = false,
     } = {}) {
       const panel = document.createElement('div');
       let wsInline = null;  // ✅ add
       const formattedDate = this._formatDetailDate(obj.date);
       let primaryText = getObjectTooltipLabel(obj);
       panel.className = 'detail-panel';
+
+      if (delayDescriptionReveal) {
+        panel.classList.add('detail-description-delayed');
+      }
+
       if (obj.type === 'text') {
         panel.classList.add('detail-text-object');
       }
@@ -910,7 +922,21 @@ export class Grid {
       }
 
       el.appendChild(panel);
-      requestAnimationFrame(() => panel.classList.add('visible'));
+
+      const descriptionEl = panel.querySelector('.detail-description');
+
+      panel.__revealDescription = () => {
+        if (!descriptionEl || !panel.isConnected) return;
+        descriptionEl.classList.add('is-visible');
+      };
+
+      requestAnimationFrame(() => {
+        panel.classList.add('visible');
+
+        if (!delayDescriptionReveal) {
+          panel.__revealDescription();
+        }
+      });
 
       // Pointer-first activation helper (fixes trackpads that don't produce reliable "click")
       const bindActivate = (node, fn) => {
@@ -1425,7 +1451,11 @@ export class Grid {
       this._startPanLoop?.();
     
       // Stage 2: after slide completes, expand keeping center fixed
+      let didExpand = false;
+
       const expand = () => {
+        if (didExpand) return;
+        didExpand = true;
 
         // 🚧 Guard against races: if detail has been closed or replaced, do nothing
         if (!this._detail?.active || this._detail.id !== obj.id) {
@@ -1436,16 +1466,53 @@ export class Grid {
         const targetTop2  = cy  - height / 2;
         const dx2 = targetLeft2 - obj.grid_x;
         const dy2 = targetTop2  - obj.grid_y;
+
         el.style.width  = `${width * z}px`;
         el.style.height = `${height * z}px`;
-        el.style.transform = `translate(${dx2 * z}px, ${dy2 * z}px)`;        
-    
-        // Build detail panel UI (reuse your ungrouped panel structure)
-        // Shared panel builder
-        this._createInlineDetailPanel(el, obj, {
+        el.style.transform = `translate(${dx2 * z}px, ${dy2 * z}px)`;
+
+        // Build detail panel UI immediately, but delay only the main description.
+        const panel = this._createInlineDetailPanel(el, obj, {
           from: 'clustered',
           onClose: () => this.exitDetail(),
+          delayDescriptionReveal: true,
         });
+
+        let descriptionRevealed = false;
+
+        const revealDescription = () => {
+          if (descriptionRevealed) return;
+          descriptionRevealed = true;
+
+          el.removeEventListener('transitionend', onExpandEnd);
+
+          if (!this._detail?.active || this._detail.id !== obj.id) return;
+
+          const delay = this.detailConfig?.inline?.descriptionRevealDelayMs ?? 0;
+
+          window.setTimeout(() => {
+            if (!this._detail?.active || this._detail.id !== obj.id) return;
+            panel?.__revealDescription?.();
+          }, delay);
+        };
+
+        const onExpandEnd = (e) => {
+          if (e.target !== el) return;
+
+          // transform is the longest .object transition, so this waits until
+          // the card has visually settled after expanding.
+          if (e.propertyName !== 'transform') return;
+
+          revealDescription();
+        };
+
+        el.addEventListener('transitionend', onExpandEnd);
+
+        // Fallback in case transitionend is skipped/cancelled.
+        window.setTimeout(
+          revealDescription,
+          this.detailConfig?.inline?.descriptionRevealFallbackMs ?? 200
+        );
       };
     
       const to = setTimeout(expand, 520);
