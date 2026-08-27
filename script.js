@@ -1148,6 +1148,192 @@ function enablePrepageBgParallax(prepage, cfg) {
   return cleanup;
 }
 
+// ================= First grid-entry reveal =================
+// Triggered only when the user enters the grid via the prepage Explore button.
+// Sequence:
+// 1) header slides in while workspace returns to its normal top offset
+// 2) grid controls fade in one by one
+const HEADER_INTRO_REVEAL = {
+  enabled: true,
+
+  headerSlideMs: 520,
+  controlFadeMs: 220,
+  controlStaggerMs: 110,
+  cleanupPaddingMs: 120,
+
+  ease: 'cubic-bezier(.2,.8,.2,1)',
+
+  // Reveal order. Add future grid controls here instead of adding more animation code.
+  controlSelectors: [
+    '#grid-view-switcher',
+    '#fab-fit-all',
+    '#fab-zoom-in',
+    '#fab-zoom-out',
+  ],
+
+  ...(typeof window !== 'undefined' &&
+     window.HEADER_INTRO_REVEAL_CONFIG &&
+     typeof window.HEADER_INTRO_REVEAL_CONFIG === 'object'
+    ? window.HEADER_INTRO_REVEAL_CONFIG
+    : {})
+};
+
+let headerIntroRevealRequested = false;
+let headerIntroRevealDone = false;
+let headerIntroControls = [];
+
+function syncHeaderIntroRevealCssVars() {
+  const cfg = HEADER_INTRO_REVEAL;
+  const root = document.documentElement;
+
+  root.style.setProperty('--header-intro-slide-ms', `${cfg.headerSlideMs}ms`);
+  root.style.setProperty('--header-intro-control-fade-ms', `${cfg.controlFadeMs}ms`);
+  root.style.setProperty('--header-intro-ease', cfg.ease);
+
+  // Clean up any previous preparation first.
+  headerIntroControls.forEach((el) => {
+    el.classList.remove('grid-intro-control');
+    el.style.removeProperty('--header-intro-control-delay');
+  });
+
+  const selectors = Array.isArray(cfg.controlSelectors)
+    ? cfg.controlSelectors
+    : [];
+
+  headerIntroControls = selectors
+    .map((selector) => document.querySelector(selector))
+    .filter(Boolean);
+
+  headerIntroControls.forEach((el, index) => {
+    el.classList.add('grid-intro-control');
+
+    // First control starts only after the header has fully arrived.
+    const delay =
+      cfg.headerSlideMs +
+      (index * cfg.controlStaggerMs);
+
+    el.style.setProperty(
+      '--header-intro-control-delay',
+      `${delay}ms`
+    );
+  });
+}
+
+function cleanupHeaderIntroReveal() {
+  headerIntroControls.forEach((el) => {
+    el.classList.remove('grid-intro-control');
+    el.style.removeProperty('--header-intro-control-delay');
+  });
+
+  headerIntroControls = [];
+}
+
+function requestInitialHeaderReveal() {
+  if (!HEADER_INTRO_REVEAL.enabled || headerIntroRevealDone) return;
+
+  headerIntroRevealRequested = true;
+
+  syncHeaderIntroRevealCssVars();
+
+  // Prepare while prepage/preload still covers the application.
+  // This prevents a one-frame flash of the normal header/controls.
+  document.body.classList.add('header-intro-prep');
+  document.body.classList.remove('header-intro-run');
+
+  maybeRunInitialHeaderReveal();
+}
+
+function isPrepageGoneForHeaderReveal() {
+  const prepage = document.getElementById('prepage');
+
+  return !document.body.classList.contains('has-prepage') &&
+    (!prepage || prepage.classList.contains('is-hidden'));
+}
+
+function isPreloadGoneForHeaderReveal() {
+  const preload = document.getElementById('preload');
+
+  return !document.body.classList.contains('has-preload') &&
+    (!preload || preload.classList.contains('is-hidden'));
+}
+
+function isGridVisibleForHeaderReveal() {
+  const body = document.body;
+  const gridShell = document.getElementById('grid-shell');
+  const gridState = window.gridObject?.currentState || null;
+
+  if (!gridShell) return false;
+  if (gridShell.hidden) return false;
+  if (getComputedStyle(gridShell).display === 'none') return false;
+
+  if (!['grouped', 'clustered', 'ungrouped', 'pre-cluster'].includes(gridState)) {
+    return false;
+  }
+
+  if (document.querySelector('.text-subpage.active')) return false;
+  if (document.getElementById('research-page')?.classList.contains('active')) return false;
+  if (body.classList.contains('in-detail-page')) return false;
+  if (body.classList.contains('in-group-gallery')) return false;
+  if (body.classList.contains('in-gallery')) return false;
+
+  return true;
+}
+
+function maybeRunInitialHeaderReveal() {
+  if (!HEADER_INTRO_REVEAL.enabled) return;
+  if (!headerIntroRevealRequested || headerIntroRevealDone) return;
+  if (!isPrepageGoneForHeaderReveal()) return;
+  if (!isPreloadGoneForHeaderReveal()) return;
+  if (!isGridVisibleForHeaderReveal()) return;
+
+  const header = document.querySelector('header');
+  if (!header) return;
+
+  const cfg = HEADER_INTRO_REVEAL;
+
+  headerIntroRevealDone = true;
+
+  requestAnimationFrame(() => {
+    // Commit the preparation state before switching to the animated state.
+    void header.offsetHeight;
+
+    requestAnimationFrame(() => {
+      document.body.classList.remove('header-intro-prep');
+      document.body.classList.add('header-intro-run');
+
+      const controlCount = headerIntroControls.length;
+
+      const revealEndMs = controlCount
+        ? cfg.headerSlideMs +
+          ((controlCount - 1) * cfg.controlStaggerMs) +
+          cfg.controlFadeMs
+        : cfg.headerSlideMs;
+
+      window.setTimeout(() => {
+        document.body.classList.remove('header-intro-run');
+
+        cleanupHeaderIntroReveal();
+
+        // Other first-entry effects can safely start after this event.
+        document.dispatchEvent(
+          new CustomEvent('app:gridintrocomplete')
+        );
+      }, revealEndMs + cfg.cleanupPaddingMs);
+    });
+  });
+}
+
+// Reuse the lifecycle events already emitted by the app.
+document.addEventListener('app:viewchange', maybeRunInitialHeaderReveal);
+document.addEventListener('app:prepageclosed', maybeRunInitialHeaderReveal);
+document.addEventListener('app:preloadhidden', maybeRunInitialHeaderReveal);
+
+if (typeof LOADING?.onComplete === 'function') {
+  LOADING.onComplete(maybeRunInitialHeaderReveal);
+}
+
+// ===================================================================
+
 function initPrepage() {
   const prepage = document.getElementById('prepage');
   if (!prepage) return;
@@ -1163,6 +1349,8 @@ function initPrepage() {
   if (exploreBtn) {
     exploreBtn.addEventListener('click', (e) => {
       e.preventDefault();
+
+      requestInitialHeaderReveal();
     
       // If loading is already finished, skip preload entirely.
       if (typeof LOADING?.isComplete === 'function' && LOADING.isComplete()) {
@@ -4204,6 +4392,19 @@ const CONTENT_SIDEBAR_CONFIG = [
   { id: 'viral-atmospheres',          key: 'aboutViralAtmosphere' },
 ];
 
+function markGroupContentSidebars() {
+  CONTENT_SIDEBAR_CONFIG.forEach(({ id }) => {
+    document.getElementById(id)?.classList.add('group-content-sidebar');
+  });
+}
+
+function restartGroupContentSidebarReveal(slideInEl) {
+  if (!slideInEl?.classList?.contains('group-content-sidebar')) return;
+
+  resetContentReveal(slideInEl, GROUP_CONTENT_SIDEBAR_REVEAL);
+  revealContent(slideInEl, GROUP_CONTENT_SIDEBAR_REVEAL);
+}
+
 // Render any of the 3 content sidebars (fieldsite, research project, viral atmospheres)
 // using the shared 3-row two-col-table layout.
 function renderContentSidebar(sidebar, data) {
@@ -4230,8 +4431,8 @@ function renderContentSidebar(sidebar, data) {
     notesBody.innerHTML   = '';
     refsBody.innerHTML    = '';
 
-    if (notesRow) notesRow.style.display = 'none';
-    if (refsRow)  refsRow.style.display  = 'none';
+    if (notesRow) notesRow.hidden = true;
+    if (refsRow)  refsRow.hidden = true;
 
     const byline = sidebar.querySelector('.content-sidebar-author');
     if (byline) { byline.innerHTML = ''; byline.hidden = true; }
@@ -4310,14 +4511,14 @@ function renderContentSidebar(sidebar, data) {
   const notesHtml = rich(data.footNotes);
   notesBody.innerHTML = notesHtml || '';
   if (notesRow) {
-    notesRow.style.display = notesHtml ? '' : 'none';
+    notesRow.hidden = !notesHtml;
   }
 
   // 4) Row 3 right: References – hide row if empty
   const refsHtml = rich(data.references);
   refsBody.innerHTML = refsHtml || '';
   if (refsRow) {
-    refsRow.style.display = refsHtml ? '' : 'none';
+    refsRow.hidden = !refsHtml;
   }
 }
 
@@ -4558,6 +4759,75 @@ function isMobileViewportForSlideIns() {
   return window.innerWidth <= 768;
 }
 
+function isGalleryViewActiveForMobileSidebarReveal() {
+  const gg = document.getElementById('group-gallery');
+  if (!gg || !gg.classList.contains('active')) return false;
+
+  return (
+    !!history.state?.gallery ||
+    document.body.classList.contains('in-group-gallery') ||
+    document.body.classList.contains('in-adhoc-gallery') ||
+    document.body.classList.contains('in-theme-gallery')
+  );
+}
+
+function isMobileGalleryTitleRevealPending() {
+  if (!isMobileViewportForSlideIns()) return false;
+  if (!isGalleryViewActiveForMobileSidebarReveal()) return false;
+
+  const title = document.querySelector('#group-gallery .title-box');
+  if (!title) return false;
+
+  return title.dataset.revealComplete !== '1';
+}
+
+function markGalleryTitleRevealComplete(titleEl) {
+  if (!titleEl) return;
+
+  titleEl.dataset.revealComplete = '1';
+
+  if (typeof updateMobileSlideInsToggle === 'function') {
+    updateMobileSlideInsToggle();
+  }
+}
+
+function setMobileExpandToggleVisible(expandEl, shouldShow) {
+  if (!expandEl) return;
+
+  const nextToken = String((Number(expandEl.dataset.visibilityToken) || 0) + 1);
+  expandEl.dataset.visibilityToken = nextToken;
+
+  if (!shouldShow) {
+    expandEl.classList.remove('is-visible');
+    return;
+  }
+
+  const wasHidden = expandEl.hidden;
+
+  expandEl.hidden = false;
+
+  if (wasHidden) {
+    // Let the browser paint the hidden -> initial off-screen state first,
+    // then add the visible class so the slide-in transition can run.
+    expandEl.classList.remove('is-visible');
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (
+          expandEl.dataset.visibilityToken === nextToken &&
+          !expandEl.hidden
+        ) {
+          expandEl.classList.add('is-visible');
+        }
+      });
+    });
+
+    return;
+  }
+
+  expandEl.classList.add('is-visible');
+}
+
 function updateMobileSlideInsToggle() {
   const slideIns    = document.getElementById('slide-ins');
   const collapseEl  = document.getElementById('mobile-slideins-collapse');
@@ -4584,24 +4854,39 @@ function updateMobileSlideInsToggle() {
     slideIns.classList.contains('visible') &&
     !!slideIns.querySelector('.slide-in:not(.is-hidden)');
 
-  if (!anyVisibleChild) {
+  if (!isMobile || !anyVisibleChild) {
     collapseEl.hidden = true;
-    expandEl.hidden   = true;
-  
+    expandEl.hidden = true;
+    expandEl.classList.remove('is-visible', 'is-gallery-title-pending');
+
     if (workspaceOverlay) {
       workspaceOverlay.classList.remove('is-visible');
     }
+
     return;
-  }    
+  }
 
   const collapsed = slideIns.classList.contains('is-collapsed');
+
+  const holdExpandUntilGalleryTitleRevealed =
+    collapsed && isMobileGalleryTitleRevealPending();
+
   collapseEl.hidden = collapsed;
-  expandEl.hidden   = !collapsed;
+
+  expandEl.classList.toggle(
+    'is-gallery-title-pending',
+    holdExpandUntilGalleryTitleRevealed
+  );
+
+  setMobileExpandToggleVisible(
+    expandEl,
+    collapsed && !holdExpandUntilGalleryTitleRevealed
+  );
 
   // Show overlay only on mobile when the strip is expanded (not collapsed)
   if (workspaceOverlay) {
-    const shouldShowOverlay = isMobile && !collapsed;
-    workspaceOverlay.classList.toggle('is-visible', shouldShowOverlay);    
+    const shouldShowOverlay = !collapsed;
+    workspaceOverlay.classList.toggle('is-visible', shouldShowOverlay);
   }
 }
 
@@ -4699,6 +4984,89 @@ function initMobileSlideInsToggle() {
         ?.scrollTo?.({ left: 0, top: 0, behavior: 'auto' });
     } catch {}
   }
+
+  let gridReturnAnimationCleanup = null;
+
+  function revealGridWithEntrance() {
+    if (!gridShellEl) return;
+
+    // Clean up a previous entrance before starting another one.
+    gridReturnAnimationCleanup?.();
+    gridReturnAnimationCleanup = null;
+
+    const gridCanvasEl = document.getElementById('grid');
+    const workspaceEl = document.getElementById('workspace');
+
+    gridShellEl.classList.remove('grid-return-enter');
+    gridCanvasEl?.style.removeProperty('--grid-return-origin-x');
+    gridCanvasEl?.style.removeProperty('--grid-return-origin-y');
+
+    // Restore the existing grid without changing its camera or view state.
+    gridShellEl.style.display = '';
+
+    const prefersReducedMotion =
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+    if (!prefersReducedMotion && gridCanvasEl && workspaceEl) {
+      const gridRect = gridCanvasEl.getBoundingClientRect();
+      const workspaceRect = workspaceEl.getBoundingClientRect();
+
+      // Scale around the visible workspace center rather than around the
+      // potentially very large grid canvas's own center.
+      gridCanvasEl.style.setProperty(
+        '--grid-return-origin-x',
+        `${workspaceRect.left + workspaceRect.width / 2 - gridRect.left}px`
+      );
+
+      gridCanvasEl.style.setProperty(
+        '--grid-return-origin-y',
+        `${workspaceRect.top + workspaceRect.height / 2 - gridRect.top}px`
+      );
+
+      // Commit the visible, non-animated state before applying the entrance class.
+      void gridShellEl.offsetWidth;
+
+      const cleanup = (event) => {
+        // The scale animation on #grid also bubbles to #grid-shell.
+        // Only finish when the shell's fade animation ends.
+        if (
+          event &&
+          (
+            event.target !== gridShellEl ||
+            event.animationName !== 'grid-return-fade-in'
+          )
+        ) {
+          return;
+        }
+
+        gridShellEl.removeEventListener('animationend', cleanup);
+        gridShellEl.removeEventListener('animationcancel', cleanup);
+        gridShellEl.classList.remove('grid-return-enter');
+
+        gridCanvasEl.style.removeProperty('--grid-return-origin-x');
+        gridCanvasEl.style.removeProperty('--grid-return-origin-y');
+
+        if (gridReturnAnimationCleanup === cleanup) {
+          gridReturnAnimationCleanup = null;
+        }
+      };
+
+      gridReturnAnimationCleanup = cleanup;
+
+      gridShellEl.addEventListener('animationend', cleanup);
+      gridShellEl.addEventListener('animationcancel', cleanup);
+      gridShellEl.classList.add('grid-return-enter');
+    }
+
+    // Consolidated post-reveal work previously repeated by detail and gallery.
+    requestAnimationFrame(() => {
+      window.applyVisitedMarkers?.();
+      window.gridObject?._refitAllText?.();
+      window.__dispatchViewChange?.();
+      window.renderSelectionBar?.();
+    });
+  }
+
 
   function setGalleryPeopleLine(elId, names, { prefix = '' } = {}) {
     const el = document.getElementById(elId);
@@ -5364,11 +5732,14 @@ function initMobileSlideInsToggle() {
     const box = groupGalleryEl?.querySelector('.gallery-box');
     if (box) box.innerHTML = '';
   
-    // Hide gallery, show grid again
+    // Hide the gallery before revealing its destination.
     groupGalleryEl?.classList.remove('active');
-    if (gridShellEl) gridShellEl.style.display = '';
-  
-    // Remove all gallery-mode markers in one go
+
+    // Capture the origin before clearing its temporary marker.
+    const origin = document.body.dataset.themeGalleryOrigin || null;
+    delete document.body.dataset.themeGalleryOrigin;
+
+    // Remove all gallery-mode markers in one place.
     document.body.classList.remove(
       'in-group-gallery',
       'in-adhoc-gallery',
@@ -5377,21 +5748,26 @@ function initMobileSlideInsToggle() {
     );
     delete document.body.dataset.currentGroupId;
 
-    // NEW: if this gallery was opened from a detail page,
-    // keep us in detail and make sure the grid stays hidden.
-    const origin = document.body.dataset.themeGalleryOrigin || null;
-    delete document.body.dataset.themeGalleryOrigin;
-
     if (origin === 'detail') {
-      // Ensure grid shell is NOT shown
+      // A theme gallery opened from detail must return to detail,
+      // without briefly revealing or animating the grid.
       if (gridShellEl) {
         gridShellEl.style.display = 'none';
       }
-      // Ensure detail page stays fully active
+
       if (detailEl) {
         detailEl.classList.add('active');
       }
+
       document.body.classList.add('in-detail-page');
+
+      requestAnimationFrame(() => {
+        window.__dispatchViewChange?.();
+        window.renderSelectionBar?.();
+      });
+    } else {
+      // Normal group/ad-hoc gallery return.
+      revealGridWithEntrance();
     }
   
     // If we are closing WITHOUT browser back, clear gallery/adhoc history flags
@@ -5411,12 +5787,6 @@ function initMobileSlideInsToggle() {
     }
   
     // Update global view + selection bar once, after state is clean
-    requestAnimationFrame(() => {
-      window.applyVisitedMarkers?.();        // ✅ repaint visited dots immediately
-      window.gridObject?._refitAllText?.();  // keep text sizing correct after re-show
-      window.__dispatchViewChange?.();
-      window.renderSelectionBar?.();
-    });
   
     refreshSlideInsVisibility();
   
@@ -6398,20 +6768,48 @@ function initMobileSlideInsToggle() {
 
     let __detailWS = null;
     let __detailWS_RO = null;
-    // ===== Text-to-speech hover playback ==================================
+
+    // ===== Text-to-speech playback ==================================
     let __ttsAudio = null;
 
-    function stopTtsAudio() {
-      if (!__ttsAudio) return;
-
-      try { __ttsAudio.pause(); } catch {}
-      try { __ttsAudio.currentTime = 0; } catch {}
-
-      // Also reset the visual state of the TTS button (icon back to speaker)
+    function setTtsButtonState(state = 'initial') {
       const btn = document.getElementById('content-tts-button');
-      if (btn) {
-        btn.classList.remove('is-playing');
+      if (!btn) return;
+
+      const hasStarted = state !== 'initial';
+      const isPlaying = state === 'playing';
+
+      btn.classList.toggle('has-started', hasStarted);
+      btn.classList.toggle('is-playing', isPlaying);
+
+      const label = isPlaying
+        ? 'Pause'
+        : hasStarted
+          ? 'Play'
+          : 'Listen';
+
+      btn.setAttribute('aria-label', label);
+      btn.title = label;
+    }
+
+    // Full reset.
+    // Use this when leaving/changing the detail object.
+    function stopTtsAudio() {
+      if (__ttsAudio) {
+        try { __ttsAudio.pause(); } catch {}
+        try { __ttsAudio.currentTime = 0; } catch {}
       }
+
+      setTtsButtonState('initial');
+    }
+
+    // Pause without resetting playback position.
+    function pauseTtsAudio() {
+      if (__ttsAudio) {
+        try { __ttsAudio.pause(); } catch {}
+      }
+
+      setTtsButtonState('paused');
     }
 
     (function bindTtsButtonOnce() {
@@ -6424,50 +6822,54 @@ function initMobileSlideInsToggle() {
           __ttsAudio = new Audio();
           __ttsAudio.preload = 'none';
 
-          // When audio finishes naturally, reset the button icon
+          // Natural end: keep the control in the post-start state.
+          // Speaker must not return.
           __ttsAudio.addEventListener('ended', () => {
-            const b = document.getElementById('content-tts-button');
-            if (b) {
-              b.classList.remove('is-playing');
-            }
+            setTtsButtonState('paused');
           });
         }
+
         return __ttsAudio;
       }
 
-      // Click toggles play / stop
       btn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
 
         const src = btn.dataset.src;
-        if (!src) {
-          // Nothing to play
-          return;
-        }
+        if (!src) return;
 
         const a = ensureAudio();
 
-        // If we're currently not playing, start playback
-        if (!btn.classList.contains('is-playing')) {
-          if (a.src !== src) {
-            a.src = src;
-          }
-          try {
-            a.currentTime = 0;
-          } catch {}
-          a.play()
-            .then(() => {
-              btn.classList.add('is-playing');
-            })
-            .catch(() => {
-              // If play fails (autoplay restrictions, etc.), keep state clean
-              btn.classList.remove('is-playing');
-            });
-        } else {
-          // Already playing -> stop
-          stopTtsAudio();
+        // Currently playing -> pause at the current position.
+        if (btn.classList.contains('is-playing')) {
+          pauseTtsAudio();
+          return;
         }
+
+        const previousState = btn.classList.contains('has-started')
+          ? 'paused'
+          : 'initial';
+
+        // Only replace the media source when it actually changed.
+        // Reassigning src can itself reset playback position.
+        if (a.getAttribute('src') !== src) {
+          a.src = src;
+        } else if (a.ended) {
+          // User is replaying a sound that already finished naturally.
+          try { a.currentTime = 0; } catch {}
+        }
+
+        // IMPORTANT:
+        // Do not reset currentTime here.
+        // If playback was paused, play() now resumes from that position.
+        a.play()
+          .then(() => {
+            setTtsButtonState('playing');
+          })
+          .catch(() => {
+            setTtsButtonState(previousState);
+          });
       });
     })();
     
@@ -6627,6 +7029,15 @@ function initMobileSlideInsToggle() {
 
       if (!detailEl) return;
 
+      // Only replay the stagger when entering the full detail page.
+      // Previous/next navigation and related-object changes happen while
+      // the detail root is already active.
+      const shouldRevealDetail = !detailEl.classList.contains('active');
+      
+      if (shouldRevealDetail) {
+        resetContentReveal(detailEl, DETAIL_CONTENT_REVEAL);
+      }
+      
       //window.markObjectVisited?.(objectId);
 
       // pause any grid audio (tile hover + inline panels) so we don't hear two audios at once
@@ -6694,7 +7105,15 @@ function initMobileSlideInsToggle() {
       resetDetailScroll();
 
       // Show the detail screen
+      if (shouldRevealDetail) {
+        detailEl.classList.add(DETAIL_CONTENT_REVEAL.prepClass);
+      }
+
       detailEl.classList.add('active');
+
+      if (shouldRevealDetail) {
+        revealContent(detailEl, DETAIL_CONTENT_REVEAL);
+      }
 
       // Defer WaveSurfer init until after #detail-content is visible and laid out
       requestAnimationFrame(() => {
@@ -6783,7 +7202,8 @@ function initMobileSlideInsToggle() {
       });
 
       detailEl.classList.remove('active');
-
+      resetContentReveal(detailEl, DETAIL_CONTENT_REVEAL);
+      
       // Unmark: we left the full-page detail
       document.body.classList.remove('in-detail-page');
       restoreGridStateFromDetail();
@@ -6819,15 +7239,9 @@ function initMobileSlideInsToggle() {
         console.log('[detail] back → text subpage, keep grid hidden');
       } else {
         console.log('[detail] back → grid');
-        // Return to the grid (clustered/ungrouped card stays as it was)
-        if (gridShellEl) gridShellEl.style.display = '';
-        // Re-check view + tags after the grid shell is visible
-        requestAnimationFrame(() => {
-          window.applyVisitedMarkers?.();   // ✅ ADD THIS (repaint visited dots now)
-          window.gridObject?._refitAllText?.();
-          window.__dispatchViewChange?.();
-          window.renderSelectionBar?.();
-        });
+
+        // Return to the existing grid state with the shared entrance effect.
+        revealGridWithEntrance();
       }
    
       refreshSlideInsVisibility();
@@ -7116,8 +7530,35 @@ function initMobileSlideInsToggle() {
       const titleObs = new IntersectionObserver((entries, obs) => {
         entries.forEach(en => {
           if (en.isIntersecting) {
-            en.target.classList.add('visible');   // put .visible on the title itself
-            obs.unobserve(en.target);             // one-shot
+            const titleEl = en.target;
+            const wasAlreadyVisible = titleEl.classList.contains('visible');
+          
+            titleEl.dataset.revealComplete = wasAlreadyVisible ? '1' : '0';
+            titleEl.classList.add('visible');   // put .visible on the title itself
+          
+            if (wasAlreadyVisible) {
+              markGalleryTitleRevealComplete(titleEl);
+            } else {
+              const finishReveal = () => {
+                clearTimeout(titleEl._galleryTitleRevealFallback);
+                titleEl._galleryTitleRevealFallback = null;
+                titleEl.removeEventListener('transitionend', onRevealEnd);
+                markGalleryTitleRevealComplete(titleEl);
+              };
+          
+              const onRevealEnd = (ev) => {
+                if (ev.target !== titleEl) return;
+                if (ev.propertyName !== 'opacity') return;
+                finishReveal();
+              };
+          
+              titleEl.addEventListener('transitionend', onRevealEnd);
+          
+              // Fallback for reduced motion, interrupted transitions, or browsers that miss transitionend.
+              titleEl._galleryTitleRevealFallback = setTimeout(finishReveal, 1300);
+            }
+          
+            obs.unobserve(titleEl);             // one-shot
           }
         });
       }, { root: null, threshold: 0.35, rootMargin: '0px 0px -10% 0px' });
@@ -7176,7 +7617,13 @@ function initMobileSlideInsToggle() {
       if (gg._titleObs) { gg._titleObs.disconnect(); gg._titleObs = null; }
       gg._ioBound = false;
       // Reset visibility so next open fades again
-      gg.querySelector('.title-box')?.classList.remove('visible');
+      const title = gg.querySelector('.title-box');
+      if (title) {
+        clearTimeout(title._galleryTitleRevealFallback);
+        title._galleryTitleRevealFallback = null;
+        title.classList.remove('visible');
+        delete title.dataset.revealComplete;
+      }
       gg.querySelectorAll('.gallery-box .item').forEach(el => { 
         el.style.transitionDelay = ''; 
         el.classList.remove('visible');
@@ -8584,6 +9031,11 @@ function runGridViewSwitcherTeaserOnceWhenVisible(switcher) {
   // Run right after the preload overlay is truly gone
   const onPreloadHidden = () => afterPaint(tryRun);
   document.addEventListener('app:preloadhidden', onPreloadHidden);
+  
+// If the first-grid entrance is running, retry only after its controls
+// have completely finished revealing.
+const onGridIntroComplete = () => afterPaint(tryRun);
+document.addEventListener('app:gridintrocomplete', onGridIntroComplete);
 
   // Run right after loading completes
   let unsubLoading = null;
@@ -9777,6 +10229,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     initialOpen: 'all',
     sectionSelector: '.content-section.sub-section'
   });
+
+  markGroupContentSidebars();
 
   CONTENT_SIDEBAR_CONFIG.forEach(({ id }) => {
     initSlideInAccordion(`#${id}`, {
@@ -11380,10 +11834,15 @@ function resetSlideInScroll(slideInEl) {
 
 function softCloseSlideInEl(wrap) {
   if (!wrap) return;
+
   wrap.classList.remove('expanded', 'secondary-open');
   wrap.querySelector('.vertical-content')?.classList.remove('visible');
 
-  // ✅ When a content sidebar gets closed, reset its scroll for next open
+  if (wrap.classList.contains('group-content-sidebar')) {
+    resetContentReveal(wrap, GROUP_CONTENT_SIDEBAR_REVEAL);
+  }
+
+  // When a content sidebar gets closed, reset its scroll for next open.
   resetSlideInScroll(wrap);
 }
 
@@ -11422,6 +11881,7 @@ function openSlideInEl(wrap, { updateGalleryHash = true } = {}) {
     if (el === wrap) {
       el.classList.add('expanded');
       el.querySelector('.vertical-content')?.classList.add('visible');
+      restartGroupContentSidebarReveal(el);
     } else {
       softCloseSlideInEl(el);
     }
@@ -12005,12 +12465,24 @@ const SUBPAGE_INITS = {
 //
 //   window.TEXT_SUBPAGE_REVEAL_CONFIG = { maxItems: 60 };
 //
-const TEXT_SUBPAGE_REVEAL = {
+// Shared reveal defaults for text subpages and object details.
+const CONTENT_REVEAL_DEFAULTS = {
   itemClass: 'content-reveal-item',
   activeClass: 'content-reveal-in',
   prepClass: 'content-reveal-prep',
-  maxItems: 100,
+  openClass: 'active',
+  delayMs: 0,
   includeCollapsedContent: false,
+  includeHiddenContent: false,
+};
+
+// Optional runtime configuration can be assigned before the main module loads:
+//
+//   window.TEXT_SUBPAGE_REVEAL_CONFIG = { maxItems: 60 };
+//
+const TEXT_SUBPAGE_REVEAL = {
+  ...CONTENT_REVEAL_DEFAULTS,
+  maxItems: 100,
 
   selector: [
     ':scope > .vertical-content > .text-page > h2',
@@ -12019,7 +12491,7 @@ const TEXT_SUBPAGE_REVEAL = {
     ':scope > .vertical-content > .text-page > p',
     ':scope > .vertical-content > .text-page > ul.arrow-list > li',
 
-    // Long-form two-column pages: reveal section labels and content elements.
+    // Long-form two-column pages.
     ':scope > .vertical-content > .text-page > .two-col-table > .two-col-row > .left',
     ':scope > .vertical-content > .text-page > .two-col-table > .two-col-row > .right > p',
     ':scope > .vertical-content > .text-page > .two-col-table > .two-col-row > .right > ul',
@@ -12029,7 +12501,7 @@ const TEXT_SUBPAGE_REVEAL = {
     // Team page: dynamic author sections.
     ':scope > .vertical-content > .text-page > #authors-accordion > .author-section',
 
-    // Bottom scroll-up CTA, if present.
+    // Bottom scroll-up CTA.
     ':scope > .vertical-content > .text-page > .scroll-up-cta',
   ].join(', '),
 
@@ -12037,6 +12509,72 @@ const TEXT_SUBPAGE_REVEAL = {
      window.TEXT_SUBPAGE_REVEAL_CONFIG &&
      typeof window.TEXT_SUBPAGE_REVEAL_CONFIG === 'object'
       ? window.TEXT_SUBPAGE_REVEAL_CONFIG
+      : {})
+};
+
+// Group-gallery content sidebar entrance reveal.
+// Reuses the same animation system as About / Introduction.
+const GROUP_CONTENT_SIDEBAR_REVEAL = {
+  ...CONTENT_REVEAL_DEFAULTS,
+
+  // Slide-ins use .expanded rather than .active.
+  openClass: 'expanded',
+
+  // Sidebar max-width expands over 400ms.
+  // Start content part-way through so both motions overlap.
+  delayMs: 180,
+
+  maxItems: 30,
+
+  selector: [
+    // Left column: labels, title and optional author.
+    ':scope > .vertical-content > .text-page > .two-col-table > .two-col-row > .left > :is(h3, h1, .subpage-author)',
+  
+    // Right column: animate the actual Strapi content elements.
+    ':scope > .vertical-content > .text-page > .two-col-table > .two-col-row > .right > .content-sidebar-context-body > :is(p, ul, ol, figure, blockquote)',
+  
+    // Notes.
+    ':scope > .vertical-content > .text-page > .two-col-table > .two-col-row > .right > .content-sidebar-notes-body > :is(p, ul, ol, figure, blockquote)',
+  
+    // References.
+    ':scope > .vertical-content > .text-page > .two-col-table > .two-col-row > .right > .content-sidebar-references-body > :is(p, ul, ol, figure, blockquote)',
+  ].join(', '),
+
+  ...(typeof window !== 'undefined' &&
+     window.GROUP_CONTENT_SIDEBAR_REVEAL_CONFIG &&
+     typeof window.GROUP_CONTENT_SIDEBAR_REVEAL_CONFIG === 'object'
+      ? window.GROUP_CONTENT_SIDEBAR_REVEAL_CONFIG
+      : {})
+};
+
+// Object-detail entrance reveal.
+// Previous/next detail navigation does not replay this animation.
+const DETAIL_CONTENT_REVEAL = {
+  ...CONTENT_REVEAL_DEFAULTS,
+  maxItems: 16,
+
+  selector: [
+    // Primary detail content.
+    ':scope > .vertical-content > .content-section:not(.sub-section) #detail-primary',
+    ':scope > .vertical-content > .content-section:not(.sub-section) #topics-list:not(:empty)',
+    ':scope > .vertical-content > .content-section:not(.sub-section) .flex-table',
+    ':scope > .vertical-content > .content-section:not(.sub-section) #detail-right:not(:empty)',
+    ':scope > .vertical-content > .content-section:not(.sub-section) .detail-description-block',
+
+    // Lower sections.
+    // Do not animate .section-content itself because it owns the
+    // existing accordion max-height transition.
+    ':scope > .vertical-content > .content-section.sub-section:not([hidden]) > .section-header',
+    ':scope > .vertical-content > .content-section.sub-section:not([hidden]) > .section-content > .right',
+
+    // Bottom scroll-up CTA.
+    ':scope > .vertical-content > .scroll-up-cta',
+  ].join(', '),
+
+  ...(typeof window !== 'undefined' &&
+     window.DETAIL_CONTENT_REVEAL_CONFIG &&
+     typeof window.DETAIL_CONTENT_REVEAL_CONFIG === 'object'
+      ? window.DETAIL_CONTENT_REVEAL_CONFIG
       : {})
 };
 
@@ -12053,10 +12591,13 @@ function runSubpageInit(el, id) {
   }
 }
 
-function resetTextSubpageReveal(root) {
-  if (!root) return;
+function resetContentReveal(root, cfg) {
+  if (!root || !cfg) return;
 
-  const cfg = TEXT_SUBPAGE_REVEAL;
+  if (root.__contentRevealTimer) {
+    clearTimeout(root.__contentRevealTimer);
+    root.__contentRevealTimer = null;
+  }
 
   root.classList.remove(cfg.prepClass, cfg.activeClass);
 
@@ -12066,10 +12607,8 @@ function resetTextSubpageReveal(root) {
   });
 }
 
-function prepareTextSubpageRevealItems(root) {
-  if (!root) return [];
-
-  const cfg = TEXT_SUBPAGE_REVEAL;
+function prepareContentRevealItems(root, cfg) {
+  if (!root || !cfg?.selector) return [];
 
   root.classList.remove(cfg.activeClass);
 
@@ -12078,16 +12617,28 @@ function prepareTextSubpageRevealItems(root) {
     el.style.removeProperty('--content-reveal-i');
   });
 
-  const items = Array.from(new Set(Array.from(root.querySelectorAll(cfg.selector))))
+  const items = Array.from(
+    new Set(Array.from(root.querySelectorAll(cfg.selector)))
+  )
     .filter((el) => {
-      // Important: do NOT use offsetParent here.
-      // During reload/deep-link prep, the page may still be hidden,
-      // but we still need to assign reveal classes before first paint.
+      // Do not use offsetParent here. The root may still be hidden
+      // while preparing a reload or deep-link entrance.
       if (
         cfg.includeCollapsedContent !== true &&
         el.closest('.collapsible:not(.is-open) .section-content')
       ) {
         return false;
+      }
+
+      // Ignore sections hidden because they have no dynamic content.
+      // The root itself may be hidden during preparation, so do not
+      // reject elements merely because the root has [hidden].
+      if (cfg.includeHiddenContent !== true) {
+        const hiddenAncestor = el.closest('[hidden]');
+
+        if (hiddenAncestor && hiddenAncestor !== root) {
+          return false;
+        }
       }
 
       return true;
@@ -12102,22 +12653,35 @@ function prepareTextSubpageRevealItems(root) {
   return items;
 }
 
-function revealTextSubpageContent(root) {
-  if (!root) return;
+function revealContent(root, cfg) {
+  if (!root || !cfg) return;
 
-  const cfg = TEXT_SUBPAGE_REVEAL;
+  prepareContentRevealItems(root, cfg);
 
-  prepareTextSubpageRevealItems(root);
+  const startReveal = () => {
+    root.__contentRevealTimer = null;
 
-  // First paint the hidden item state, then reveal.
-  requestAnimationFrame(() => {
+    // Paint the hidden state first, then reveal.
     requestAnimationFrame(() => {
-      if (!root.classList.contains('active')) return;
+      requestAnimationFrame(() => {
+        const openClass = cfg.openClass || 'active';
 
-      root.classList.remove(cfg.prepClass);
-      root.classList.add(cfg.activeClass);
+        // The component may have been closed while waiting.
+        if (!root.classList.contains(openClass)) return;
+
+        root.classList.remove(cfg.prepClass);
+        root.classList.add(cfg.activeClass);
+      });
     });
-  });
+  };
+
+  const delayMs = Math.max(0, Number(cfg.delayMs) || 0);
+
+  if (delayMs > 0) {
+    root.__contentRevealTimer = window.setTimeout(startReveal, delayMs);
+  } else {
+    startReveal();
+  }
 }
 
 function applyStaticHashRoute(route) {
@@ -12287,7 +12851,7 @@ function openTextSubpage(sectionId, headerText, options = {}) {
   document.querySelectorAll('.text-subpage').forEach(s => {
     s.hidden = true;
     s.classList.remove('active');
-    resetTextSubpageReveal(s);
+    resetContentReveal(s, TEXT_SUBPAGE_REVEAL);
   });
 
   // 2) Show the requested one (attribute + class so CSS displays it)
@@ -12298,7 +12862,7 @@ function openTextSubpage(sectionId, headerText, options = {}) {
 
     // Prepare existing static content before the page becomes visible.
     // Dynamic pages will be prepared again after their initializer finishes.
-    prepareTextSubpageRevealItems(el);
+    prepareContentRevealItems(el, TEXT_SUBPAGE_REVEAL);
 
     el.hidden = false;
     el.classList.add('active');
@@ -12306,7 +12870,7 @@ function openTextSubpage(sectionId, headerText, options = {}) {
     Promise.resolve(runSubpageInit(el, sectionId)).finally(() => {
       // If the user navigated away while async content was loading, do nothing.
       if (!el.classList.contains('active')) return;
-      revealTextSubpageContent(el);
+      revealContent(el, TEXT_SUBPAGE_REVEAL);
     });
   }
 
