@@ -21,6 +21,13 @@
   --view-switcher-icon-lead-ms: 70ms; /* icons start this much before expansion ends */
   --view-switcher-demo-delay-ms: 700ms;  /* wait after load before auto-expanding */
   --view-switcher-demo-hold-ms: 900ms;   /* keep it open after fully revealed */
+/* First grid-entry timing is configured by HEADER_INTRO_REVEAL in script.js */
+
+  /* Grid entrance when returning from detail/gallery */
+  --grid-return-ms: 420ms;
+  --grid-return-scale: 0.950;
+  --grid-return-ease: cubic-bezier(.2,.8,.2,1);
+
   --fab-edge-gap: 12px; /* distance from viewport edges */
 
   /* Text subpage content reveal animation */
@@ -96,6 +103,13 @@
   /* Default for the base rule: use the menu icon by default */
   --icon-slidein-mobile-open:         var(--icon-slidein-mobile-open-menu);
 
+  /* Gallery / mobile sidebar reveal timing */
+  --gallery-title-reveal-ms: 1000ms;
+  --mobile-sidebar-icon-fade-ms: 220ms;
+  --mobile-sidebar-icon-slide-ms: 260ms;
+  --mobile-sidebar-icon-slide-x: 16px;
+  --mobile-sidebar-icon-ease: cubic-bezier(.2,.8,.2,1);
+
   /* Sidebar toggle icon config */
   --section-icon-size: 8px; /* chevron size */
   --icon-section-toggle: url('img/icons/arrow_expand.svg');
@@ -118,6 +132,8 @@
   --prepage-bg-tilt-y: 0deg;
   --prepage-bg-perspective: 900px;
   --detail-description-max-height: 6rem; /* max height of inline detail text */
+  --inline-detail-description-fade-ms: 260ms;
+  --inline-detail-description-dy: 6px;
   --detail-sticky-top: 20px; /* sticky offset for detail meta (desktop) */
 
   --detail-media-max-h: 70vh;                 /* single source of truth */
@@ -127,6 +143,11 @@
   --detail-nav-transition-ms: 180ms;
   --detail-nav-transition-distance: 32px;
   --detail-nav-transition-ease: cubic-bezier(.2,.8,.2,1);
+
+  /* Detail previous/next arrow icon hover animation */
+  --detail-nav-icon-hover-shift: 4px;
+  --detail-nav-icon-hover-ms: 180ms;
+  --detail-nav-icon-hover-ease: cubic-bezier(.2,.8,.2,1);
 
   --content-section-pad-top: 20px; /* matches .content-section padding-top */
   --detail-section-header-pad-y: 12px;
@@ -590,6 +611,58 @@
     touch-action: none;         /* no touch panning/zooming by browser */
   }
 
+  /* Grid return entrance
+     - the shell fades, including controls and counters
+     - only the grid canvas scales */
+     #grid-shell.grid-return-enter {
+      animation:
+        grid-return-fade-in
+        var(--grid-return-ms)
+        var(--grid-return-ease)
+        both;
+    }
+  
+    #grid-shell.grid-return-enter #grid {
+      transform-origin:
+        var(--grid-return-origin-x, 50%)
+        var(--grid-return-origin-y, 50%);
+  
+      animation:
+        grid-return-scale-in
+        var(--grid-return-ms)
+        var(--grid-return-ease)
+        both;
+  
+      will-change: left, top, transform;
+    }
+  
+    @keyframes grid-return-fade-in {
+      from {
+        opacity: 0;
+      }
+  
+      to {
+        opacity: 1;
+      }
+    }
+  
+    @keyframes grid-return-scale-in {
+      from {
+        transform: scale(var(--grid-return-scale));
+      }
+  
+      to {
+        transform: scale(1);
+      }
+    }
+  
+    @media (prefers-reduced-motion: reduce) {
+      #grid-shell.grid-return-enter,
+      #grid-shell.grid-return-enter #grid {
+        animation: none !important;
+      }
+    }
+
   #grid.dragging {
     cursor: grabbing;
     user-select: none;
@@ -882,6 +955,21 @@
   }
 
   .detail-panel.visible { opacity: 1; }
+
+  .detail-panel.detail-description-delayed .detail-description {
+    opacity: 0;
+    transform: translateY(var(--inline-detail-description-dy, 6px));
+    transition:
+      opacity var(--inline-detail-description-fade-ms, 260ms) ease,
+      transform var(--inline-detail-description-fade-ms, 260ms) ease;
+    pointer-events: none;
+  }
+
+  .detail-panel.detail-description-delayed .detail-description.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
 
   .detail-close {
     position: absolute;
@@ -1608,6 +1696,108 @@ header {
   height: 25px;
 }
 
+/* ==========================================================
+   First grid entry
+   1) grid temporarily fills the header area
+   2) header slides down while workspace returns to normal
+   3) grid controls fade in sequentially
+   ========================================================== */
+
+/* During the intro the header becomes an overlay.
+   Outside the intro its existing positioning remains untouched. */
+   body.header-intro-prep header,
+   body.header-intro-run header {
+     position: fixed;
+     top: 0;
+     left: 0;
+     right: 0;
+   
+     z-index: 1600;
+   
+     background: var(--main-bg-color);
+   
+     will-change: transform;
+   }
+   
+   
+   /* ---------- Preparation state ---------- */
+   
+   body.header-intro-prep header {
+     transform: translateY(-100%);
+   }
+   
+   /* Temporarily let the grid occupy the header area.
+      The actual grid/camera coordinates are not changed. */
+   body.header-intro-prep #workspace {
+     top: 0;
+   }
+   
+   /* Grid controls are prepared invisible. */
+   body.header-intro-prep .grid-intro-control {
+     opacity: 0;
+     pointer-events: none;
+   }
+   
+   
+   /* ---------- Running state ---------- */
+   
+   body.header-intro-run header {
+     transform: translateY(0);
+   
+     transition:
+       transform
+       var(--header-intro-slide-ms, 520ms)
+       var(--header-intro-ease, cubic-bezier(.2,.8,.2,1));
+   }
+   
+   /* Move workspace back to its normal resting position at exactly
+      the same speed as the header enters. */
+   body.header-intro-run #workspace {
+     top: var(--header-h);
+   
+     transition:
+       top
+       var(--header-intro-slide-ms, 520ms)
+       var(--header-intro-ease, cubic-bezier(.2,.8,.2,1));
+   }
+   
+   /* JS gives every control its own delay.
+      The first delay starts exactly when the header slide finishes. */
+   body.header-intro-run .grid-intro-control {
+     opacity: 1;
+     pointer-events: none;
+   
+     transition:
+       opacity
+       var(--header-intro-control-fade-ms, 220ms)
+       var(--header-intro-ease, cubic-bezier(.2,.8,.2,1));
+   
+     transition-delay:
+       var(--header-intro-control-delay, 520ms);
+   }
+   
+   
+   /* Accessibility: keep the final layout but skip entrance motion. */
+   @media (prefers-reduced-motion: reduce) {
+     body.header-intro-prep header,
+     body.header-intro-run header {
+       transform: none;
+       transition: none;
+     }
+   
+     body.header-intro-prep #workspace,
+     body.header-intro-run #workspace {
+       top: var(--header-h);
+       transition: none;
+     }
+   
+     body.header-intro-prep .grid-intro-control,
+     body.header-intro-run .grid-intro-control {
+       opacity: 1;
+       transition: none;
+     }
+   }
+
 /* Typewriter caret for header-left */
 #header-left.typing {
   position: relative;
@@ -1731,16 +1921,28 @@ header {
   display: none !important;
 }
 
-/* TTS icon states */
+/* TTS icon states:
+   initial = speaker
+   started + playing = pause
+   started + paused = play
+*/
+#content-tts-button .tts-icon--play,
 #content-tts-button .tts-icon--pause {
-  display: none; /* default: only speaker visible */
-}
-
-#content-tts-button.is-playing .tts-icon--speaker {
   display: none;
 }
 
+/* Once playback has started, never show the speaker again */
+#content-tts-button.has-started .tts-icon--speaker {
+  display: none;
+}
+
+/* Playing */
 #content-tts-button.is-playing .tts-icon--pause {
+  display: block;
+}
+
+/* Paused / finished */
+#content-tts-button.has-started:not(.is-playing) .tts-icon--play {
   display: block;
 }
 
@@ -1789,7 +1991,7 @@ body.in-adhoc-gallery #gallery-view-switcher {
   padding-right: 10vw;
   opacity: 0;
   transform: translateY(20px);
-  transition: opacity 1s ease, transform 1s ease;
+  transition: opacity var(--gallery-title-reveal-ms) ease, transform var(--gallery-title-reveal-ms) ease;
   align-items: center;
 }
 
@@ -2372,6 +2574,19 @@ and pin the expanded panel to the right edge. */
     transition: none !important;
     transform: none !important;
   }
+
+  #detail-content .vertical-content .detail-nav-arrow.next::before,
+  #detail-content .vertical-content .detail-nav-arrow.prev::after {
+    transition: none !important;
+  }
+
+  #detail-content .vertical-content .detail-nav-arrow.next:is(:hover, :focus-visible)::before {
+    transform: rotate(-90deg);
+  }
+
+  #detail-content .vertical-content .detail-nav-arrow.prev:is(:hover, :focus-visible)::after {
+    transform: rotate(90deg);
+  }
 }
 
 @media (min-width: 769px) {
@@ -2436,9 +2651,11 @@ and pin the expanded panel to the right edge. */
   user-select: none;
 }
 
-#detail-content .vertical-content .detail-nav-arrow.next::before, #detail-content .vertical-content .detail-nav-arrow.prev::after {
+#detail-content .vertical-content .detail-nav-arrow.next::before,
+#detail-content .vertical-content .detail-nav-arrow.prev::after {
   content: "";
   display: block;
+  flex: 0 0 auto;
   width: var(--nav-icon-size);
   height: var(--nav-icon-size);
   background: currentColor;             /* icon color */
@@ -2448,6 +2665,10 @@ and pin the expanded panel to the right edge. */
   -webkit-mask-repeat: no-repeat;
   -webkit-mask-position: center;
   -webkit-mask-size: contain;
+  transition:
+    transform var(--detail-nav-icon-hover-ms)
+    var(--detail-nav-icon-hover-ease);
+  will-change: transform;
 }
 
 /* NEXT: show › and cancel parent’s +90° (so it points →) */
@@ -2462,6 +2683,16 @@ and pin the expanded panel to the right edge. */
   mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>');
   -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>');
   transform: rotate(90deg);  /* cancels parent's -90deg */
+}
+
+/* Detail nav icon hover/focus nudge.
+  Animate the pseudo-elements only; the parent transform is layout-critical. */
+  #detail-content .vertical-content .detail-nav-arrow.next:is(:hover, :focus-visible)::before {
+  transform: rotate(-90deg) translateX(var(--detail-nav-icon-hover-shift));
+}
+
+#detail-content .vertical-content .detail-nav-arrow.prev:is(:hover, :focus-visible)::after {
+  transform: rotate(90deg) translateX(calc(-1 * var(--detail-nav-icon-hover-shift)));
 }
 
 /* When JS sets btn.hidden = true, don’t collapse layout */
@@ -4440,40 +4671,73 @@ body.menu-open header {
 .text-subpage { display: none; }              /* follow your .active toggling convention */
 .text-subpage.active { display: block; }
 
-/* Shared text-subpage reveal animation.
-   The prep class prevents one-frame full-content flashes on reload/deep-link open. */
-.text-subpage.content-reveal-prep .text-page {
-visibility: hidden;
+/* Shared content reveal animation for text subpages and object details.
+   Text subpages retain the visibility guard used for reload/deep-link opens. */
+   .text-subpage.content-reveal-prep .text-page {
+    visibility: hidden;
+  }
+  
+  /* Group gallery content sidebars: slower reveal than regular text pages */
+  #slide-ins .slide-in.group-content-sidebar {
+    --text-subpage-item-in-ms: 500ms;
+    --text-subpage-item-stagger-ms: 80ms;
+  }
+
+  .text-subpage .content-reveal-item,
+#detail-content .content-reveal-item,
+#slide-ins .slide-in.group-content-sidebar .content-reveal-item {
+  opacity: 0;
+  transform: translate3d(
+    0,
+    calc(-1 * var(--text-subpage-item-dy)),
+    0
+  );
+
+  /*
+   * Preparation must be immediate.
+   * Do not animate the element INTO its hidden starting state.
+   */
+  transition: none;
+
+  will-change: opacity, transform;
 }
 
-.text-subpage .content-reveal-item {
-opacity: 0;
-transform: translate3d(0, calc(-1 * var(--text-subpage-item-dy)), 0);
+.text-subpage.content-reveal-in .content-reveal-item,
+#detail-content.content-reveal-in .content-reveal-item,
+#slide-ins .slide-in.group-content-sidebar.content-reveal-in .content-reveal-item {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
 
-transition:
-  opacity var(--text-subpage-item-in-ms) ease,
-  transform var(--text-subpage-item-in-ms) var(--text-subpage-item-ease);
+  /*
+   * Animate only the entrance.
+   * The stagger therefore applies only while revealing.
+   */
+  transition:
+    opacity var(--text-subpage-item-in-ms) ease,
+    transform
+      var(--text-subpage-item-in-ms)
+      var(--text-subpage-item-ease);
 
-transition-delay: calc(var(--content-reveal-i, 0) * var(--text-subpage-item-stagger-ms));
-will-change: opacity, transform;
+  transition-delay:
+    calc(
+      var(--content-reveal-i, 0) *
+      var(--text-subpage-item-stagger-ms)
+    );
 }
-
-.text-subpage.content-reveal-in .content-reveal-item {
-opacity: 1;
-transform: translate3d(0, 0, 0);
-}
-
-@media (prefers-reduced-motion: reduce) {
-.text-subpage.content-reveal-prep .text-page {
-  visibility: visible;
-}
-
-.text-subpage .content-reveal-item {
-  transition: none !important;
-  opacity: 1 !important;
-  transform: none !important;
-}
-}
+  
+  @media (prefers-reduced-motion: reduce) {
+    .text-subpage.content-reveal-prep .text-page {
+      visibility: visible;
+    }
+  
+    .text-subpage .content-reveal-item,
+    #detail-content .content-reveal-item,
+    #slide-ins .slide-in.group-content-sidebar .content-reveal-item {
+      transition: none !important;
+      opacity: 1 !important;
+      transform: none !important;
+    }
+  }
 
 .text-subpage .text-page {
   padding: 120px 200px 0 200px;                        /* 150 top/bottom, 100 left/right */
@@ -4585,17 +4849,11 @@ transform: translate3d(0, 0, 0);
   align-items: start;
 }
 
-/* Content slide-ins: keep the left column sticky while the right column scrolls */
+/* Content slide-ins: keep the left column sticky at its initial vertical inset */
 @media (min-width: 769px) {
-  /* configurable: adjust if you want a bit more/less top breathing room */
-  .slide-in[data-mode="content"] { 
-    --two-col-sticky-top: 20px;
-  }
-
-  /* sticky works best when the grid item is aligned to the start */
   .slide-in[data-mode="content"] .text-page .two-col-row > .left {
     position: sticky;
-    top: var(--two-col-sticky-top);
+    top: var(--slidein-textpage-table-offset, 50px);
     align-self: start;
   }
 }
@@ -5270,7 +5528,34 @@ transform: translate3d(0, 0, 0);
     .slideins-mobile-toggle--expand {
       right: 0;
       bottom: 20%;
-      transform: translateY(-50%);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translateY(-50%) translateX(var(--mobile-sidebar-icon-slide-x));
+      will-change: opacity, transform;
+      transition:
+        opacity var(--mobile-sidebar-icon-fade-ms) ease,
+        transform var(--mobile-sidebar-icon-slide-ms) var(--mobile-sidebar-icon-ease),
+        visibility 0s linear var(--mobile-sidebar-icon-slide-ms);
+    }
+
+    .slideins-mobile-toggle--expand.is-visible {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transform: translateY(-50%) translateX(0);
+      transition:
+        opacity var(--mobile-sidebar-icon-fade-ms) ease,
+        transform var(--mobile-sidebar-icon-slide-ms) var(--mobile-sidebar-icon-ease),
+        visibility 0s linear 0s;
+    }
+
+    /* Mobile gallery only: keep the expand icon invisible until the title reveal is complete */
+    .slideins-mobile-toggle--expand.is-gallery-title-pending {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translateY(-50%) translateX(var(--mobile-sidebar-icon-slide-x));
     }
 
     /* Variant: when the expand button is for Discover Connections (menu sidebar) */
