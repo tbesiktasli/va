@@ -2384,9 +2384,16 @@ export class Grid {
       void this.htmlGridElement.offsetHeight;
     }    
 
-    _restoreTransitionsNextFrameWithFlush() {
+    _restoreTransitionsNextFrameWithFlush(afterRestore) {
       this._forceLayoutFlush();
-      requestAnimationFrame(() => this._setObjectTransitionsEnabled(true));
+    
+      requestAnimationFrame(() => {
+        this._setObjectTransitionsEnabled(true);
+    
+        if (typeof afterRestore === 'function') {
+          afterRestore();
+        }
+      });
     }
 
     // Single place to call text fitting (keeps min font size consistent everywhere)
@@ -3050,6 +3057,11 @@ export class Grid {
 
     clusterGroupedObjects(event, opts = {}) {
       if (event) event.preventDefault();
+
+      const onComplete =
+      typeof opts.onComplete === 'function'
+        ? opts.onComplete
+        : null;
     
       // If a cluster animation was queued, cancel it
       if (this._clusterTimer) { clearTimeout(this._clusterTimer); this._clusterTimer = null; }
@@ -3070,6 +3082,8 @@ export class Grid {
         // Keep transforms consistent and ensure camera is legal; no re-fit jump.
         this._applyTransformsForCurrentState?.();
         this.clampCameraToBounds?.(true);
+      
+        onComplete?.();
         return;
       }
     
@@ -3261,8 +3275,9 @@ export class Grid {
             }
           }
 
-          // Force paint/layout so the baked transform='' is committed while transitions are OFF
-          this._restoreTransitionsNextFrameWithFlush();
+          // Force paint/layout so the baked transform='' is committed while transitions are OFF.
+          // Notify the caller only once the clustered layout is fully usable again.
+          this._restoreTransitionsNextFrameWithFlush(onComplete);
         });
       }, { fallbackMs: 900, quietMs: 56 });
     }    
