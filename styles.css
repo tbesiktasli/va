@@ -94,8 +94,11 @@
   --back-arrow-hover-ms: 180ms;
   --back-arrow-hover-ease: cubic-bezier(.2,.8,.2,1);
 
-  /* Cursor (hover) */
-  --cursor-eye: url("img/icons/eye_bg_w.svg") 16 16, pointer;
+/* Cursor (hover) */
+  --cursor-eye:
+    url("img/icons/eye_bg_w.png") 16 16,
+    url("img/icons/eye_bg_w.svg") 16 16,
+    pointer;
 
   /* Mobile “open sidebars” icons */
   --icon-slidein-mobile-open-menu:    url('img/icons/connections.svg'); /* Discover Connections */
@@ -152,6 +155,10 @@
   --content-section-pad-top: 20px; /* matches .content-section padding-top */
   --detail-section-header-pad-y: 12px;
   --detail-section-collapsed-gap: calc(var(--content-section-pad-top) + var(--detail-section-header-pad-y));
+  
+  /* Shared accordion animation */
+  --section-collapse-ms: 360ms;
+  --section-collapse-ease: cubic-bezier(.2, .8, .2, 1);
   --prepage-side-w: 220px;      /* smaller side “padding” columns */
   --prepage-main-max: 900px;    /* wider middle content */  
   --prepage-actions-reserve: 120px;
@@ -173,8 +180,9 @@
   --cursor-label-conceal-speed: 1200;   /* px per second (higher = faster close) */
   --cursor-label-conceal-min-ms: 70;    /* minimum duration per line (close) */
 
-  /* Off-grid: theme segment color (stable + distinct from totals) */
-  --offgrid-theme-color: #6b4eff;
+/* Theme filter colors */
+--offgrid-theme-color: #6b4eff; /* off-grid counter segment */
+--theme-object-glow-color: var(--object-text-border-color); /* grid objects */
 }
 
 :root[data-theme="dark"] {
@@ -189,7 +197,10 @@
   --main-button-inactive-font-color: var(--main-button-inactive-font-color-dark);
   --main-button-inactive-outline-color: var(--main-button-inactive-outline-color-dark);
   --detail-meta-color: var(--detail-meta-color-dark);
-  --cursor-eye: url("img/icons/eye_bg_s.svg") 16 16, pointer;
+  --cursor-eye:
+  url("img/icons/eye_bg_s.png") 16 16,
+  url("img/icons/eye_bg_s.svg") 16 16,
+  pointer;
   --cursor-label-bg: rgba(255, 255, 255, 0.85);
   --cursor-label-color: #111;
 }
@@ -1698,105 +1709,39 @@ header {
 
 /* ==========================================================
    First grid entry
-   1) grid temporarily fills the header area
-   2) header slides down while workspace returns to normal
-   3) grid controls fade in sequentially
+   Header contents fade in sequentially: left → center → right.
+   The header and workspace themselves never move.
    ========================================================== */
 
-/* During the intro the header becomes an overlay.
-   Outside the intro its existing positioning remains untouched. */
-   body.header-intro-prep header,
-   body.header-intro-run header {
-     position: fixed;
-     top: 0;
-     left: 0;
-     right: 0;
-   
-     z-index: 1600;
-   
-     background: var(--main-bg-color);
-   
-     will-change: transform;
-   }
-   
-   
-   /* ---------- Preparation state ---------- */
-   
-   body.header-intro-prep header {
-     transform: translateY(-100%);
-   }
-   
-   /* Temporarily let the grid occupy the header area.
-      The actual grid/camera coordinates are not changed. */
-   body.header-intro-prep #workspace {
-     top: 0;
-   }
-   
-   /* Grid controls are prepared invisible. */
-   body.header-intro-prep .grid-intro-control {
-     opacity: 0;
-     pointer-events: none;
-   }
-   
-   
-   /* ---------- Running state ---------- */
-   
-   body.header-intro-run header {
-     transform: translateY(0);
-   
-     transition:
-       transform
-       var(--header-intro-slide-ms, 520ms)
-       var(--header-intro-ease, cubic-bezier(.2,.8,.2,1));
-   }
-   
-   /* Move workspace back to its normal resting position at exactly
-      the same speed as the header enters. */
-   body.header-intro-run #workspace {
-     top: var(--header-h);
-   
-     transition:
-       top
-       var(--header-intro-slide-ms, 520ms)
-       var(--header-intro-ease, cubic-bezier(.2,.8,.2,1));
-   }
-   
-   /* JS gives every control its own delay.
-      The first delay starts exactly when the header slide finishes. */
-   body.header-intro-run .grid-intro-control {
-     opacity: 1;
-     pointer-events: none;
-   
-     transition:
-       opacity
-       var(--header-intro-control-fade-ms, 220ms)
-       var(--header-intro-ease, cubic-bezier(.2,.8,.2,1));
-   
-     transition-delay:
-       var(--header-intro-control-delay, 520ms);
-   }
-   
-   
-   /* Accessibility: keep the final layout but skip entrance motion. */
-   @media (prefers-reduced-motion: reduce) {
-     body.header-intro-prep header,
-     body.header-intro-run header {
-       transform: none;
-       transition: none;
-     }
-   
-     body.header-intro-prep #workspace,
-     body.header-intro-run #workspace {
-       top: var(--header-h);
-       transition: none;
-     }
-   
-     body.header-intro-prep .grid-intro-control,
-     body.header-intro-run .grid-intro-control {
-       opacity: 1;
-       transition: none;
-     }
-   }
+/* Preparation state: header stays in its normal layout,
+   only the elements being revealed are hidden. */
+   body.header-intro-prep .header-intro-item {
+    opacity: 0;
+    pointer-events: none;
+  }
+  
+  /* Running state: JS provides a staggered delay per item. */
+  body.header-intro-run .header-intro-item {
+    opacity: 1;
+    pointer-events: none;
+  
+    transition:
+      opacity
+      var(--header-intro-item-fade-ms, 650ms)
+      var(--header-intro-ease, cubic-bezier(.2,.8,.2,1));
+  
+    transition-delay:
+      var(--header-intro-item-delay, 0ms);
+  }
+  
+  /* Accessibility: show everything immediately. */
+  @media (prefers-reduced-motion: reduce) {
+    body.header-intro-prep .header-intro-item,
+    body.header-intro-run .header-intro-item {
+      opacity: 1;
+      transition: none;
+    }
+  }
 
 /* Typewriter caret for header-left */
 #header-left.typing {
@@ -3225,7 +3170,9 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 .slide-in[data-mode="content"] .two-col-row.collapsible .section-content {
   max-height: 0;
   overflow: hidden;
-  transition: max-height .3s ease;
+  transition:
+    max-height var(--section-collapse-ms) var(--section-collapse-ease);
+  will-change: max-height;
 }
 
 /* Detail accordions should expand naturally (not be constrained by height:100%) */
@@ -3366,6 +3313,12 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 /* Detail page: make sub-section headers a full-row click target */
 #detail-content .content-section.sub-section .section-header {
   padding: var(--detail-section-header-pad-y) 0;
+}
+
+#detail-content .content-section.sub-section .section-header {
+  padding: var(--detail-section-header-pad-y) 0;
+  transition:
+    padding-bottom var(--section-collapse-ms) var(--section-collapse-ease);
 }
 
 #detail-content .content-section.sub-section.collapsible:not(.is-open) .section-header {
@@ -4842,7 +4795,7 @@ body.menu-open header {
 }
 
 /* Each row: two columns side by side */
-.text-page .two-col-row {
+.text-page .two-col-row:not([hidden]) {
   display: grid;
   grid-template-columns: 25% 60%;
   column-gap: 15%;   /* remaining 15% becomes the gutter */
@@ -4941,6 +4894,7 @@ body.menu-open header {
 /* Team subpage: keep content away from the closing divider line */
 #subpage-team {
   --author-section-content-bottom-space: 40px;
+  --section-icon-size: 12px;
 }
 
 #subpage-team .author-section .section-content > .two-col-table {
@@ -5601,6 +5555,11 @@ body.menu-open header {
     }
 
     /* 4. Object detail page (#detail-content) – mobile */
+
+    /* Let detail hero media use its natural height on mobile */
+    #detail-content {
+      --detail-media-frame-h: auto;
+    }
 
     /* Header: remove wide layout and right-only padding */
     #detail-content .content-header {
