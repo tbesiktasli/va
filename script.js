@@ -1150,26 +1150,33 @@ function enablePrepageBgParallax(prepage, cfg) {
 
 // ================= First grid-entry reveal =================
 // Triggered only when the user enters the grid via the prepage Explore button.
-// Sequence:
-// 1) header slides in while workspace returns to its normal top offset
-// 2) grid controls fade in one by one
+// Header regions fade in sequentially from left to right.
 const HEADER_INTRO_REVEAL = {
   enabled: true,
 
-  headerSlideMs: 520,
-  controlFadeMs: 220,
-  controlStaggerMs: 110,
-  cleanupPaddingMs: 120,
-
+  headerFadeMs: 650,
+  headerStaggerMs: 140,
+  
+  controlFadeMs: 800,
+  controlStaggerMs: 180,
+  
+  cleanupPaddingMs: 80,
+  
   ease: 'cubic-bezier(.2,.8,.2,1)',
-
-  // Reveal order. Add future grid controls here instead of adding more animation code.
+  
+  headerSelectors: [
+    '#header-left',
+    '#header-center',
+    '.header-right',
+  ],
+  
   controlSelectors: [
     '#grid-view-switcher',
     '#fab-fit-all',
     '#fab-zoom-in',
     '#fab-zoom-out',
   ],
+
 
   ...(typeof window !== 'undefined' &&
      window.HEADER_INTRO_REVEAL_CONFIG &&
@@ -1180,52 +1187,88 @@ const HEADER_INTRO_REVEAL = {
 
 let headerIntroRevealRequested = false;
 let headerIntroRevealDone = false;
-let headerIntroControls = [];
+let headerIntroItems = [];
 
-function syncHeaderIntroRevealCssVars() {
+let headerIntroRevealDurationMs = 0;
+
+function prepareHeaderIntroReveal() {
   const cfg = HEADER_INTRO_REVEAL;
   const root = document.documentElement;
 
-  root.style.setProperty('--header-intro-slide-ms', `${cfg.headerSlideMs}ms`);
-  root.style.setProperty('--header-intro-control-fade-ms', `${cfg.controlFadeMs}ms`);
-  root.style.setProperty('--header-intro-ease', cfg.ease);
+  root.style.setProperty(
+    '--header-intro-ease',
+    cfg.ease
+  );
 
-  // Clean up any previous preparation first.
-  headerIntroControls.forEach((el) => {
-    el.classList.remove('grid-intro-control');
-    el.style.removeProperty('--header-intro-control-delay');
+  // Clear any previous preparation first.
+  cleanupHeaderIntroReveal();
+
+  const resolveItems = (selectors) =>
+    (Array.isArray(selectors) ? selectors : [])
+      .map((selector) => document.querySelector(selector))
+      .filter(Boolean);
+
+  const prepareGroup = (
+    items,
+    {
+      fadeMs,
+      staggerMs,
+      startAtMs,
+    }
+  ) => {
+    items.forEach((el, index) => {
+      el.classList.add('header-intro-item');
+
+      el.style.setProperty(
+        '--header-intro-item-fade-ms',
+        `${fadeMs}ms`
+      );
+
+      el.style.setProperty(
+        '--header-intro-item-delay',
+        `${startAtMs + (index * staggerMs)}ms`
+      );
+
+      headerIntroItems.push(el);
+    });
+
+    if (!items.length) return startAtMs;
+
+    return (
+      startAtMs +
+      ((items.length - 1) * staggerMs) +
+      fadeMs
+    );
+  };
+
+  const headerItems = resolveItems(cfg.headerSelectors);
+  const controlItems = resolveItems(cfg.controlSelectors);
+
+  // Header starts immediately.
+  const headerEndMs = prepareGroup(headerItems, {
+    fadeMs: cfg.headerFadeMs,
+    staggerMs: cfg.headerStaggerMs,
+    startAtMs: 0,
   });
 
-  const selectors = Array.isArray(cfg.controlSelectors)
-    ? cfg.controlSelectors
-    : [];
-
-  headerIntroControls = selectors
-    .map((selector) => document.querySelector(selector))
-    .filter(Boolean);
-
-  headerIntroControls.forEach((el, index) => {
-    el.classList.add('grid-intro-control');
-
-    // First control starts only after the header has fully arrived.
-    const delay =
-      cfg.headerSlideMs +
-      (index * cfg.controlStaggerMs);
-
-    el.style.setProperty(
-      '--header-intro-control-delay',
-      `${delay}ms`
-    );
+  // Controls start only after the last header element
+  // has completely finished fading in.
+  headerIntroRevealDurationMs = prepareGroup(controlItems, {
+    fadeMs: cfg.controlFadeMs,
+    staggerMs: cfg.controlStaggerMs,
+    startAtMs: headerEndMs,
   });
 }
 
 function cleanupHeaderIntroReveal() {
-  headerIntroControls.forEach((el) => {
-    el.classList.remove('grid-intro-control');
-    el.style.removeProperty('--header-intro-control-delay');
+  headerIntroItems.forEach((el) => {
+    el.classList.remove('header-intro-item');
+    el.style.removeProperty('--header-intro-item-fade-ms');
+    el.style.removeProperty('--header-intro-item-delay');
   });
 
-  headerIntroControls = [];
+  headerIntroItems = [];
+  headerIntroRevealDurationMs = 0;
 }
 
 function requestInitialHeaderReveal() {
@@ -1233,10 +1276,10 @@ function requestInitialHeaderReveal() {
 
   headerIntroRevealRequested = true;
 
-  syncHeaderIntroRevealCssVars();
+  prepareHeaderIntroReveal();
 
   // Prepare while prepage/preload still covers the application.
-  // This prevents a one-frame flash of the normal header/controls.
+  // This prevents the normal header content flashing for one frame.
   document.body.classList.add('header-intro-prep');
   document.body.classList.remove('header-intro-run');
 
@@ -1294,20 +1337,14 @@ function maybeRunInitialHeaderReveal() {
   headerIntroRevealDone = true;
 
   requestAnimationFrame(() => {
-    // Commit the preparation state before switching to the animated state.
+    // Commit the hidden preparation state before revealing.
     void header.offsetHeight;
 
     requestAnimationFrame(() => {
       document.body.classList.remove('header-intro-prep');
       document.body.classList.add('header-intro-run');
 
-      const controlCount = headerIntroControls.length;
-
-      const revealEndMs = controlCount
-        ? cfg.headerSlideMs +
-          ((controlCount - 1) * cfg.controlStaggerMs) +
-          cfg.controlFadeMs
-        : cfg.headerSlideMs;
+      const revealEndMs = headerIntroRevealDurationMs;
 
       window.setTimeout(() => {
         document.body.classList.remove('header-intro-run');
@@ -1323,14 +1360,11 @@ function maybeRunInitialHeaderReveal() {
   });
 }
 
-// Reuse the lifecycle events already emitted by the app.
-document.addEventListener('app:viewchange', maybeRunInitialHeaderReveal);
+// These are the two lifecycle events needed by the Explore flow:
+// - prepageclosed when loading was already complete
+// - preloadhidden when Explore had to wait for loading
 document.addEventListener('app:prepageclosed', maybeRunInitialHeaderReveal);
 document.addEventListener('app:preloadhidden', maybeRunInitialHeaderReveal);
-
-if (typeof LOADING?.onComplete === 'function') {
-  LOADING.onComplete(maybeRunInitialHeaderReveal);
-}
 
 // ===================================================================
 
@@ -4838,18 +4872,6 @@ function updateMobileSlideInsToggle() {
 
   const isMobile = isMobileViewportForSlideIns();
 
-  // ✅ Default on mobile: start with the strip collapsed (minimized) once per page load
-  if (isMobile && slideIns.dataset.mobileDefaultCollapsed !== '1') {
-    slideIns.classList.add('is-collapsed');
-
-    // Also collapse individual panels so width math stays compact
-    if (typeof collapseDiscoverSidebar === 'function') {
-      collapseDiscoverSidebar();
-    }
-
-    slideIns.dataset.mobileDefaultCollapsed = '1';
-  }
-
   const anyVisibleChild =
     slideIns.classList.contains('visible') &&
     !!slideIns.querySelector('.slide-in:not(.is-hidden)');
@@ -4896,6 +4918,45 @@ function initMobileSlideInsToggle() {
   const expandEl    = document.getElementById('mobile-slideins-expand');
 
   if (!slideIns || !collapseEl || !expandEl) return;
+
+  let wasMobile = isMobileViewportForSlideIns();
+
+  // Preserve the existing mobile-first behavior:
+  // when the page itself loads on mobile, start minimized.
+  if (wasMobile) {
+    slideIns.classList.add('is-collapsed');
+
+    if (typeof collapseDiscoverSidebar === 'function') {
+      collapseDiscoverSidebar();
+    }
+  }
+
+  const handleSlideInsViewportChange = () => {
+    const isMobile = isMobileViewportForSlideIns();
+
+    // Only change sidebar state when actually crossing the breakpoint.
+    if (isMobile !== wasMobile) {
+      if (isMobile) {
+        // Desktop -> mobile:
+        // preserve an actually open sidebar.
+        // If only the closed handles were showing, use the normal
+        // minimized mobile presentation.
+        const hasExpandedSidebar =
+          !!slideIns.querySelector('.slide-in.expanded:not(.is-hidden)');
+
+        slideIns.classList.toggle('is-collapsed', !hasExpandedSidebar);
+      } else {
+        // Mobile -> desktop:
+        // never leave the whole strip stranded off-screen.
+        // Individual .expanded state is deliberately left untouched.
+        slideIns.classList.remove('is-collapsed');
+      }
+
+      wasMobile = isMobile;
+    }
+
+    updateMobileSlideInsToggle();
+  };
 
   // Clicking the X: push the whole strip off-screen
   collapseEl.addEventListener('click', (e) => {
@@ -4947,19 +5008,21 @@ function initMobileSlideInsToggle() {
     });
   }
 
-  // Keep in sync with viewport changes
+  // Keep responsive sidebar presentation in sync without
+  // destroying the currently expanded sidebar state.
   const mq = window.matchMedia && window.matchMedia('(max-width: 768px)');
+
   if (mq) {
     if (mq.addEventListener) {
-      mq.addEventListener('change', updateMobileSlideInsToggle);
+      mq.addEventListener('change', handleSlideInsViewportChange);
     } else if (mq.addListener) {
-      mq.addListener(updateMobileSlideInsToggle);
+      mq.addListener(handleSlideInsViewportChange);
     }
   }
 
-  window.addEventListener('resize', updateMobileSlideInsToggle);
+  window.addEventListener('resize', handleSlideInsViewportChange);
 
-  // Initial sync
+  // Initial UI sync after applying the mobile default above.
   updateMobileSlideInsToggle();
 }
 
@@ -6043,6 +6106,91 @@ function initMobileSlideInsToggle() {
       return fallback;
     }
 
+
+    function returnDetailToClusterInline() {
+      // Remember the current object before closing the full detail page.
+      let focusId = window.__detailCtx?.objectId || null;
+    
+      if (!focusId && window.__detailNav && Array.isArray(window.__detailNav.order)) {
+        const idx = (typeof window.__detailNav.index === 'number')
+          ? window.__detailNav.index
+          : 0;
+    
+        focusId =
+          window.__detailNav.order[idx] ||
+          window.__detailNav.order[0] ||
+          null;
+      }
+    
+      // If detail came from a gallery, close that gallery first.
+      const galleryActive =
+        document.body.classList.contains('in-group-gallery') ||
+        document.body.classList.contains('in-adhoc-gallery') ||
+        document.body.classList.contains('in-gallery') ||
+        document.getElementById('group-gallery')?.classList.contains('active');
+    
+      if (galleryActive && typeof window.closeGallery === 'function') {
+        try {
+          window.closeGallery();
+        } catch {}
+      }
+    
+      // Prevent closeObjectDetail() from restoring the previous gallery.
+      if (window.__detailCtx && window.__detailCtx.from === 'gallery') {
+        window.__detailCtx.from = 'grid';
+      }
+    
+      // Close the full-page detail.
+      window.closeObjectDetail?.();
+    
+      const grid = window.gridObject;
+      if (!grid) return;
+    
+      const openFocusedInline = () => {
+        if (!focusId || typeof grid.enterClusterDetail !== 'function') return;
+        if (grid.currentState !== 'clustered') return;
+    
+        grid.enterClusterDetail(String(focusId));
+      };
+    
+      const enterCluster = () => {
+        if (typeof markActive === 'function') {
+          markActive('cluster');
+        }
+    
+        if (typeof refreshSlideInsVisibility === 'function') {
+          refreshSlideInsVisibility();
+        }
+    
+        // Already clustered: the object can be opened immediately.
+        if (grid.currentState === 'clustered') {
+          openFocusedInline();
+          return;
+        }
+    
+        // Any other starting view must finish its real cluster transition first.
+        if (typeof grid.clusterGroupedObjects === 'function') {
+          grid.clusterGroupedObjects(null, {
+            onComplete: openFocusedInline
+          });
+        }
+      };
+    
+      // If a grid inline-detail was behind the full detail page, finish closing it
+      // before starting the cluster transition. exitDetail() already returns a Promise.
+      let exitResult = Promise.resolve();
+    
+      if (typeof grid.exitDetail === 'function') {
+        try {
+          exitResult = grid.exitDetail({
+            restoreCamera: false
+          });
+        } catch {}
+      }
+    
+      Promise.resolve(exitResult).then(enterCluster);
+    }
+
     // Render ONLY the primary slot (title or hero media) in the detail view
     function renderDetailPrimary(obj) {
       if (!detailEl || !obj) return;
@@ -6262,58 +6410,7 @@ function initMobileSlideInsToggle() {
               window.toggleTagFromDetail(tag);
             }
 
-            // 2) If a gallery is open, close it AND prevent detail-close from restoring it
-            const galleryActive =
-              document.body.classList.contains('in-group-gallery') ||
-              document.body.classList.contains('in-adhoc-gallery') ||
-              document.body.classList.contains('in-gallery') ||
-              document.getElementById('group-gallery')?.classList.contains('active');
-
-            if (galleryActive && typeof window.closeGallery === 'function') {
-              try { window.closeGallery(); } catch {}
-            }
-
-            // closeObjectDetail() will re-open gallery if __detailCtx.from === 'gallery'
-            // so force it to behave like a grid return for this flow.
-            if (window.__detailCtx && window.__detailCtx.from === 'gallery') {
-              window.__detailCtx.from = 'grid';
-            }
-
-            // 3) Close the full-page detail now
-            // (so restoreGridStateFromDetail doesn't override our next step)
-            window.closeObjectDetail?.();
-
-            // 4) Force clustered view on the grid (use the real method)
-            const grid = window.gridObject;
-            if (grid) {
-              if (typeof grid.exitDetail === 'function') {
-                try { grid.exitDetail(); } catch {}
-              }
-
-              if (grid.currentState !== 'clustered' && typeof grid.clusterGroupedObjects === 'function') {
-                grid.clusterGroupedObjects();
-              }
-
-              if (typeof markActive === 'function') markActive('cluster');
-              if (typeof refreshSlideInsVisibility === 'function') refreshSlideInsVisibility();
-
-              // Re-open inline clustered detail for the CURRENT detail object
-              let focusId = window.__detailCtx?.objectId || null;
-
-              // Fallback: use current detail nav state if available
-              if (!focusId && window.__detailNav && Array.isArray(window.__detailNav.order)) {
-                const idx = (typeof window.__detailNav.index === 'number')
-                  ? window.__detailNav.index
-                  : 0;
-                focusId = window.__detailNav.order[idx] || window.__detailNav.order[0] || null;
-              }
-
-              if (focusId && typeof grid.enterClusterDetail === 'function') {
-                setTimeout(() => {
-                  try { grid.enterClusterDetail(String(focusId)); } catch {}
-                }, 560);
-              }
-            }
+            returnDetailToClusterInline();
           });
         }
 
@@ -6706,14 +6803,32 @@ function initMobileSlideInsToggle() {
           if (!btn) return;
           e.preventDefault();
     
-          const theme = {
+          const themeRef = {
             id:   btn.dataset.themeId || null,
             name: btn.dataset.themeName || ''
           };
-    
-          if (typeof window.openThemeGallery === 'function') {
-            window.openThemeGallery(theme);
-          }
+          
+          // Prefer the canonical loaded theme object when possible.
+          // Fall back to the object-detail relationship data.
+          const theme =
+            (
+              themeRef.id &&
+              typeof window.findThemeById === 'function'
+                ? window.findThemeById(themeRef.id)
+                : null
+            ) || themeRef;
+          
+          if (!applyThemeFilter(theme)) return;
+          
+          // Same navigation behavior as clicking a detail Tag.
+          returnDetailToClusterInline();
+          
+          // Same closest-match behavior already supported by theme filtering.
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              maybeAutoPanToClosestMatch({ theme: true });
+            });
+          });
         });
       }
     }
@@ -9001,11 +9116,16 @@ function runGridViewSwitcherTeaserOnceWhenVisible(switcher) {
       inGridState: isInGridState(),
       switcherVisible: isSwitcherVisible(),
       userInteracting: isUserInteracting(),
+    
+      headerIntroActive:
+        document.body.classList.contains('header-intro-prep') ||
+        document.body.classList.contains('header-intro-run'),
     };
     
     tlog('tryRun()', status);
     
-    if (hasRunThisLoad) return;    
+    if (hasRunThisLoad) return;
+    if (status.headerIntroActive) return;
     if (!status.loadingComplete) return;
     if (!status.preloadGone) return;
     if (!status.prepageGone) return;
@@ -9032,8 +9152,8 @@ function runGridViewSwitcherTeaserOnceWhenVisible(switcher) {
   const onPreloadHidden = () => afterPaint(tryRun);
   document.addEventListener('app:preloadhidden', onPreloadHidden);
   
-// If the first-grid entrance is running, retry only after its controls
-// have completely finished revealing.
+// If the first-grid entrance is running, retry after the header
+// has completely finished revealing.
 const onGridIntroComplete = () => afterPaint(tryRun);
 document.addEventListener('app:gridintrocomplete', onGridIntroComplete);
 
@@ -9406,18 +9526,32 @@ const counters = {
   right:  document.getElementById('offgrid-right'),
 };
 
-function getThemeCounterColor() {
-  // JS override (optional)
-  const js = (typeof window.OFFGRID_THEME_COLOR === 'string')
-    ? window.OFFGRID_THEME_COLOR.trim()
+function getConfiguredColor(windowKey, cssVar, fallback) {
+  const js = (typeof window[windowKey] === 'string')
+    ? window[windowKey].trim()
     : '';
 
-  // CSS override (preferred)
   const css = getComputedStyle(document.documentElement)
-    .getPropertyValue('--offgrid-theme-color')
+    .getPropertyValue(cssVar)
     .trim();
 
-  return js || css || 'magenta';
+  return js || css || fallback;
+}
+
+function getThemeCounterColor() {
+  return getConfiguredColor(
+    'OFFGRID_THEME_COLOR',
+    '--offgrid-theme-color',
+    'magenta'
+  );
+}
+
+function getThemeObjectGlowColor() {
+  return getConfiguredColor(
+    'THEME_OBJECT_GLOW_COLOR',
+    '--theme-object-glow-color',
+    '#4c4741'
+  );
 }
 
 if (!OFFGRID_COUNTERS_ENABLED) {
@@ -10237,7 +10371,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       mode: 'collapsible',
       dynamicHeight: false,
       releaseAfterOpen: true,
-      initialOpen: -1,
+      initialOpen: 'all',
       sectionSelector: '.two-col-row.section-notes, .two-col-row.section-references'
     });
   });
@@ -10720,10 +10854,7 @@ function updateObjectGlowsWithGradient() {
   let glowPaint = 'transparent';
 
   if (themeFilter && themedIds) {
-    const color = (typeof getThemeCounterColor === 'function')
-      ? getThemeCounterColor()
-      : (getComputedStyle(document.documentElement).getPropertyValue('--offgrid-theme-color').trim() || '#000');
-
+    const color = getThemeObjectGlowColor();
     glowPaint = `linear-gradient(${color}, ${color})`;
   } else {
     const colors = selected.map(t => tagColors[t]).filter(Boolean);
@@ -11069,6 +11200,46 @@ function syncDetailTagHighlights() {
   });
 }
 
+function applyThemeFilter(theme) {
+  if (!theme) return false;
+
+  // Themes and tags are mutually exclusive.
+  if (window.activeTags) {
+    window.activeTags.clear();
+  }
+
+  if (typeof clearAllTagSelectionsUI === 'function') {
+    clearAllTagSelectionsUI();
+  }
+
+  if (typeof updateTagAvailability === 'function') {
+    updateTagAvailability();
+  }
+
+  // Reset any tag-group scope.
+  if (typeof activeTagGroupId !== 'undefined') {
+    activeTagGroupId = null;
+  }
+
+  // Activate the selected theme.
+  window.activeThemeFilter = theme;
+
+  // Refresh everything driven by the active filter.
+  if (typeof updateObjectGlowsWithGradient === 'function') {
+    updateObjectGlowsWithGradient();
+  }
+
+  if (typeof scheduleOffgridUpdate === 'function') {
+    scheduleOffgridUpdate();
+  }
+
+  if (typeof renderSelectionBar === 'function') {
+    renderSelectionBar();
+  }
+
+  return true;
+}
+
 function openMenuSecondary(slideInSelector, {
   title,
   paragraphs,
@@ -11153,35 +11324,7 @@ function openMenuSecondary(slideInSelector, {
           : null;
         if (!theme) return;
 
-        // 1) Clear any tag selection (mutually exclusive)
-        if (window.activeTags) {
-          window.activeTags.clear();
-        }
-        if (typeof clearAllTagSelectionsUI === 'function') {
-          clearAllTagSelectionsUI();
-        }
-        if (typeof updateTagAvailability === 'function') {
-          updateTagAvailability();
-        }
-
-        // Reset tag group lock (if you use it)
-        if (typeof window.activeTagGroupId !== 'undefined') {
-          window.activeTagGroupId = null;
-        }
-
-        // 2) Set the active theme filter
-        window.activeThemeFilter = theme;
-
-        // 3) Update highlights, counters, and selection bar
-        if (typeof updateObjectGlowsWithGradient === 'function') {
-          updateObjectGlowsWithGradient();
-        }
-        if (typeof scheduleOffgridUpdate === 'function') {
-          scheduleOffgridUpdate();
-        }
-        if (typeof renderSelectionBar === 'function') {
-          renderSelectionBar();
-        }
+        applyThemeFilter(theme);
 
         // 4) Close the secondary pane
         closeMenuSecondary(slideInSelector);
@@ -11483,25 +11626,35 @@ function initSlideInAccordion(slideInSelector, opts = {}) {
 
   function closeSection(sec) {
     if (!sec.classList.contains('is-open')) return;
+  
     const header = sec.querySelector('.section-header, h3');
     const content = sec.querySelector('.section-content');
+  
     header?.setAttribute('aria-expanded', 'false');
-
+  
     if (content) {
-      // If we released to "none", pin to a pixel value so collapse animation works
-      if (releaseAfterOpen) {
-        content.style.overflow = 'hidden';
-        if (content.style.maxHeight === 'none') {
-          content.style.maxHeight = content.scrollHeight + 'px';
-        } else {
-          content.style.maxHeight = content.scrollHeight + 'px';
-        }
-      } else {
-        content.style.maxHeight = content.scrollHeight + 'px';
-      }
-    
-      requestAnimationFrame(() => { content.style.maxHeight = '0px'; });
+      /*
+       * Pin the currently rendered height before collapsing.
+       *
+       * This is important after releaseNaturalHeightAfterOpen() changed
+       * max-height to "none". Firefox otherwise tends to batch
+       * "none -> pixel height -> 0", which effectively skips the animation.
+       */
+      const startHeight = content.getBoundingClientRect().height;
+  
+      content.style.overflow = 'hidden';
+      content.style.maxHeight = `${startHeight}px`;
+  
+      /*
+       * Force the browser to commit the pixel-height state.
+       * Do not remove this read: it creates the required transition
+       * starting point consistently across Firefox and Chromium.
+       */
+      void content.offsetHeight;
+  
+      content.style.maxHeight = '0px';
     }
+  
     sec.classList.remove('is-open');
   }
 
@@ -11732,8 +11885,8 @@ function renderDiscoverProjectsFromGroups() {
       if (!gid) return;
 
       // Trigger the same action you currently trigger on episode click (moved here)
-      if (typeof window.openGroupGallery === 'function') {
-        window.openGroupGallery(gid);
+      if (typeof window.openGroupEntry === 'function') {
+        window.openGroupEntry(gid, { from: 'discover-connections' });
       }
     });
   }
@@ -11765,8 +11918,8 @@ function renderDiscoverProjectsFromGroups() {
     }
 
     // Desktop/tablet: preserve old immediate navigation
-    if (typeof window.openGroupGallery === 'function') {
-      window.openGroupGallery(gid);
+    if (typeof window.openGroupEntry === 'function') {
+      window.openGroupEntry(gid, { from: 'discover-connections' });
     }
   });
 
