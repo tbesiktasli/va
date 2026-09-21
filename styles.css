@@ -2006,30 +2006,35 @@ body.in-adhoc-gallery #gallery-view-switcher {
 #group-gallery .title-box h2 .adhoc-title-tag {
   position: relative;
   display: inline-block;
-  padding-right: 0.6em;       /* space for the X */
-  cursor: pointer;
-}
-
-#group-gallery .title-box h2 .adhoc-title-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.1em;            /* controls distance between label and × */
+  white-space: nowrap;
   cursor: pointer;
 }
 
 #group-gallery .title-box h2 .adhoc-title-tag-close {
-  position: static;
+  position: absolute;
+  left: calc(100% + 0.1em);
+  top: 50%;
+  transform: translateY(-50%);
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
   border: none;
   background: transparent;
   font: inherit;
-
   color: inherit;
+
   appearance: none;
   -webkit-appearance: none;
 
   line-height: 1;
   cursor: pointer;
   padding: 0;
+
+  min-width: 1.1em;
+  min-height: 1.1em;
+  touch-action: manipulation;
 }
 
 /* Ad-hoc gallery: subtitle is unused → don’t waste vertical space */
@@ -2037,24 +2042,11 @@ body.in-adhoc-gallery #group-gallery .title-box h3 {
   display: none;
 }
 
-/* Prevent super-long tags from overflowing horizontally */
-body.in-adhoc-gallery #group-gallery .title-box h2 {
-  overflow-wrap: anywhere;
-  word-break: break-word;
-
-  /* NEW: purely visual nudge; does NOT affect height measurements */
-  transform: translateY(var(--adhoc-title-offset-y, 0px));
-}
-
-/* Keep the "×" easy to tap even when font-size shrinks */
-#group-gallery .title-box h2 .adhoc-title-tag-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.1em;
-  min-height: 1.1em;
-  touch-action: manipulation;
-}
+/* Ad-hoc title sizing is handled by fitAdhocGalleryTitleNow().
+   Individual tags must always remain on one line. */
+   body.in-adhoc-gallery #group-gallery .title-box h2 {
+    transform: translateY(var(--adhoc-title-offset-y, 0px));
+  }
 
 .wide-content .title-box h2, .wide-content .title-box h3 {
   font-style: italic;
@@ -2716,23 +2708,49 @@ and pin the expanded panel to the right edge. */
 #detail-content .detail-media.audio .wave-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
 }
 
 /* In a flex row, the wave should stretch instead of forcing width:100% */
+
 #detail-content .detail-media.audio .wave-row > .wave {
   flex: 1 1 auto;
   width: auto;
+}
+
+#detail-content .detail-media.audio .wave-time {
+  --wave-time-top-gap: 22px;
+  --wave-time-pipe-gap: 14px;
+
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+
+  margin-top: var(--wave-time-top-gap);
+
+  font-size: 13px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.18em;
+  color: var(--detail-meta-color);
+}
+
+#detail-content .detail-media.audio .wave-time-current {
+  font-weight: 700;
+}
+
+#detail-content .detail-media.audio .wave-time-separator {
+  margin-left: var(--wave-time-pipe-gap);
+  margin-right: var(--wave-time-pipe-gap);
 }
 
 #detail-content .detail-media.audio .wave-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--main-outline-color);
-  border-radius: 999px;
+  width: 32px;
+  height: 32px;
+  border: 0;
   background: transparent;
   color: inherit;
   cursor: pointer;
@@ -2740,13 +2758,21 @@ and pin the expanded panel to the right edge. */
 }
 
 #detail-content .detail-media.audio .wave-btn svg {
-  width: 16px;
-  height: 16px;
+  width: 28px;
+  height: 28px;
   display: block;
 }
 
-#detail-content .detail-media.audio .wave-btn.is-playing {
-  background: var(--main-bright-bg-color);
+#detail-content .detail-media.audio .wave-btn .wave-btn-icon--pause {
+  display: none;
+}
+
+#detail-content .detail-media.audio .wave-btn.is-playing .wave-btn-icon--play {
+  display: none;
+}
+
+#detail-content .detail-media.audio .wave-btn.is-playing .wave-btn-icon--pause {
+  display: block;
 }
 
 /* Primary slot: keep the media centered */
