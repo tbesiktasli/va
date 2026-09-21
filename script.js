@@ -746,6 +746,27 @@ function createWave(container, src, overrides = {}) {
   return ws;
 }
 
+function formatAudioTime(seconds) {
+  const totalSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const secs = totalSeconds % 60;
+
+  if (hours > 0) {
+    return [
+      hours,
+      String(minutes).padStart(2, '0'),
+      String(secs).padStart(2, '0'),
+    ].join(':');
+  }
+
+  return [
+    String(minutes).padStart(2, '0'),
+    String(secs).padStart(2, '0'),
+  ].join(':');
+}
+
 // Expose the shared WaveSurfer defaults/helper for other modules (e.g., grid.js)
 window.WS_DEFAULTS ??= WS_DEFAULTS;
 window.createWave  ??= createWave;
@@ -821,24 +842,46 @@ function parsePeaksJson(json) {
   // audiowaveform JSON: min/max pairs in `data`
   if (Array.isArray(json.data)) {
     const bits = Number(json.bits) || 8;
-    const denom = bits === 16 ? 32768 : 128; // good enough baseline
+    const denom = bits === 16 ? 32768 : 128;
     const d = json.data;
-
-    // Convert [min,max,min,max...] -> [peak,peak,...] in 0..1 range
+  
     const out = new Array(Math.floor(d.length / 2));
+  
     for (let i = 0, j = 0; i + 1 < d.length; i += 2, j++) {
       const mn = d[i];
       const mx = d[i + 1];
+  
       out[j] = Math.max(Math.abs(mn), Math.abs(mx)) / denom;
     }
-
-    return { peaks: out, duration: json.duration ?? json.length };
+  
+    let duration;
+  
+    if (Number.isFinite(Number(json.duration))) {
+      duration = Number(json.duration);
+    } else {
+      const sampleRate = Number(json.sample_rate);
+      const samplesPerPixel = Number(json.samples_per_pixel);
+      const length = Number(json.length);
+  
+      if (
+        sampleRate > 0 &&
+        samplesPerPixel > 0 &&
+        length > 0
+      ) {
+        duration = (length * samplesPerPixel) / sampleRate;
+      }
+    }
+  
+    return {
+      peaks: out,
+      duration,
+    };
   }
 
   // fallback: whatever your current code did
   return {
     peaks: json.data || json.peaks,
-    duration: json.duration ?? json.length,
+    duration: json.duration,
   };
 }
 
@@ -4991,22 +5034,6 @@ function initMobileSlideInsToggle() {
     // Fallback final sync
     setTimeout(() => syncSlideInsViewport('mobile-expand-end-fallback'), 520);
   });
-  
-  // One-time: whenever any sidebar transition settles, sync to the final on-screen geometry.
-  // Why: the strip shows/hides via `transform`, while individual panels expand via `width` / `max-width`.
-  // ResizeObserver does NOT run for transforms, so we need this to get the final “fully visible” width.
-  if (!slideIns.__stripTransitionSyncInstalled) {
-    slideIns.__stripTransitionSyncInstalled = true;
-
-    const shouldSyncProp = (p) => (p === 'transform' || p === 'width' || p === 'max-width');
-
-    slideIns.addEventListener('transitionend', (ev) => {
-      if (!shouldSyncProp(ev.propertyName)) return;
-
-      // Let the final layout paint land before measuring.
-      requestAnimationFrame(() => syncSlideInsViewport(`slideins-${ev.propertyName}-end`));
-    });
-  }
 
   // Keep responsive sidebar presentation in sync without
   // destroying the currently expanded sidebar state.
@@ -5259,60 +5286,138 @@ function initMobileSlideInsToggle() {
 
   function fitAdhocGalleryTitleNow() {
     __adhocFitRaf = 0;
-
+  
     // Only in the ad-hoc tags gallery
     if (!document.body.classList.contains('in-adhoc-gallery')) return;
-
+  
     const gg = document.getElementById('group-gallery');
     if (!gg || !gg.classList.contains('active')) return;
-
+  
     const tEl = gg.querySelector('.title-box h2');
     const titleBox = tEl?.closest('.title-box');
     if (!tEl || !titleBox) return;
-
+  
     // Not visible? Don’t measure.
     if (titleBox.offsetParent === null) return;
-
+  
     applyAdhocTitleBoxBottomInset(titleBox);
-
-    // NEW: default to no visual shift (keeps “normal” titles centered)
+  
+    // Default to no visual shift.
     titleBox.style.setProperty('--adhoc-title-offset-y', '0px');
-
-    // Reset first so it can also scale UP again when space becomes available
+  
+    // Reset first so the title can also grow again when more space becomes available.
     tEl.style.fontSize = '';
-
+  
     const basePx = parseFloat(getComputedStyle(tEl).fontSize) || 32;
     const minPx = Math.min(ADHOC_TITLE_FIT.minPx, basePx);
-
-    const availablePx = computeAvailableTitleHeightPx(titleBox, tEl) - ADHOC_TITLE_FIT.safetyPx;
-    if (availablePx <= 0) return;
-
-    // If it already fits at base size, keep it
-    if (tEl.scrollHeight <= availablePx) return;
-
-    // NEW: we are about to shrink -> add a little top breathing room visually
-    titleBox.style.setProperty('--adhoc-title-offset-y', `${ADHOC_TITLE_FIT.shrinkOffsetYPx}px`);
-
-    // If even min doesn’t fit, clamp to min
+  
+    const availableHeightPx =
+      computeAvailableTitleHeightPx(titleBox, tEl) - ADHOC_TITLE_FIT.safetyPx;
+  
+    const availableWidthPx =
+      computeAvailableTitleWidthPx(titleBox) - ADHOC_TITLE_FIT.safetyPx;
+  
+    if (availableHeightPx <= 0 || availableWidthPx <= 0) return;
+  
+    const fits = () => {
+      const fitsHeight = tEl.scrollHeight <= availableHeightPx;
+    
+      // The tag label itself is centered; the × is absolutely positioned
+      // outside that centered width. Measure the complete visual footprint
+      // explicitly so the × can never be clipped.
+      const requiredWidthPx = computeAdhocTitleRequiredWidthPx(tEl);
+      const fitsWidth = requiredWidthPx <= availableWidthPx;
+    
+      return fitsHeight && fitsWidth;
+    };
+  
+    // Already fits at the normal responsive font size.
+    if (fits()) return;
+  
+    // We are going to shrink → add the existing visual breathing room.
+    titleBox.style.setProperty(
+      '--adhoc-title-offset-y',
+      `${ADHOC_TITLE_FIT.shrinkOffsetYPx}px`
+    );
+  
+    // Test configured minimum size.
     tEl.style.fontSize = `${minPx}px`;
-    if (tEl.scrollHeight > availablePx) return;
-
-    // Binary search: find the largest font-size that still fits
+  
+    // If even the configured minimum doesn't fit, keep the minimum.
+    // The tag still remains a single line because CSS prevents wrapping.
+    if (!fits()) return;
+  
+    // Binary search for the largest font size that satisfies
+    // BOTH the vertical and horizontal constraints.
     let lo = minPx;
     let hi = basePx;
-
-    for (let i = 0; i < ADHOC_TITLE_FIT.maxIter && (hi - lo) > ADHOC_TITLE_FIT.precisionPx; i++) {
+  
+    for (
+      let i = 0;
+      i < ADHOC_TITLE_FIT.maxIter &&
+      (hi - lo) > ADHOC_TITLE_FIT.precisionPx;
+      i++
+    ) {
       const mid = (lo + hi) / 2;
       tEl.style.fontSize = `${mid}px`;
-
-      if (tEl.scrollHeight <= availablePx) lo = mid;
-      else hi = mid;
+  
+      if (fits()) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
     }
-
-    // Round to configured precision (e.g. 0.5px)
+  
+    // Round down to the configured precision, e.g. 0.5px.
     const p = ADHOC_TITLE_FIT.precisionPx;
     const finalPx = Math.floor(lo / p) * p;
+  
     tEl.style.fontSize = `${finalPx}px`;
+  }
+
+  function computeAvailableTitleWidthPx(titleBoxEl) {
+    const cs = getComputedStyle(titleBoxEl);
+  
+    const pl = parseFloat(cs.paddingLeft) || 0;
+    const pr = parseFloat(cs.paddingRight) || 0;
+  
+    return titleBoxEl.clientWidth - pl - pr;
+  }
+
+  function computeAdhocTitleRequiredWidthPx(titleEl) {
+    let requiredWidthPx = 0;
+  
+    const tags = titleEl.querySelectorAll('.adhoc-title-tag');
+  
+    tags.forEach(tagEl => {
+      const tagRect = tagEl.getBoundingClientRect();
+      const closeEl = tagEl.querySelector('.adhoc-title-tag-close');
+  
+      // No close button: the centered tag width alone is enough.
+      if (!closeEl) {
+        requiredWidthPx = Math.max(requiredWidthPx, tagRect.width);
+        return;
+      }
+  
+      const closeRect = closeEl.getBoundingClientRect();
+  
+      // The label is centered, so anything hanging off its right side
+      // needs an equivalent amount of free space relative to the center.
+      const rightExtensionPx = Math.max(
+        0,
+        closeRect.right - tagRect.right
+      );
+  
+      const centeredFootprintPx =
+        tagRect.width + (rightExtensionPx * 2);
+  
+      requiredWidthPx = Math.max(
+        requiredWidthPx,
+        centeredFootprintPx
+      );
+    });
+  
+    return requiredWidthPx;
   }
 
   function computeAvailableTitleHeightPx(titleBoxEl, titleEl) {
@@ -6255,11 +6360,16 @@ function initMobileSlideInsToggle() {
           slot.innerHTML = `
           <figure class="detail-media audio">
             <div class="wave-row">
-              <button type="button" class="wave-btn wave-btn--play" aria-label="Play">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path fill="currentColor" d="M8 5v14l11-7z"></path>
-                </svg>
-              </button>
+            <button type="button" class="wave-btn wave-btn--play" aria-label="Play" title="Play">
+              <svg class="wave-btn-icon wave-btn-icon--play" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" d="M8 5v14l11-7z"></path>
+              </svg>
+
+              <svg class="wave-btn-icon wave-btn-icon--pause" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="7" y="5" width="3" height="14" fill="currentColor"></rect>
+                <rect x="14" y="5" width="3" height="14" fill="currentColor"></rect>
+              </svg>
+            </button>
         
               <button type="button" class="wave-btn wave-btn--stop" aria-label="Stop">
                 <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -6269,6 +6379,13 @@ function initMobileSlideInsToggle() {
         
               <div id="${id}" class="wave" aria-label="Waveform"></div>
             </div>
+
+            <div class="wave-time" aria-label="Audio playback time">
+              <span class="wave-time-current">00:00</span>
+              <span class="wave-time-separator" aria-hidden="true">|</span>
+              <span class="wave-time-duration">00:00</span>
+            </div>
+
           </figure>
         `;        
         
@@ -6282,6 +6399,7 @@ function initMobileSlideInsToggle() {
 
           // draw instantly from peaks (prefer cache, fallback to fetching peaks.json)
           const cached = window.getCachedPeaksMeta?.(src);
+
           if (cached?.peaks?.length) {
             window.renderPeaksPreview?.(__detailWave, cached.peaks, cached.duration);
           } else {
@@ -6300,6 +6418,35 @@ function initMobileSlideInsToggle() {
 
           const playBtn = slot.querySelector('.wave-btn--play');
           const stopBtn = slot.querySelector('.wave-btn--stop');
+
+          const currentTimeEl = slot.querySelector('.wave-time-current');
+          const durationEl = slot.querySelector('.wave-time-duration');
+          
+          const updateCurrentTime = (seconds = 0) => {
+            if (currentTimeEl) {
+              currentTimeEl.textContent = formatAudioTime(seconds);
+            }
+          };
+          
+          const updateDuration = (seconds = 0) => {
+            if (durationEl) {
+              durationEl.textContent = formatAudioTime(seconds);
+            }
+          };
+
+          if (cached?.duration) {
+            updateDuration(cached.duration);
+          }
+
+          // Show duration as soon as WaveSurfer knows it.
+          __detailWave?.on?.('ready', (duration) => {
+            updateDuration(duration ?? __detailWave?.getDuration?.() ?? 0);
+          });
+
+          // Keep elapsed time in sync while playing/seeking.
+          __detailWave?.on?.('timeupdate', (currentTime) => {
+            updateCurrentTime(currentTime);
+          });
           
           playBtn?.addEventListener('click', (ev) => {
             ev.preventDefault();
@@ -6307,8 +6454,10 @@ function initMobileSlideInsToggle() {
           
             ensureDetailAudio().then((ok) => {
               if (!ok) return;
-              try { __detailWave?.stop?.(); } catch {}
-              try { __detailWave?.play?.(); } catch {}
+          
+              try {
+                __detailWave?.playPause?.();
+              } catch {}
             });
           });
           
@@ -6324,10 +6473,25 @@ function initMobileSlideInsToggle() {
             }
           });
           
-          // Optional: simple “playing” visual state on the play button
-          __detailWave?.on?.('play',   () => playBtn?.classList.add('is-playing'));
-          __detailWave?.on?.('pause',  () => playBtn?.classList.remove('is-playing'));
-          __detailWave?.on?.('finish', () => playBtn?.classList.remove('is-playing'));          
+          const setPlayButtonState = (isPlaying) => {
+            playBtn?.classList.toggle('is-playing', isPlaying);
+          
+            const label = isPlaying ? 'Pause' : 'Play';
+            playBtn?.setAttribute('aria-label', label);
+            playBtn?.setAttribute('title', label);
+          };
+          
+          __detailWave?.on?.('play', () => {
+            setPlayButtonState(true);
+          });
+          
+          __detailWave?.on?.('pause', () => {
+            setPlayButtonState(false);
+          });
+          
+          __detailWave?.on?.('finish', () => {
+            setPlayButtonState(false);
+          });       
 
           /*
           container?.addEventListener('click', () => {
@@ -10232,67 +10396,68 @@ function updateRightCounterOffset() {
   ws.style.setProperty('--slideins-collapsed-visible', `${Math.round(collapsedVisible)}px`);
 }
 
-// Keep the grid's world-center stable when the slide-ins visible width changes.
-let __lastSlideInsVisiblePx = null;
+// Keep the same world point centered when the usable grid viewport width changes.
+let __lastGridUsableWidth = null;
 
 function keepGridCenteredOnRemainingViewport() {
   const g = window.gridObject;
   const gridShell = document.getElementById('grid-shell');
 
-  // Only adjust when the grid is actually showing
+  // Only adjust when the grid is actually showing.
   const gridIsVisible = !!(gridShell && gridShell.offsetParent !== null);
-  if (!g || !gridIsVisible) {
-    // Don't "burn" the delta while the grid isn't measurable/visible.
-    // If we update __lastSlideInsVisiblePx here, the next visible call sees no change
-    // and won't recenter (the “only 1px move” symptom).
+  if (!g || !gridIsVisible) return;
+
+  // Grid._vw() is already the single source of truth for the usable width:
+  // viewport width minus the currently visible slide-ins.
+  const usableWidth = (typeof g._vw === 'function')
+    ? g._vw()
+    : Math.max(
+        0,
+        (g.viewportEl?.clientWidth || window.innerWidth) -
+        ((typeof window.__slideinsVisiblePx === 'number')
+          ? window.__slideinsVisiblePx
+          : 0)
+      );
+
+  // First measurable run establishes the baseline only.
+  if (__lastGridUsableWidth == null) {
+    __lastGridUsableWidth = usableWidth;
     return;
   }
 
-  const newVisible = (typeof window.__slideinsVisiblePx === 'number') ? window.__slideinsVisiblePx : 0;
+  const deltaWidth = usableWidth - __lastGridUsableWidth;
 
-  console.log('[slideins] visiblePx=', newVisible, 'last=', __lastSlideInsVisiblePx);
+  if (Math.abs(deltaWidth) < 1) return;
 
-  // first run: just initialize baseline
-  if (__lastSlideInsVisiblePx == null) {
-    __lastSlideInsVisiblePx = newVisible;
+  __lastGridUsableWidth = usableWidth;
+
+  // If the usable viewport gets narrower by N px,
+  // its visual center moves left by N / 2.
+  const shiftX = deltaWidth / 2;
+
+  // Preserve an in-progress grid camera animation.
+  // Both the current position and its destination must move together.
+  if (
+    g._pan &&
+    Number.isFinite(g._pan.currentX) &&
+    Number.isFinite(g._pan.targetX)
+  ) {
+    g._pan.currentX += shiftX;
+    g._pan.targetX += shiftX;
+    g.htmlGridElement.style.left = `${g._pan.currentX}px`;
     return;
   }
 
-  // ignore tiny noise
-  if (Math.abs(newVisible - __lastSlideInsVisiblePx) < 1) return;
-
-  const zoom = g.zoomLevel || 1;
-
-  // camera position in pixels
+  // Fallback if the pan system is not initialized yet.
   const cam = (typeof g._getCameraLeftTop === 'function')
     ? g._getCameraLeftTop()
     : {
         left: parseFloat(g.htmlGridElement?.style?.left) || 0,
-        top:  parseFloat(g.htmlGridElement?.style?.top)  || 0,
+        top: parseFloat(g.htmlGridElement?.style?.top) || 0,
       };
 
-  const baseVw = g.viewportEl?.clientWidth || window.innerWidth;
-  const vh     = g.viewportEl?.clientHeight || window.innerHeight;
-
-  // This is the key: compute the world-center using the *previous* usable width.
-  const oldUsableVw = Math.max(0, baseVw - __lastSlideInsVisiblePx);
-
-  const worldCenterX = (oldUsableVw / 2 - cam.left) / zoom;
-  const worldCenterY = (vh / 2 - cam.top) / zoom;
-
-  // Update baseline BEFORE moving, so we don't re-enter on cascaded calls
-  __lastSlideInsVisiblePx = newVisible;
-
-  // Now re-center that same world point under the *new* usable width.
-  // (Grid._vw() now accounts for window.__slideinsVisiblePx)
-  if (typeof g.centerViewportOnWorldPoint === 'function') {
-    g.centerViewportOnWorldPoint(worldCenterX, worldCenterY, true);
-
-    // small safety clamp after the transition settles
-    setTimeout(() => {
-      g.clampCameraToBounds?.(true, 'slideins-width-change');
-    }, 450);
-  }
+  g.htmlGridElement.style.left = `${cam.left + shiftX}px`;
+  g._syncPanStateFromDom?.();
 }
 
 function syncSlideInsViewport(reason = '') {
@@ -10300,37 +10465,54 @@ function syncSlideInsViewport(reason = '') {
   if (typeof keepGridCenteredOnRemainingViewport === 'function') keepGridCenteredOnRemainingViewport();
 }
 
-// On init and whenever #slide-ins resizes (open/close), update the CSS var
+// Keep viewport math synchronized with sidebar geometry.
 if (slideInsEl && 'ResizeObserver' in window) {
   const ro = new ResizeObserver(() => {
-    syncSlideInsViewport('ResizeObserver');
+    syncSlideInsViewport('slideins-resize');
   });
+
+  // Observe both the strip and the panels themselves.
+  // The child panels are what actually animate width / max-width.
   ro.observe(slideInsEl);
 
-  // initial set
-  syncSlideInsViewport('init');
-} else {
-  window.addEventListener('resize', () => {
-    syncSlideInsViewport('resize');
-  });
-
-  syncSlideInsViewport('init-fallback');
+  slideInsEl
+    .querySelectorAll(':scope > .slide-in')
+    .forEach(el => ro.observe(el));
 }
 
-// Sync when sidebar animations actually finish (max-width / width / transform).
-// ResizeObserver may not fire if the strip element itself doesn’t resize.
-if (slideInsEl && !slideInsEl.__transitionSyncInstalled) {
-  slideInsEl.__transitionSyncInstalled = true;
+// Window resizing changes usable grid width too.
+window.addEventListener('resize', () => {
+  syncSlideInsViewport('window-resize');
+});
+
+// Establish the initial baseline.
+syncSlideInsViewport('init');
+
+// Final/fallback sync for CSS transitions.
+// This also catches transform-only movement of the whole sidebar strip.
+if (slideInsEl && !slideInsEl.__viewportSyncInstalled) {
+  slideInsEl.__viewportSyncInstalled = true;
 
   slideInsEl.addEventListener('transitionend', (e) => {
     const prop = e.propertyName;
-    if (prop !== 'max-width' && prop !== 'width' && prop !== 'transform') return;
 
-    // Only react to transitions coming from slide-ins or their width-driving parts
-    const fromSlideIn = e.target?.closest?.('.slide-in, .secondary-pane');
-    if (!fromSlideIn) return;
+    if (
+      prop !== 'max-width' &&
+      prop !== 'width' &&
+      prop !== 'transform'
+    ) {
+      return;
+    }
 
-    requestAnimationFrame(() => syncSlideInsViewport(`transitionend:${prop}`));
+    const relevantTarget =
+      e.target === slideInsEl ||
+      e.target?.closest?.('.slide-in, .secondary-pane');
+
+    if (!relevantTarget) return;
+
+    requestAnimationFrame(() => {
+      syncSlideInsViewport(`transitionend:${prop}`);
+    });
   }, true);
 }
 
@@ -13347,28 +13529,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  const slideIns = document.getElementById('slide-ins');
-  if (slideIns) {
-    ['transitionrun','transitionstart','transitionend'].forEach(evt => {
-      slideIns.addEventListener(evt, (e) => {
-        const p = e.propertyName;
-    
-        // We care about:
-        // - strip show/hide: transform
-        // - panel expansion: max-width
-        // - secondary pane: width
-        if (p && p !== 'transform' && p !== 'max-width' && p !== 'width') return;
-    
-        requestAnimationFrame(() => {
-          syncSlideInsViewport(`slideins:${evt}:${p || 'unknown'}`);
-        });
-      });
-    });    
-  }
-  window.addEventListener('resize', () => {
-    updateRightCounterOffset();
-    keepGridCenteredOnRemainingViewport();
-  });
 });
 
 // === Rich text enhancement: linkify URLs and embed YouTube ===
