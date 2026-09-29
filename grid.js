@@ -257,8 +257,14 @@ export class Grid {
 
         // Inline detail reveal behavior
         inline: {
-          descriptionRevealDelayMs: 80,
-          descriptionRevealFallbackMs: 650,
+          contentRevealDelayMs: 80,
+          contentRevealFallbackMs: 650,
+
+          // Sequential content fade:
+          // main text -> subtitle -> pills -> Discover
+          contentFadeMs: 260,
+          contentStepMs: 320,
+          contentTranslateYPx: 6,
         },
 
         // Mobile-specific behaviour
@@ -809,7 +815,7 @@ export class Grid {
     _createInlineDetailPanel(el, obj, {
       from = this.currentState,
       onClose = () => {},
-      delayDescriptionReveal = false,
+      delayContentReveal = false,
     } = {}) {
       const panel = document.createElement('div');
       let wsInline = null;  // ✅ add
@@ -817,8 +823,8 @@ export class Grid {
       let primaryText = getObjectTooltipLabel(obj);
       panel.className = 'detail-panel';
 
-      if (delayDescriptionReveal) {
-        panel.classList.add('detail-description-delayed');
+      if (delayContentReveal) {
+        panel.classList.add('detail-content-delayed');
       }
 
       if (obj.type === 'text') {
@@ -923,18 +929,44 @@ export class Grid {
 
       el.appendChild(panel);
 
-      const descriptionEl = panel.querySelector('.detail-description');
+      const revealCfg = this.detailConfig?.inline || {};
 
-      panel.__revealDescription = () => {
-        if (!descriptionEl || !panel.isConnected) return;
-        descriptionEl.classList.add('is-visible');
+      const revealItems = [
+        panel.querySelector('.detail-description'),
+        panel.querySelector('.detail-group'),
+        panel.querySelector('.detail-tags-row'),
+        panel.querySelector('.detail-link'),
+      ].filter(node => node && node.textContent.trim());
+
+      panel.style.setProperty(
+        '--inline-detail-reveal-fade-ms',
+        `${revealCfg.contentFadeMs ?? 260}ms`
+      );
+
+      panel.style.setProperty(
+        '--inline-detail-reveal-dy',
+        `${revealCfg.contentTranslateYPx ?? 6}px`
+      );
+
+      const stepMs = revealCfg.contentStepMs ?? 320;
+
+      revealItems.forEach((node, index) => {
+        node.style.setProperty(
+          '--inline-detail-reveal-delay',
+          `${index * stepMs}ms`
+        );
+      });
+
+      panel.__revealContent = () => {
+        if (!panel.isConnected) return;
+        panel.classList.add('content-visible');
       };
 
       requestAnimationFrame(() => {
         panel.classList.add('visible');
 
-        if (!delayDescriptionReveal) {
-          panel.__revealDescription();
+        if (!delayContentReveal) {
+          panel.__revealContent();
         }
       });
 
@@ -1053,13 +1085,16 @@ export class Grid {
       // --- Open → full-page detail (pointer-first)
       const openLink = panel.querySelector('.detail-link');
       bindActivate(openLink, () => {
-        // ✅ stop any audio playing in the grid / inline panel before routing to full detail
-        this.pauseAllAudio({ reset: true });
-
+        const hoverTtsAudio =
+          obj.type === 'text' && obj.textToSpeech
+            ? this.takeHoverTtsAudio(obj.textToSpeech)
+            : null;
+      
         window.openObjectDetail?.({
           objectId: obj.id,
           from,
           gid: obj.groupId,
+          hoverTtsAudio,
         });
       });
 
@@ -1330,8 +1365,12 @@ export class Grid {
 
       // NOTE: visited is only set when opening the full detail view (see script.js -> openObjectDetail)
 
-      // Stop any hover audio (tile + inline) and hover TTS when opening clustered inline detail
-      this.pauseAllAudio({ reset: true });
+      // Keep text TTS playing while its clustered tile expands into inline detail.
+      // Other media keeps the existing stop/reset behavior.
+      this.pauseAllAudio({
+        reset: true,
+        preserveHoverTts: obj.type === 'text' && !!obj.textToSpeech,
+      });
 
       const cameraPrev = this._captureCameraSnapshot?.();
 
@@ -1471,28 +1510,29 @@ export class Grid {
         el.style.height = `${height * z}px`;
         el.style.transform = `translate(${dx2 * z}px, ${dy2 * z}px)`;
 
-        // Build detail panel UI immediately, but delay only the main description.
+        // Build detail panel immediately, but reveal its content only
+        // after the card has finished expanding.
         const panel = this._createInlineDetailPanel(el, obj, {
           from: 'clustered',
           onClose: () => this.exitDetail(),
-          delayDescriptionReveal: true,
+          delayContentReveal: true,
         });
 
-        let descriptionRevealed = false;
+        let contentRevealed = false;
 
-        const revealDescription = () => {
-          if (descriptionRevealed) return;
-          descriptionRevealed = true;
+        const revealContent = () => {
+          if (contentRevealed) return;
+          contentRevealed = true;
 
           el.removeEventListener('transitionend', onExpandEnd);
 
           if (!this._detail?.active || this._detail.id !== obj.id) return;
 
-          const delay = this.detailConfig?.inline?.descriptionRevealDelayMs ?? 0;
+          const delay = this.detailConfig?.inline?.contentRevealDelayMs ?? 0;
 
           window.setTimeout(() => {
             if (!this._detail?.active || this._detail.id !== obj.id) return;
-            panel?.__revealDescription?.();
+            panel?.__revealContent?.();
           }, delay);
         };
 
@@ -1503,15 +1543,15 @@ export class Grid {
           // the card has visually settled after expanding.
           if (e.propertyName !== 'transform') return;
 
-          revealDescription();
+          revealContent();
         };
 
         el.addEventListener('transitionend', onExpandEnd);
 
         // Fallback in case transitionend is skipped/cancelled.
         window.setTimeout(
-          revealDescription,
-          this.detailConfig?.inline?.descriptionRevealFallbackMs ?? 200
+          revealContent,
+          this.detailConfig?.inline?.contentRevealFallbackMs ?? 200
         );
       };
     
@@ -1623,17 +1663,21 @@ export class Grid {
       });
     }
 
-    pauseAllAudio({ reset = true } = {}) {
-      // 1) stop hover TTS (text tiles)
-      this.stopHoverTts();
+    pauseAllAudio({ reset = true, preserveHoverTts = false } = {}) {
+      // 1) stop hover TTS unless the current interaction explicitly keeps it alive
+      if (!preserveHoverTts) {
+        this.stopHoverTts({ reset });
+      }
     
       if (!this.htmlGridElement) return;
     
       const stopWs = (ws) => {
         if (!ws) return;
+    
         try { ws.pause?.(); } catch {}
-        try { ws.stop?.(); } catch {}
+    
         if (reset) {
+          try { ws.stop?.(); } catch {}
           try { ws.seekTo?.(0); } catch {}
           try { ws.setTime?.(0); } catch {}
         }
@@ -1652,11 +1696,58 @@ export class Grid {
       // 4) future-proof: any native <audio> tags inside the grid
       this.htmlGridElement.querySelectorAll('audio').forEach((a) => {
         try { a.pause(); } catch {}
+    
         if (reset) {
           try { a.currentTime = 0; } catch {}
         }
       });
-    }    
+    }
+    
+    _ensureHoverTtsAudio() {
+      if (!this._hoverTtsAudio) {
+        this._hoverTtsAudio = new Audio();
+        this._hoverTtsAudio.preload = 'none';
+      }
+      return this._hoverTtsAudio;
+    }
+    
+    stopHoverTts({ reset = true } = {}) {
+      if (!this._hoverTtsAudio) return;
+    
+      try { this._hoverTtsAudio.pause(); } catch {}
+    
+      if (reset) {
+        try { this._hoverTtsAudio.currentTime = 0; } catch {}
+      }
+    }
+
+    takeHoverTtsAudio(expectedSrc = '') {
+      const audio = this._hoverTtsAudio;
+      if (!audio) return null;
+    
+      // Only hand over the player if it belongs to this text object.
+      if (expectedSrc) {
+        let expected = expectedSrc;
+    
+        try {
+          expected = new URL(expectedSrc, document.baseURI).href;
+        } catch {}
+    
+        const actual = audio.currentSrc || audio.src || '';
+    
+        if (actual !== expected) {
+          return null;
+        }
+      }
+    
+      // Discover should stop playback, but preserve the exact position.
+      try { audio.pause(); } catch {}
+    
+      // Detail view takes ownership of this Audio instance.
+      this._hoverTtsAudio = null;
+    
+      return audio;
+    }
 
     _ensureHoverTtsAudio() {
       if (!this._hoverTtsAudio) {
@@ -1924,9 +2015,13 @@ export class Grid {
             };
 
             const stopHoverTts = () => {
+              // Once this tile has become the inline detail card,
+              // its hover TTS is allowed to continue playing.
+              if (objectDiv.classList.contains('is-detail')) return;
+            
               this.stopHoverTts();
             };
-
+            
             objectDiv.addEventListener('mouseenter', playHoverTts, { passive: true });
             objectDiv.addEventListener('mouseleave', stopHoverTts, { passive: true });
           }
