@@ -1777,104 +1777,109 @@ function initCursorLabel() {
     return new Promise((resolve) => setTimeout(resolve, maxMs + 30));
   };
   
-  // ---- Transition queue: always "close current" then "open next" ----
-  let __tooltipTransitionBusy = false;
-  let __tooltipPending = null;       // function or null
-  let __tooltipHasPending = false;
-  let __tooltipReqId = 0;
-  let __tooltipClearTimer = null; // NEW: avoids "empty pill" flash during fade-out
+// ---- Stable tooltip state manager ----
+// A visible tooltip stays visible while the pointer moves between targets.
+// Content changes are slightly delayed; actual hiding gets a longer grace period.
 
-  const scheduleTooltipClear = (reqId) => {
-    if (__tooltipClearTimer) clearTimeout(__tooltipClearTimer);
-  
-    const fadeMs = 140; // CSS is 120ms; small buffer
-    __tooltipClearTimer = setTimeout(() => {
-      // Only clear if still hidden and no newer tooltip request happened
-      if (!el.classList.contains('is-visible') && reqId === __tooltipReqId) {
-        textEl.classList.remove('is-reveal', 'is-revealed');
-        textEl.textContent = '';
-      }
-    }, fadeMs);
-  };  
-  
-  const requestTooltipTransition = (openFnOrNull) => {
-    __tooltipPending = openFnOrNull; // function or null
-    __tooltipHasPending = true;
-    __tooltipReqId++;
-  
-    if (__tooltipTransitionBusy) return;
-    __tooltipTransitionBusy = true;
-  
-    const pump = () => {
-      if (!__tooltipHasPending) {
-        __tooltipTransitionBusy = false;
-        return;
-      }
-  
-      const myId = __tooltipReqId;
-      const next = __tooltipPending;
-      __tooltipHasPending = false;
-  
-      const wasVisible = el.classList.contains('is-visible');
-      const revealEls = getRevealElsForCurrent();
-  
-      const closePromise = wasVisible
-        ? animateConceal(revealEls).then(() => {
-            // If a newer request arrived mid-close, stop; the next pump will handle it
-            if (myId !== __tooltipReqId) return;
-  
-            el.classList.remove('is-visible');
-            delete el.dataset.kind;
+let __tooltipReqId = 0;
+let __tooltipSwitchTimer = null;
+let __tooltipHideTimer = null;
+let __tooltipClearTimer = null;
 
-            scheduleTooltipClear(myId);
-  
-            activeGroupedKey = '';
-            activeDefaultKey = ''; // NEW
-            activeTarget = null;
-          })
-        : Promise.resolve();
-  
-      closePromise
-        .then(() => {
-          if (myId !== __tooltipReqId) {
-            // newer request arrived; keep pumping
-            return;
-          }
-          if (typeof next === 'function') next();
-        })
-        .finally(() => {
-          if (__tooltipHasPending) pump();
-          else __tooltipTransitionBusy = false;
-        });
-    };
-  
-    pump();
-  };  
+const readTooltipDelay = (propertyName, fallback) => {
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue(propertyName);
 
-  // NEW: Grace window to prevent flicker when moving between sidebar handles
-  const isSlideInHandle = (node) => !!node && node.classList?.contains('slide-in-handle');
+  const value = parseInt(raw, 10);
+  return Number.isFinite(value) ? value : fallback;
+};
 
-  let __cursorLabelHideDelayTimer = null;
-  const __cursorLabelHideDelayMs = (() => {
-    const raw = getComputedStyle(document.documentElement).getPropertyValue('--cursor-label-hide-delay-ms');
-    const v = parseInt(raw, 10);
-    return Number.isFinite(v) ? v : 80;
-  })();
+const __cursorLabelSwitchDelayMs =
+  readTooltipDelay('--cursor-label-switch-delay-ms', 90);
 
-  const cancelHideDelay = () => {
-    if (__cursorLabelHideDelayTimer) {
-      clearTimeout(__cursorLabelHideDelayTimer);
-      __cursorLabelHideDelayTimer = null;
+const __cursorLabelHideDelayMs =
+  readTooltipDelay('--cursor-label-hide-delay-ms', 140);
+
+const clearPendingTooltipTimers = () => {
+  if (__tooltipSwitchTimer) {
+    clearTimeout(__tooltipSwitchTimer);
+    __tooltipSwitchTimer = null;
+  }
+
+  if (__tooltipHideTimer) {
+    clearTimeout(__tooltipHideTimer);
+    __tooltipHideTimer = null;
+  }
+};
+
+const scheduleTooltipClear = (reqId) => {
+  if (__tooltipClearTimer) clearTimeout(__tooltipClearTimer);
+
+  const fadeMs = 140;
+
+  __tooltipClearTimer = setTimeout(() => {
+    if (!el.classList.contains('is-visible') && reqId === __tooltipReqId) {
+      textEl.classList.remove('is-reveal', 'is-revealed');
+      textEl.textContent = '';
     }
-  };
+  }, fadeMs);
+};
 
-  const scheduleHideDelay = () => {
-    cancelHideDelay();
-    __cursorLabelHideDelayTimer = setTimeout(() => {
-      __cursorLabelHideDelayTimer = null;
-      requestTooltipTransition(null);
-    }, __cursorLabelHideDelayMs);
-  };
+const requestTooltipTransition = (openFnOrNull) => {
+  const reqId = ++__tooltipReqId;
+
+  clearPendingTooltipTimers();
+
+  // SHOW / CHANGE
+  if (typeof openFnOrNull === 'function') {
+    if (__tooltipClearTimer) {
+      clearTimeout(__tooltipClearTimer);
+      __tooltipClearTimer = null;
+    }
+
+    const open = () => {
+      if (reqId !== __tooltipReqId) return;
+      openFnOrNull();
+    };
+
+    // If a tooltip is already visible, keep it there until the
+    // pointer has settled briefly on the new target.
+    if (el.classList.contains('is-visible')) {
+      __tooltipSwitchTimer = setTimeout(() => {
+        __tooltipSwitchTimer = null;
+        open();
+      }, __cursorLabelSwitchDelayMs);
+    } else {
+      open();
+    }
+
+    return;
+  }
+
+  // HIDE
+  if (!el.classList.contains('is-visible')) return;
+
+  // Don't immediately disappear when crossing small gaps between objects.
+  __tooltipHideTimer = setTimeout(() => {
+    __tooltipHideTimer = null;
+
+    const revealEls = getRevealElsForCurrent();
+
+    animateConceal(revealEls).then(() => {
+      // Another hover arrived while we were concealing.
+      if (reqId !== __tooltipReqId) return;
+
+      el.classList.remove('is-visible');
+      delete el.dataset.kind;
+
+      scheduleTooltipClear(reqId);
+
+      activeGroupedKey = '';
+      activeDefaultKey = '';
+      activeTarget = null;
+    });
+  }, __cursorLabelHideDelayMs);
+};
 
   const showGrouped = (prefixLine, groupTitle, target, key) => {
     const wasVisible = el.classList.contains('is-visible');
@@ -1895,7 +1900,16 @@ function initCursorLabel() {
     renderGroupedLabel(prefixLine, groupTitle);
 
     el.classList.add('is-visible');
-    animateReveal(getRevealElsForCurrent());
+
+    const revealEls = getRevealElsForCurrent();
+    
+    if (wasVisible) {
+      // Changing an existing tooltip should feel like one persistent UI element,
+      // not a brand-new tooltip appearing again.
+      revealEls.forEach((node) => node.classList.add('is-revealed'));
+    } else {
+      animateReveal(revealEls);
+    }
 
   };  
 
@@ -1924,7 +1938,14 @@ function initCursorLabel() {
     textEl.textContent = shown;
 
     el.classList.add('is-visible');
-    animateReveal(getRevealElsForCurrent());
+
+    const revealEls = getRevealElsForCurrent();
+    
+    if (wasVisible) {
+      revealEls.forEach((node) => node.classList.add('is-revealed'));
+    } else {
+      animateReveal(revealEls);
+    }
   }; 
 
   const hide = () => {
@@ -1933,33 +1954,28 @@ function initCursorLabel() {
   };  
 
   const hideInstant = () => {
-    // Cancel any in-flight / queued transitions
-    cancelHideDelay();
-    __tooltipReqId++;
-    __tooltipHasPending = false;
-    __tooltipPending = null;
-    __tooltipTransitionBusy = false;
-
+    clearPendingTooltipTimers();
+  
+    ++__tooltipReqId;
+  
     if (__tooltipClearTimer) {
       clearTimeout(__tooltipClearTimer);
       __tooltipClearTimer = null;
     }
   
-    // Hard hide + reset
     el.classList.remove('is-visible');
     delete el.dataset.kind;
-
-    // Keep content during fade-out; clear right after (prevents the tiny empty box flash)
+  
     textEl.classList.remove('is-reveal', 'is-revealed');
+  
     scheduleTooltipClear(__tooltipReqId);
-
+  
     activeGroupedKey = '';
-    activeDefaultKey = ''; // NEW
+    activeDefaultKey = '';
     activeTarget = null;
-  };  
+  };
 
   document.addEventListener('pointerover', (ev) => {
-    cancelHideDelay();
     
     if (isGridPanning()) {
       // Safari fires pointerover/out while the grid moves under the cursor.
@@ -2080,16 +2096,6 @@ function initCursorLabel() {
         }
       }
     }
-  
-        // Slide-in sidebar handles: allow tiny gaps while moving between handles (prevents flicker)
-        if (isSlideInHandle(activeTarget)) {
-          if (nextCandidate && isSlideInHandle(nextCandidate)) {
-            activeTarget = nextCandidate;
-            return;
-          }
-          scheduleHideDelay();
-          return;
-        }
     
         // Default tooltips: moving between elements that resolve to the same label should not hide
         if (nextCandidate && el.dataset.kind !== 'grouped') {
@@ -4482,6 +4488,42 @@ function restartGroupContentSidebarReveal(slideInEl) {
   revealContent(slideInEl, GROUP_CONTENT_SIDEBAR_REVEAL);
 }
 
+function promoteStrongParagraphsToSubheadings(html) {
+  if (!html) return '';
+
+  const template = document.createElement('template');
+  template.innerHTML = html;
+
+  template.content.querySelectorAll('p').forEach((p) => {
+    const meaningfulNodes = Array.from(p.childNodes).filter((node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        return node.textContent.trim() !== '';
+      }
+
+      return true;
+    });
+
+    if (meaningfulNodes.length !== 1) return;
+
+    const strong = meaningfulNodes[0];
+
+    if (
+      strong.nodeType !== Node.ELEMENT_NODE ||
+      strong.tagName !== 'STRONG'
+    ) {
+      return;
+    }
+
+    const heading = document.createElement('h3');
+    heading.className = 'content-sidebar-subheadline';
+    heading.innerHTML = strong.innerHTML;
+
+    p.replaceWith(heading);
+  });
+
+  return template.innerHTML;
+}
+
 // Render any of the 3 content sidebars (fieldsite, research project, viral atmospheres)
 // using the shared 3-row two-col-table layout.
 function renderContentSidebar(sidebar, data) {
@@ -4496,10 +4538,15 @@ function renderContentSidebar(sidebar, data) {
 
   if (!titleH1 || !contextBody || !notesBody || !refsBody) return;
 
-  const rich = (val) =>
-    (val != null && typeof toParagraphHtml === 'function')
-      ? toParagraphHtml(val)
-      : '';
+  const rich = (val) => {
+    if (val == null || typeof toParagraphHtml !== 'function') {
+      return '';
+    }
+  
+    return promoteStrongParagraphsToSubheadings(
+      toParagraphHtml(val)
+    );
+  };
 
   if (!data) {
     // Clear and hide notes + references if no data at all
@@ -7051,6 +7098,80 @@ function initMobileSlideInsToggle() {
     // ===== Text-to-speech playback ==================================
     let __ttsAudio = null;
 
+    const __ttsUiBoundAudio = new WeakSet();
+
+    function renderVerticalAudioTime(el, seconds = 0) {
+      if (!el) return;
+    
+      const value = formatAudioTime(seconds);
+    
+      if (el.dataset.value === value) return;
+      el.dataset.value = value;
+    
+      el.textContent = value;
+    }
+    
+    function updateTtsTimeUi(audio = __ttsAudio) {
+      const currentEl = document.querySelector(
+        '#content-tts-button .tts-time-current'
+      );
+    
+      const durationEl = document.querySelector(
+        '#content-tts-button .tts-time-duration'
+      );
+    
+      renderVerticalAudioTime(
+        currentEl,
+        Number.isFinite(audio?.currentTime) ? audio.currentTime : 0
+      );
+    
+      renderVerticalAudioTime(
+        durationEl,
+        Number.isFinite(audio?.duration) ? audio.duration : 0
+      );
+    }
+    
+    function resetTtsTimeUi() {
+      const btn = document.getElementById('content-tts-button');
+    
+      btn?.classList.remove('is-time-visible');
+    
+      renderVerticalAudioTime(
+        btn?.querySelector('.tts-time-current'),
+        0
+      );
+    
+      renderVerticalAudioTime(
+        btn?.querySelector('.tts-time-duration'),
+        0
+      );
+    }
+    
+    function bindTtsAudioUi(audio) {
+      if (!audio || __ttsUiBoundAudio.has(audio)) return;
+    
+      __ttsUiBoundAudio.add(audio);
+    
+      audio.addEventListener('loadedmetadata', () => {
+        updateTtsTimeUi(audio);
+      });
+    
+      audio.addEventListener('durationchange', () => {
+        updateTtsTimeUi(audio);
+      });
+    
+      audio.addEventListener('timeupdate', () => {
+        updateTtsTimeUi(audio);
+      });
+    
+      audio.addEventListener('ended', () => {
+        updateTtsTimeUi(audio);
+        setTtsButtonState('paused');
+      });
+    
+      updateTtsTimeUi(audio);
+    }
+
     function setTtsButtonState(state = 'initial') {
       const btn = document.getElementById('content-tts-button');
       if (!btn) return;
@@ -7078,8 +7199,9 @@ function initMobileSlideInsToggle() {
         try { __ttsAudio.pause(); } catch {}
         try { __ttsAudio.currentTime = 0; } catch {}
       }
-
+    
       setTtsButtonState('initial');
+      resetTtsTimeUi();
     }
 
     // Pause without resetting playback position.
@@ -7100,14 +7222,11 @@ function initMobileSlideInsToggle() {
         if (!__ttsAudio) {
           __ttsAudio = new Audio();
           __ttsAudio.preload = 'none';
-
-          // Natural end: keep the control in the post-start state.
-          // Speaker must not return.
-          __ttsAudio.addEventListener('ended', () => {
-            setTtsButtonState('paused');
-          });
         }
-
+      
+        bindTtsAudioUi(__ttsAudio);
+        updateTtsTimeUi(__ttsAudio);
+      
         return __ttsAudio;
       }
 
@@ -7119,6 +7238,10 @@ function initMobileSlideInsToggle() {
         if (!src) return;
 
         const a = ensureAudio();
+
+        // The user explicitly activated the TTS control.
+        // Reveal the desktop time display from this point onward.
+        btn.classList.add('is-time-visible');
 
         // Currently playing -> pause at the current position.
         if (btn.classList.contains('is-playing')) {
@@ -7303,7 +7426,14 @@ function initMobileSlideInsToggle() {
       });
     })();
 
-    window.openObjectDetail = function ({ objectId, from, gid, historyMode, detailStacked } = {}) {
+    window.openObjectDetail = function ({
+      objectId,
+      from,
+      gid,
+      historyMode,
+      detailStacked,
+      hoverTtsAudio = null,
+    } = {}) {
       console.log('[detail] openObjectDetail (NEW ROUTER VERSION)', { objectId, from, gid });
 
       if (!detailEl) return;
@@ -7319,12 +7449,15 @@ function initMobileSlideInsToggle() {
       
       //window.markObjectVisited?.(objectId);
 
-      // pause any grid audio (tile hover + inline panels) so we don't hear two audios at once
+      // Pause grid audio before entering full detail.
+      // Inline text TTS may preserve its current timestamp;
+      // every other entry path keeps the existing reset behavior.
       window.gridObject?.pauseAllAudio?.({ reset: true });
+
       // make sure previous detail waveform is gone before rendering a new one
       destroyDetailWave();
 
-      stopTtsAudio(); // ADD THIS
+      stopTtsAudio();
 
       // also clear any previous related-strip waves
       window.__relatedStripAudio?.destroy?.();
@@ -7352,6 +7485,22 @@ function initMobileSlideInsToggle() {
           updateContentSidebarsForGroup(contentGroupId);
         }
         renderDetailPrimary(obj);
+
+        // If this text object's hover TTS followed us from the grid,
+        // let the full-detail TTS control take ownership of that exact player.
+        if (
+          hoverTtsAudio &&
+          obj.type === 'text' &&
+          obj.textToSpeech
+        ) {
+          __ttsAudio = hoverTtsAudio;
+        
+          bindTtsAudioUi(__ttsAudio);
+          updateTtsTimeUi(__ttsAudio);
+        
+          setTtsButtonState('paused');
+        }
+        
         renderReferencesSection(obj); // NEW
         renderRelatedThemes(obj);
         renderRelatedObjects(obj);
