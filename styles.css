@@ -2,6 +2,10 @@
   /* Copy / paragraph typography (shared across text + detail pages) */
   --copy-font-size: 0.9em;
   --copy-line-height: 2em;
+  /* Shared sidebar subheadline typography */
+  --sidebar-subheadline-font-size: 1rem;
+  --sidebar-subheadline-font-weight: 500;
+  --sidebar-subheadline-margin-bottom: 20px;
   --header-h: 50px; /* fallback */
   --selection-bar-h: 88px; /* 2-row selection bar height */
   --selection-bar-h-compact: 56px; /* 1-row selection bar height (ad-hoc gallery) */
@@ -172,7 +176,8 @@
   --cursor-label-bg: rgba(0, 0, 0, 1);
   --cursor-label-color: #fff;
   --cursor-label-viewport-pad: 8;
-  --cursor-label-hide-delay-ms: 80; /* grace delay to prevent flicker between sidebar handles */
+  --cursor-label-switch-delay-ms: 90; /* wait briefly before changing an already-visible tooltip */
+  --cursor-label-hide-delay-ms: 140;  /* grace period before actually hiding */
   /* Cursor label reveal animation (grouped pills) */
   --cursor-label-reveal-speed: 550; /* px per second (higher = faster) */
   --cursor-label-reveal-min-ms: 120; /* minimum duration per line */
@@ -967,19 +972,34 @@
 
   .detail-panel.visible { opacity: 1; }
 
-  .detail-panel.detail-description-delayed .detail-description {
+  .detail-panel.detail-content-delayed :is(
+    .detail-description,
+    .detail-group,
+    .detail-tags-row,
+    .detail-link
+  ) {
     opacity: 0;
-    transform: translateY(var(--inline-detail-description-dy, 6px));
+    visibility: hidden;
+    transform: translateY(var(--inline-detail-reveal-dy, 6px));
+
     transition:
-      opacity var(--inline-detail-description-fade-ms, 260ms) ease,
-      transform var(--inline-detail-description-fade-ms, 260ms) ease;
-    pointer-events: none;
+      opacity var(--inline-detail-reveal-fade-ms, 260ms) ease
+        var(--inline-detail-reveal-delay, 0ms),
+      transform var(--inline-detail-reveal-fade-ms, 260ms) ease
+        var(--inline-detail-reveal-delay, 0ms),
+      visibility 0s linear
+        var(--inline-detail-reveal-delay, 0ms);
   }
 
-  .detail-panel.detail-description-delayed .detail-description.is-visible {
+  .detail-panel.detail-content-delayed.content-visible :is(
+    .detail-description,
+    .detail-group,
+    .detail-tags-row,
+    .detail-link
+  ) {
     opacity: 1;
+    visibility: visible;
     transform: translateY(0);
-    pointer-events: auto;
   }
 
   .detail-close {
@@ -1890,6 +1910,100 @@ header {
 #content-tts-button.has-started:not(.is-playing) .tts-icon--play {
   display: block;
 }
+
+/* =========================================================
+   Text-detail TTS time display
+   Desktop only
+   ========================================================= */
+
+   @media (min-width: 769px) {
+
+    /*
+     * The reveal window starts exactly underneath the circular FAB.
+     * Overflow is clipped so the time codes appear to emerge
+     * from behind the button.
+     */
+    #content-tts-button .tts-time-reveal {
+      position: absolute;
+      top: calc(100% - 1px);
+      left: 0;
+  
+      width: 100%;
+      height: 220px;
+  
+      overflow: hidden;
+      pointer-events: none;
+    }
+  
+    #content-tts-button .tts-time-stack {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    
+      gap: 18px;
+    
+      color: var(--detail-meta-color);
+      font-size: 11px;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.08em;
+    
+      opacity: 0;
+      transform: translateY(-100%);
+    
+      transition:
+        transform 320ms cubic-bezier(.2, .8, .2, 1),
+        opacity 180ms ease;
+    }
+  
+    /*
+     * Only an explicit click on the TTS button adds
+     * .is-time-visible.
+     */
+     #content-tts-button.is-time-visible .tts-time-stack {
+      opacity: 1;
+      transform: translateY(28px);
+    }
+  
+    /*
+     * Each complete time code is a vertical character column:
+     *
+     * 0
+     * 0
+     * :
+     * 1
+     * 8
+     */
+     #content-tts-button .tts-time-code {
+      display: block;
+    
+      white-space: nowrap;
+      text-align: center;
+    
+      transform: rotate(90deg);
+      transform-origin: center;
+    
+      line-height: 1;
+    }
+    
+    #content-tts-button .tts-time-separator {
+      display: block;
+      line-height: 1;
+      text-align: center;
+    }
+  
+    /* Match the emphasis of the elapsed time below audio players */
+    #content-tts-button .tts-time-current {
+      font-weight: 700;
+    }
+  }
+  
+  /* Explicitly keep the TTS time display out of the mobile UI */
+  @media (max-width: 768px) {
+    #content-tts-button .tts-time-reveal {
+      display: none !important;
+    }
+  }
 
 /* Grid view switcher inside the group gallery header (replaces #gallery-ungroup) */
 #gallery-view-switcher {
@@ -3020,6 +3134,7 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
   height: 1px;
   background: var(--section-divider-color, var(--main-outline-color));
   pointer-events: none;
+  z-index: 6;
 }
 
 .content-section .section-header h2 {
@@ -3336,11 +3451,6 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
   transform: none;
 }
 
-/* Detail page: make sub-section headers a full-row click target */
-#detail-content .content-section.sub-section .section-header {
-  padding: var(--detail-section-header-pad-y) 0;
-}
-
 #detail-content .content-section.sub-section .section-header {
   padding: var(--detail-section-header-pad-y) 0;
   transition:
@@ -3580,11 +3690,16 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
 
 /* Simple typography for secondary pane */
 .secondary-pane h3 {
-  font-size: 1rem;
-  font-weight: 500;
-  margin-bottom: 20px;
+  font-size: var(--sidebar-subheadline-font-size);
+  font-weight: var(--sidebar-subheadline-font-weight);
+  margin-bottom: var(--sidebar-subheadline-margin-bottom);
 }
-.secondary-pane p { margin: 0 0 12px; line-height: 1.6; font-size: .9rem; }
+
+.secondary-pane p {
+  margin: 0 0 12px;
+  line-height: 1.6;
+  font-size: .9rem;
+}
 
 .secondary-pane-author {
   display: block;
@@ -4854,6 +4969,17 @@ body.menu-open header {
   margin: 0 0 12px;
 }
 .text-page .two-col-row .right p:last-child { margin-bottom: 0; }
+
+/* Strong-only Strapi paragraphs promoted to sidebar subheadlines */
+#slide-ins .slide-in.group-content-sidebar
+.two-col-row .right .content-sidebar-subheadline {
+  font-family: "Albert Sans", sans-serif;
+  font-size: var(--sidebar-subheadline-font-size);
+  font-weight: var(--sidebar-subheadline-font-weight);
+  line-height: normal;
+  margin: 0 0 var(--sidebar-subheadline-margin-bottom);
+  padding: 0;
+}
 
 /* Prevent long URLs / unbroken strings from pushing page width */
 .text-page .two-col-row .right,
