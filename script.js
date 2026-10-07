@@ -1797,6 +1797,9 @@ const readTooltipDelay = (propertyName, fallback) => {
 const __cursorLabelSwitchDelayMs =
   readTooltipDelay('--cursor-label-switch-delay-ms', 90);
 
+const __cursorLabelGroupedSwitchDelayMs =
+  readTooltipDelay('--cursor-label-grouped-switch-delay-ms', 0);
+
 const __cursorLabelHideDelayMs =
   readTooltipDelay('--cursor-label-hide-delay-ms', 140);
 
@@ -1825,7 +1828,10 @@ const scheduleTooltipClear = (reqId) => {
   }, fadeMs);
 };
 
-const requestTooltipTransition = (openFnOrNull) => {
+const requestTooltipTransition = (
+  openFnOrNull,
+  switchDelayMs = __cursorLabelSwitchDelayMs
+) => {
   const reqId = ++__tooltipReqId;
 
   clearPendingTooltipTimers();
@@ -1844,11 +1850,11 @@ const requestTooltipTransition = (openFnOrNull) => {
 
     // If a tooltip is already visible, keep it there until the
     // pointer has settled briefly on the new target.
-    if (el.classList.contains('is-visible')) {
+    if (el.classList.contains('is-visible') && switchDelayMs > 0) {
       __tooltipSwitchTimer = setTimeout(() => {
         __tooltipSwitchTimer = null;
         open();
-      }, __cursorLabelSwitchDelayMs);
+      }, switchDelayMs);
     } else {
       open();
     }
@@ -2004,7 +2010,10 @@ const requestTooltipTransition = (openFnOrNull) => {
         return;
       }
 
-      requestTooltipTransition(() => showGrouped(prefixLine, groupTitle, candidate, nextKey));
+      requestTooltipTransition(
+        () => showGrouped(prefixLine, groupTitle, candidate, nextKey),
+        __cursorLabelGroupedSwitchDelayMs
+      );
       return;
     }
 
