@@ -176,8 +176,9 @@
   --cursor-label-bg: rgba(0, 0, 0, 1);
   --cursor-label-color: #fff;
   --cursor-label-viewport-pad: 8;
-  --cursor-label-switch-delay-ms: 90; /* wait briefly before changing an already-visible tooltip */
-  --cursor-label-hide-delay-ms: 140;  /* grace period before actually hiding */
+  --cursor-label-switch-delay-ms: 90;         /* default tooltip switch delay */
+  --cursor-label-grouped-switch-delay-ms: 0;  /* grouped objects switch instantly */
+  --cursor-label-hide-delay-ms: 140;          /* grace period before actually hiding */
   /* Cursor label reveal animation (grouped pills) */
   --cursor-label-reveal-speed: 550; /* px per second (higher = faster) */
   --cursor-label-reveal-min-ms: 120; /* minimum duration per line */
@@ -783,9 +784,14 @@
     background-color: transparent;
   }
 
-  /* During zoom, keep width/height animated but freeze transform animations */
-  body.zooming #grid .object {
-    transition: width 0.4s ease, height 0.4s ease !important; /* no transform here */
+/* During zoom, animate the full object rectangle while keeping
+   group/cluster transform animations disabled */
+   body.zooming #grid .object {
+    transition:
+      left 0.4s ease,
+      top 0.4s ease,
+      width 0.4s ease,
+      height 0.4s ease !important;
   }
 
   .object.is-detail { z-index: 1000; }
@@ -5271,7 +5277,6 @@ body.menu-open header {
 }
 
 #detail-content #related-themes {
-  --related-theme-gap: 24px;
   --related-theme-content-bottom-space: 20px;
   padding-bottom: 8px;
 }
@@ -5279,21 +5284,15 @@ body.menu-open header {
 #detail-content #related-themes .related-theme-item {
   --section-icon-size: 6px; /* smaller than the main section icon */
   margin: 0;
-  padding-top: 0; /* override generic .content-section top padding */
-}
-
-#detail-content #related-themes .related-theme-item + .related-theme-item {
-  margin-top: var(--related-theme-gap);
-  padding-top: 0;
-  border-top: none;
-}
-
-#detail-content #related-themes .related-theme-item:last-child::after {
-  content: none;
+  padding: var(--detail-section-header-pad-y) 0;
 }
 
 #detail-content #related-themes .related-theme-item .section-header {
   padding: 0;
+}
+
+#detail-content #related-themes .related-theme-item:last-child::after {
+  content: none;
 }
 
 #detail-content #related-themes .related-theme-item .section-content {
@@ -5306,6 +5305,7 @@ body.menu-open header {
 
 #detail-content #related-themes .related-theme-item h4 {
   margin: 0;
+  padding: 0;
   font-size: 1em;
   font-weight: 400;
 }
