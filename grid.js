@@ -2045,7 +2045,7 @@ export class Grid {
         
           v.style.width = '100%';
           v.style.height = '100%';
-          v.style.objectFit = 'cover';
+          v.style.objectFit = 'contain';
         
           objectDiv.appendChild(v);
         
