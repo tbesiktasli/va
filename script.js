@@ -26,6 +26,13 @@ const TEXT_TILE_SIZE = {
     : {})
 };
 
+const VIDEO_TILE_SIZE = {
+  maxWidth: 180,
+  maxHeight: 160,
+  metadataTimeoutMs: 5000,
+  concurrentLoads: 4,
+};
+
 function randomIntInclusive(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
@@ -4302,7 +4309,74 @@ async function batchFetchUploadFilesByNames(names, opts = {}) {
   }
 }
 
-// Unified loader that returns {objects, groupMeta} based on DATA_MODE
+async function sizeVideoTiles(objects) {
+  const cfg = VIDEO_TILE_SIZE;
+  const videos = objects.filter(o => o.type === 'video' && o.video);
+
+  async function measure(object) {
+    return new Promise(resolve => {
+      const video = document.createElement('video');
+      let finished = false;
+
+      const finish = (width, height) => {
+        if (finished) return;
+        finished = true;
+
+        clearTimeout(timeout);
+
+        if (width > 0 && height > 0) {
+          const scale = Math.min(
+            cfg.maxWidth / width,
+            cfg.maxHeight / height
+          );
+
+          object.width = Math.max(1, Math.round(width * scale));
+          object.height = Math.max(1, Math.round(height * scale));
+        }
+
+        video.removeAttribute('src');
+        video.load();
+        resolve();
+      };
+
+      const timeout = setTimeout(
+        () => finish(0, 0),
+        cfg.metadataTimeoutMs
+      );
+
+      video.preload = 'metadata';
+
+      video.addEventListener('loadedmetadata', () => {
+        finish(video.videoWidth, video.videoHeight);
+      }, { once: true });
+
+      video.addEventListener('error', () => {
+        finish(0, 0);
+      }, { once: true });
+
+      video.src = object.video;
+    });
+  }
+
+  const concurrency = Math.max(1, Math.floor(cfg.concurrentLoads));
+
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < videos.length) {
+      const object = videos[nextIndex++];
+      await measure(object);
+    }
+  }
+
+  await Promise.all(
+    Array.from(
+      { length: Math.min(concurrency, videos.length) },
+      () => worker()
+    )
+  );
+}
+
 // Unified loader that returns {objects, groupMeta} based on DATA_MODE
 async function loadData(DATA_MODE) {
   if (DATA_MODE === 'dummy') {
@@ -4357,6 +4431,10 @@ window.gridObject = null;
     }   
 
     const loaded = await loadData(DATA_MODE);
+
+    // Determine natural video proportions before calculating grid positions
+    await sizeVideoTiles(loaded.objects);
+
     // Use the chosen data source
     objects = loaded.objects;
 
