@@ -5284,15 +5284,26 @@ body.menu-open header {
 #detail-content #related-themes .related-theme-item {
   --section-icon-size: 6px; /* smaller than the main section icon */
   margin: 0;
-  padding: var(--detail-section-header-pad-y) 0;
+  padding: 20px 0;
+
+  /* Keep nested separators in the normal layout flow */
+  border-bottom: 1px solid var(--section-divider-color, var(--main-outline-color));
+}
+
+#detail-content #related-themes .related-theme-item::after {
+  content: none;
 }
 
 #detail-content #related-themes .related-theme-item .section-header {
   padding: 0;
 }
 
-#detail-content #related-themes .related-theme-item:last-child::after {
-  content: none;
+#detail-content #related-themes .related-theme-item.collapsible.is-open .section-header {
+  padding-bottom: 20px;
+}
+
+#detail-content #related-themes .related-theme-item:last-child {
+  border-bottom: none;
 }
 
 #detail-content #related-themes .related-theme-item .section-content {
