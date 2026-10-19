@@ -164,8 +164,7 @@
   --section-collapse-ms: 360ms;
   --section-collapse-ease: cubic-bezier(.2, .8, .2, 1);
   --prepage-side-w: 220px;      /* smaller side “padding” columns */
-  --prepage-main-max: 900px;    /* wider middle content */  
-  --prepage-actions-reserve: 120px;
+  --prepage-main-max: 900px;    /* wider middle content */
 
   /* Cursor label (tooltip near cursor) */
   --cursor-label-offset-x: 12;
@@ -448,21 +447,17 @@
 
   .prepage-actions {
     display: flex;
+    flex: 0 0 auto;
     gap: 12px;
-    margin-top: 18px;
-  
-    position: sticky;
-    bottom: 0;                 /* pins to bottom of the scrollable .prepage-center */
-    z-index: 3;
   
     width: 100%;
     justify-content: center;
+    align-items: center;
     flex-wrap: wrap;
   
     padding-top: 12px;
   
     /* iOS safe area support */
-    padding-bottom: calc(12px + constant(safe-area-inset-bottom));
     padding-bottom: calc(12px + env(safe-area-inset-bottom));
   
     background: var(--main-bg-color);
