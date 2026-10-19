@@ -2771,8 +2771,13 @@ export class Grid {
     }
 
     zoom(factor, { anchor = 'center', anchorX = null, anchorY = null, source = '' } = {}) {
-      // Temporarily disable transform animation while we change transforms for zoom
-      document.body.classList.add('zooming');
+      // Preserve transform animation when leaving cluster view.
+      // For all other zoom operations, keep the existing behavior.
+      const suppressTransformTransitions = source !== 'cluster-exit';
+    
+      if (suppressTransformTransitions) {
+        document.body.classList.add('zooming');
+      }
     
       // --- NEW: respect configurable min/max zoom ---
       const cfg   = this.display || {};
@@ -2824,8 +2829,10 @@ export class Grid {
       // If clamping means "no effective change", bail early
       const appliedFactor = next / prev;
       if (Math.abs(appliedFactor - 1) < 1e-6) {
-        emitZoom(true);                 // NEW: tell UI we’re at a limit
-        document.body.classList.remove('zooming');
+        emitZoom(true);
+        if (suppressTransformTransitions) {
+          document.body.classList.remove('zooming');
+        }
         return;
       }
 
@@ -2892,10 +2899,13 @@ export class Grid {
         }
       }, { quietMs: 56, fallbackMs: 650 });
 
-      // Re-enable transform animations on the next frame so future state switches animate
-      requestAnimationFrame(() => {
-        document.body.classList.remove('zooming');
-      });
+      // Restore normal transition behavior after regular zoom operations.
+      // Cluster-exit keeps transform transitions active throughout.
+      if (suppressTransformTransitions) {
+        requestAnimationFrame(() => {
+          document.body.classList.remove('zooming');
+        });
+      }
 
       emitZoom(false);                  // NEW: normal zoom update
     }    
