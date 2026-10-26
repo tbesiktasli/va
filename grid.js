@@ -139,8 +139,12 @@ export class Grid {
         // (tweak these numbers if you want a wider/narrower zoom range)
         minZoom: 0.25,
         maxZoom: 4,
-      
-        objectScale: 0.8, // NEW: starting size for all objects (1 = keep original)
+        
+        // Animate zoom resizing around each object's own center.
+        zoomAnimationMs: 400,
+        zoomAnimationEasing: 'ease',
+        
+        objectScale: 0.8,
         detailConnectingTagLimit: null,
       
         textPadBase: 20, // px at zoom = 1
@@ -1451,8 +1455,18 @@ export class Grid {
       this.pauseAllVideos?.();
     
       // ---------- Push neighbors outward (same group only) ----------
-      const R = Math.max(width, height) / 2 + margin; // exclusion radius around center
-      const sameGroup = this.objects.filter(o => o.groupId === obj.groupId && o.id !== obj.id);
+
+      // Commit the original positions before starting the movement.
+      this._forceLayoutFlush();
+
+      requestAnimationFrame(() => {
+        // Ignore a scheduled movement if the detail was already closed.
+        if (!this._detail?.active || this._detail.id !== obj.id) return;
+
+        const R = Math.max(width, height) / 2 + margin;
+        const sameGroup = this.objects.filter(
+          o => o.groupId === obj.groupId && o.id !== obj.id
+        );
       for (const other of sameGroup) {
         const otherEl = document.getElementById(other.id);
         const ocx = other.cluster_x + other.width / 2;
@@ -1473,6 +1487,7 @@ export class Grid {
         const dy = newTop  - other.grid_y;
         otherEl.style.transform = `translate(${dx * z}px, ${dy * z}px)`; // preserves angular order
       }
+      });
       // Leave other groups untouched (their cluster transforms stay as-is)
     
       // ---------- Slide focused card to center, then expand ----------
@@ -1621,8 +1636,12 @@ export class Grid {
         }, { quietMs: 56, fallbackMs: 650 });
       }
     
-      //this._detail = { active: false };
-      //this.currentState = 'ungrouped';
+      // Commit displaced positions before restoring the grid layout.
+      // Skip this for instant exits, such as zoom/pinch.
+      if (!instant && prevState === 'clustered') {
+        this._forceLayoutFlush();
+      }
+
       this._detail = { active: false };
       this._setState(prevState || 'ungrouped');
       this._applyTransformsForCurrentState();
@@ -1630,22 +1649,43 @@ export class Grid {
       // Remove any temporary overscroll allowance and glide back inside bounds
       if (this._pan) this._pan.slack = 0;
 
-      if (restoreCamera) {
+
+      // Restore the previous camera when requested.
+      const restoreCameraNow = () => {
+        if (!restoreCamera) return;
+
         if (cameraPrev && !this._isMobileViewport?.()) {
           this._restoreCameraSnapshot(cameraPrev, { animate: !instant });
         } else {
-          // fallback behavior (mobile or if no snapshot)
           this.clampCameraToBounds?.(!instant, 'exitDetail');
         }
-      }     
-      
+      };
+
+      // Instant exits are used by zoom/pinch operations.
       if (instant) {
-        // Restore transitions on next frame
+        restoreCameraNow();
         requestAnimationFrame(() => this._setObjectTransitionsEnabled?.(true));
         return Promise.resolve();
-      }      
-    
-      // Resolve after transitions settle
+      }
+
+      // In cluster view, finish the object's transform animations
+      // BEFORE restoring camera zoom, which temporarily disables
+      // transform transitions through body.zooming.
+      if (prevState === 'clustered') {
+        return new Promise(resolve => {
+          this._waitForObjectTransformsToSettle(() => {
+            restoreCameraNow();
+            resolve();
+          }, {
+            quietMs: 56,
+            fallbackMs: 650
+          });
+        });
+      }
+
+      // Preserve existing behavior for other views.
+      restoreCameraNow();
+
       return new Promise(resolve => {
         const done = () => resolve();
         const to = setTimeout(done, 520);
@@ -2842,7 +2882,22 @@ export class Grid {
       if (this._detail?.active) {
         this.exitDetail({ instant: true, restoreCamera: false });
       }
-    
+      
+      // Capture the currently visible rectangles before changing zoom.
+      // This includes any animation already in progress.
+      const previousRects = new Map();
+      
+      for (const obj of this.objects) {
+        const el = document.getElementById(obj.id);
+        if (!el) continue;
+      
+        previousRects.set(obj.id, el.getBoundingClientRect());
+      
+        // A new zoom supersedes any previous zoom animation.
+        el._zoomAnimation?.cancel();
+        el._zoomAnimation = null;
+      }
+      
       this.zoomLevel = next;
       this._updateGridTextPadding();
       const zoomToken = (this._zoomToken = (this._zoomToken || 0) + 1);
@@ -2887,25 +2942,76 @@ export class Grid {
       // (no animation here; we just correct the position immediately)
       this.clampCameraToBounds(false, 'zoom');
     
-      // After width/height transitions finish, do one final refit pass.
-      // (Token prevents older zooms from “winning” if the user zooms repeatedly.)
-      this._waitForObjectSizesToSettle(() => {
+// Animate each object between its previous and new visual rectangle.
+// Scale is centered on the object, independently of its existing
+// grouped/clustered CSS transform.
+const duration = Math.max(0, cfg.zoomAnimationMs ?? 400);
+const easing = cfg.zoomAnimationEasing ?? 'ease';
+const animations = [];
+
+if (suppressTransformTransitions) {
+  for (const obj of this.objects) {
+    const el = document.getElementById(obj.id);
+    const from = previousRects.get(obj.id);
+    if (!el || !from) continue;
+
+    const to = el.getBoundingClientRect();
+    if (!to.width || !to.height) continue;
+
+    const fromCenterX = from.left + from.width / 2;
+    const fromCenterY = from.top + from.height / 2;
+    const toCenterX = to.left + to.width / 2;
+    const toCenterY = to.top + to.height / 2;
+
+    const dx = fromCenterX - toCenterX;
+    const dy = fromCenterY - toCenterY;
+
+    const scaleX = from.width / to.width;
+    const scaleY = from.height / to.height;
+
+    const animation = el.animate(
+      [
+        {
+          translate: `${dx}px ${dy}px`,
+          scale: `${scaleX} ${scaleY}`
+        },
+        {
+          translate: '0px 0px',
+          scale: '1'
+        }
+      ],
+      {
+        duration,
+        easing,
+        fill: 'none'
+      }
+    );
+
+    el._zoomAnimation = animation;
+    animations.push(animation.finished.catch(() => {}));
+  }
+}
+
+      // Finish only the most recent zoom.
+      // Older zoom animations may have been cancelled by subsequent zooms.
+      Promise.all(animations).then(() => {
         if (zoomToken !== this._zoomToken) return;
 
         for (const obj of this.objects) {
-          if (obj.type !== 'text') continue;
           const el = document.getElementById(obj.id);
-          this._fitText(el);
-        }
-      }, { quietMs: 56, fallbackMs: 650 });
+          if (!el) continue;
 
-      // Restore normal transition behavior after regular zoom operations.
-      // Cluster-exit keeps transform transitions active throughout.
-      if (suppressTransformTransitions) {
-        requestAnimationFrame(() => {
+          el._zoomAnimation = null;
+
+          if (obj.type === 'text') {
+            this._fitText(el);
+          }
+        }
+
+        if (suppressTransformTransitions) {
           document.body.classList.remove('zooming');
-        });
-      }
+        }
+      });
 
       emitZoom(false);                  // NEW: normal zoom update
     }    
