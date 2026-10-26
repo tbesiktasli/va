@@ -31,6 +31,9 @@
   --grid-return-ms: 420ms;
   --grid-return-scale: 0.950;
   --grid-return-ease: cubic-bezier(.2,.8,.2,1);
+  /* Grid object movement */
+  --grid-object-move-ms: 500ms;
+  --grid-object-move-ease: cubic-bezier(.2,.8,.2,1);
 
   --fab-edge-gap: 12px; /* distance from viewport edges */
 
@@ -701,7 +704,7 @@
     /*background-repeat: 'no-repeat';*/
     overflow: visible;
     z-index: 1;
-    transition: transform 0.5s ease, width 0.4s ease, height 0.4s ease;
+    transition: transform var(--grid-object-move-ms) var(--grid-object-move-ease), width 0.4s ease, height 0.4s ease;
 
     --object-radius: 0px;         /* keep 0 => perfectly rectangular */
     border-radius: var(--object-radius);
@@ -779,14 +782,10 @@
     background-color: transparent;
   }
 
-/* During zoom, animate the full object rectangle while keeping
-   group/cluster transform animations disabled */
+/* Zoom animation is handled by Grid.zoom().
+   Prevent competing dimension and position transitions. */
    body.zooming #grid .object {
-    transition:
-      left 0.4s ease,
-      top 0.4s ease,
-      width 0.4s ease,
-      height 0.4s ease !important;
+    transition: none !important;
   }
 
   .object.is-detail { z-index: 1000; }
@@ -3275,11 +3274,6 @@ body.in-group-gallery:not(.in-theme-gallery) #gallery-location-chip {
       top: 0;
       z-index: 5;
       background: var(--main-bg-color);
-    
-      /* Pull the header up into the section's top padding so there's no see-through gap */
-      margin-top: calc(-1 * var(--content-section-pad-top));
-      padding-top: calc(var(--detail-section-header-pad-y) + var(--content-section-pad-top));
-      padding-bottom: var(--detail-section-header-pad-y);
     }
   }
 
