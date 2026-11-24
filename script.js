@@ -87,6 +87,7 @@ const GALLERY_WHEEL_HORIZONTAL_DIRECTION = +1;
 const VIEW = {
   PREPAGE: 'prepage',
   HOME: 'home',
+  MENU: 'menu',
   GALLERY: 'gallery',
   DETAIL: 'detail',
   RESEARCH: 'research',
@@ -531,13 +532,14 @@ function handleInitialObjectRoute() {
       return;
     }
 
-    // Open detail without creating an in-app "back" entry (direct URL load)
+    // Preserve the back entry on reload. A direct URL starts without one.
+    const state = history.state;
     opener({
       objectId: obj.id,
-      from: 'url',
+      from: state?.detail ? state.from : 'url',
       gid: obj.groupId ?? null,
       historyMode: 'replace',
-      detailStacked: false,
+      detailStacked: state?.detail === true && state.detailStacked === true,
     });
   };
 
@@ -665,6 +667,12 @@ function applyViewFromState(state) {
     return;
   }
 
+  if (view === VIEW.MENU) {
+    goHome({ skipHistory: true, preserveGridMode: true });
+    window.openOverlayMenu?.();
+    return;
+  }
+
   if (view === VIEW.RESEARCH) {
     if (typeof window.openResearchPage === 'function') {
       window.openResearchPage({ skipHistory: true });
@@ -698,6 +706,7 @@ function applyViewFromState(state) {
 
 // Central popstate: delegates to applyViewFromState
 window.addEventListener('popstate', (e) => {
+  if (e.state?.view !== VIEW.MENU) closeOverlayMenuIfOpen();
   applyViewFromState(e.state || null);
 });
 
@@ -1532,6 +1541,9 @@ function initCursorLabel() {
     return node.closest('[data-cursor-label], [data-cursor-label-grouped], [data-cursor-label-single]');
   };
 
+  const isGridModeSwitcherTarget = (target) =>
+    Boolean(target?.closest('.view-switcher[data-view-switcher-behavior]'));
+
   const computeLabel = (target) => {
     if (!target) return '';
 
@@ -1871,6 +1883,10 @@ const requestTooltipTransition = (
 
   // HIDE
   if (!el.classList.contains('is-visible')) return;
+  if (el.dataset.kind === 'grid-mode-switcher') {
+    hideInstant();
+    return;
+  }
 
   // Don't immediately disappear when crossing small gaps between objects.
   __tooltipHideTimer = setTimeout(() => {
@@ -1947,11 +1963,12 @@ const requestTooltipTransition = (
 
     // Ensure we start from a clean animation state only when content actually changed
     textEl.classList.remove('is-reveal', 'is-revealed');
-    textEl.classList.add('is-reveal');
     textEl.textContent = shown;
-
     el.classList.add('is-visible');
 
+    if (k === 'grid-mode-switcher') return;
+
+    textEl.classList.add('is-reveal');
     const revealEls = getRevealElsForCurrent();
     
     if (wasVisible) {
@@ -1977,7 +1994,8 @@ const requestTooltipTransition = (
     }
   
     el.classList.remove('is-visible');
-    delete el.dataset.kind;
+    // Keep the switcher transition disabled until the next label is shown.
+    if (el.dataset.kind !== 'grid-mode-switcher') delete el.dataset.kind;
   
     textEl.classList.remove('is-reveal', 'is-revealed');
   
@@ -2028,7 +2046,7 @@ const requestTooltipTransition = (
 
     if (label) {
       const shown = wrapTooltip(label, 30);
-      const k = ''; // default kind
+      const k = isGridModeSwitcherTarget(candidate) ? 'grid-mode-switcher' : '';
       const nextKey = `${k}||${shown}`;
       const curKind = (el.dataset.kind || '');
 
@@ -2042,7 +2060,8 @@ const requestTooltipTransition = (
       if (el.classList.contains('is-visible') && isSlideInHandle(activeTarget) && isSlideInHandle(candidate)) {
         show(shown, candidate, k); // in-place update (no fade-out/fade-in)
       } else {
-        requestTooltipTransition(() => show(shown, candidate, k));
+        const switchDelay = k === 'grid-mode-switcher' ? 0 : __cursorLabelSwitchDelayMs;
+        requestTooltipTransition(() => show(shown, candidate, k), switchDelay);
       }
       return;
     }
@@ -2096,6 +2115,13 @@ const requestTooltipTransition = (
     if (!activeTarget) return;
   
     const nextCandidate = findCandidate(ev.relatedTarget);
+
+    if (el.dataset.kind === 'grid-mode-switcher') {
+      if (!isGridModeSwitcherTarget(nextCandidate) || !computeLabel(nextCandidate)) {
+        hideInstant();
+      }
+      return;
+    }
   
     // In grouped view: moving within the same pile should NOT hide the tooltip
     if (el.dataset.kind === 'grouped' && nextCandidate) {
@@ -3596,7 +3622,6 @@ function renderAuthorsSubpage() {
     if (inst) {
       instHtml = `
                   <div class="institution">
-                    <img class="location-icon" src="img/icons/location_16x11.svg" alt="" aria-hidden="true">
                     <span class="author-institution">${escapeHtml(inst)}</span>
                   </div>`;
     }
@@ -3723,13 +3748,13 @@ function handleAuthorLinkClick(ev, anchor) {
     ev.stopPropagation?.();
   }
 
-  closeOverlayMenuIfOpen?.();
-
   const authorName =
     anchor.dataset.authorName ||
     (anchor.textContent || '').trim();
 
   if (authorName && window.openAuthorSubpageForName) {
+    if (anchor.closest('#overlay-menu')) beginOverlayMenuNavigation();
+    else closeOverlayMenuIfOpen();
     window.openAuthorSubpageForName(authorName);
   }
 }
@@ -5682,6 +5707,7 @@ function initMobileSlideInsToggle() {
     try {
       const nextState = {
         ...(history.state || {}),
+        view: VIEW.GALLERY,
         gallery: true,
         gid: String(gid ?? ''),
         sidebarId: sidebarId ? String(sidebarId) : '',
@@ -6076,6 +6102,7 @@ function initMobileSlideInsToggle() {
     if (!viaPopstate && history.state?.gallery) {
       try {
         const nextState = { ...(history.state || {}) };
+        if (nextState.view === VIEW.GALLERY) delete nextState.view;
         delete nextState.gallery;
         delete nextState.adhoc;
         delete nextState.gid;
@@ -7679,6 +7706,7 @@ function initMobileSlideInsToggle() {
               adhoc: false,
               themeGallery: false,
             
+              view: VIEW.DETAIL,
               detail: true,
               detailStacked: stacked,
               from: String(from || ''),
@@ -8976,13 +9004,16 @@ function initMobileSlideInsToggle() {
 
     }, true);
 
-    // 2) Listen for back/forward to restore the grid when leaving the gallery state
+    // 2) Restore the grid or reopen an episode gallery on back/forward.
     window.addEventListener('popstate', () => {
       const active = groupGalleryEl?.classList.contains('active');
+      const state = history.state;
       const h = (location.hash || '');
-      const stillInGallery = !!history.state?.gallery || h === '#gallery' || h.startsWith('#group-gallery');
+      const stillInGallery = !!state?.gallery || h === '#gallery' || h.startsWith('#group-gallery');
       if (active && !stillInGallery) {
         window.closeGallery?.({ viaPopstate: true });
+      } else if (!active && state?.view === VIEW.GALLERY && state.gallery && !state.detail && state.gid) {
+        window.openGroupGallery?.(state.gid, { historyMode: 'replace', sidebarId: state.sidebarId });
       }
     });
   }
@@ -9625,7 +9656,18 @@ function initViewSwitcher(switcherId, bindings, { onActivate, enableTeaser = fal
   const switcher = document.getElementById(switcherId);
   if (!switcher) return;
 
+  const toggleBtn = switcher.querySelector('.view-switcher-toggle');
+  const isTouchOpen = () => switcher.classList.contains('is-touch-open');
   let closeOnLeaveAfterSelection = false;
+
+  const collapse = () => {
+    closeOnLeaveAfterSelection = false;
+    switcher.classList.remove('is-demo-open', 'is-touch-open');
+    switcher.classList.add('is-force-collapsed');
+    if (switcher.contains(document.activeElement)) {
+      document.activeElement.blur();
+    }
+  };
 
   bindings.forEach(({ targetId }) => {
     const targetFab = document.getElementById(targetId);
@@ -9648,36 +9690,51 @@ function initViewSwitcher(switcherId, bindings, { onActivate, enableTeaser = fal
 
     btn.addEventListener('click', (e) => {
       e.preventDefault();
-      closeOnLeaveAfterSelection = true;
+      if (isTouchOpen() || e.pointerType === 'touch') {
+        collapse();
+      } else {
+        closeOnLeaveAfterSelection = true;
+      }
       onActivate?.(targetFab, targetId);
     });
   });
 
-  // Click main icon again to close the switcher (even if still hovered/focused)
-  const toggleBtn = switcher.querySelector('.view-switcher-toggle');
   if (toggleBtn) {
     inlineSvgImgToCurrentColor(toggleBtn.querySelector('img'));
 
+    let togglePointerType = '';
+    toggleBtn.addEventListener('pointerdown', (e) => {
+      togglePointerType = e.pointerType;
+    });
+
     const isExpanded = () =>
+      isTouchOpen() ||
       switcher.classList.contains('is-demo-open') ||
       switcher.matches(':hover') ||
       switcher.contains(document.activeElement);
 
     toggleBtn.addEventListener('click', (e) => {
+      // Some browsers report a tap as a MouseEvent even after a touch pointerdown.
+      const isTouchTap = e.pointerType === 'touch' ||
+        (!e.pointerType && e.detail > 0 && togglePointerType === 'touch');
+      togglePointerType = '';
+
+      if (isTouchTap) {
+        if (isTouchOpen()) {
+          collapse();
+        } else {
+          switcher.classList.remove('is-force-collapsed');
+          switcher.classList.add('is-touch-open');
+        }
+        return;
+      }
+
       const forced = switcher.classList.contains('is-force-collapsed');
 
       if (!forced && isExpanded()) {
         e.preventDefault();
         e.stopPropagation();
-
-        switcher.classList.remove('is-demo-open');
-        switcher.classList.add('is-force-collapsed');
-
-        // remove focus so :focus-within won't keep it open
-        toggleBtn.blur();
-        if (switcher.contains(document.activeElement)) {
-          document.activeElement?.blur?.();
-        }
+        collapse();
         return;
       }
 
@@ -9687,7 +9744,8 @@ function initViewSwitcher(switcherId, bindings, { onActivate, enableTeaser = fal
     });
 
     // Close after a selection once the mouse leaves (fixes :focus-within “sticky open”)
-    switcher.addEventListener('mouseleave', () => {
+    switcher.addEventListener('pointerleave', (e) => {
+      if (e.pointerType === 'touch') return;
       switcher.classList.remove('is-force-collapsed');
 
       if (!closeOnLeaveAfterSelection) return;
@@ -9697,6 +9755,10 @@ function initViewSwitcher(switcherId, bindings, { onActivate, enableTeaser = fal
       if (switcher.contains(document.activeElement)) {
         document.activeElement?.blur?.();
       }
+    });
+
+    document.addEventListener('pointerdown', (e) => {
+      if (isTouchOpen() && !switcher.contains(e.target)) collapse();
     });
   }
 
@@ -9835,8 +9897,8 @@ fabFitAll?.addEventListener('click', (e) => {
   scheduleOffgridUpdate?.();
 });
 
-// Recalculate counters after any camera/state change
-;[fabGroup, fabCluster, fabUngroup, fabZoomIn, fabZoomOut].forEach(btn => btn?.addEventListener('click', scheduleOffgridUpdate));
+// Camera movement is observed directly. Mode buttons also update tile positions.
+;[fabGroup, fabCluster, fabUngroup].forEach(btn => btn?.addEventListener('click', scheduleOffgridUpdate));
 
 // Mode switches always reset the FitAll/ResetZoom affordance
 ;[fabGroup, fabCluster, fabUngroup].forEach(btn =>
@@ -12839,8 +12901,9 @@ function initOverlayMenu() {
       const gid = go.dataset.groupId || go.closest('.episode-entry')?.dataset.groupId;
       if (!gid) return;
 
-      closeOverlay(ev);
-      window.openGroupEntry?.(gid, { from: 'menu' });      
+      if (!window.openGroupEntry) return;
+      beginOverlayMenuNavigation();
+      window.openGroupEntry(gid, { from: 'menu' });
     });
 
     subMenu.appendChild(list);
@@ -12894,7 +12957,7 @@ function initOverlayMenu() {
         // 1) route to subpage if mapped
         const route = SUBPAGE_ROUTES[text];
         if (route) {
-          closeOverlay();
+          beginOverlayMenuNavigation();
           openTextSubpage(route.id, route.header);
           return;
         }
@@ -12915,21 +12978,12 @@ function initOverlayMenu() {
     e?.preventDefault();
     previousFocus = document.activeElement;
 
-    // Reset animation state so it can replay every time
-    overlay.classList.remove('menu-anim-in');
-
-    // Show overlay (your existing behavior)
     overlay.classList.add('active');
+    overlay.inert = false;
     document.body.classList.add('menu-open');           // <-- mode class for header
     trigger?.setAttribute('aria-expanded', 'true');
     trigger?.setAttribute('aria-label', 'Close menu');
     window.__dispatchViewChange?.();
-
-    // Kick the stagger animation one frame later (ensures transitions run)
-    requestAnimationFrame(() => {
-      if (!overlay.classList.contains('active')) return; // in case it got closed quickly
-      overlay.classList.add('menu-anim-in');
-    });
 
     // Reset menu state: no active main item, no sub-items visible
     mainItems.forEach((i) => i.classList.remove('active'));
@@ -12941,10 +12995,9 @@ function initOverlayMenu() {
   const closeOverlay = (e) => {
     e?.preventDefault();
 
-    // Clean up animation class (so next open starts from hidden state)
-    overlay.classList.remove('menu-anim-in');
-
+    if (!overlay.classList.contains('active')) return;
     overlay.classList.remove('active');
+    overlay.inert = true;
     document.body.classList.remove('menu-open');        // <-- remove mode class
     trigger?.setAttribute('aria-expanded', 'false');
     trigger?.setAttribute('aria-label', 'Open menu');
@@ -12952,13 +13005,21 @@ function initOverlayMenu() {
     previousFocus?.focus?.();
   }; 
 
-  // Expose for other handlers (e.g., footer links that open subpages)
+  function dismissOverlay(e) {
+    if (!overlay.classList.contains('active')) return;
+    closeOverlay(e);
+    if (history.state?.view === VIEW.MENU) {
+      history.replaceState({ view: VIEW.HOME }, '', appUrl('#home'));
+    }
+  }
+
+  window.openOverlayMenu = openOverlay;
   window.closeOverlayMenu = closeOverlay;
 
   const toggleOverlay = (e) => {
     const isOpen = overlay.classList.contains('active');
     if (isOpen) {
-      closeOverlay(e);
+      dismissOverlay(e);
     } else {
       openOverlay(e);
     }
@@ -12969,16 +13030,17 @@ function initOverlayMenu() {
     if (e.key === 'Enter' || e.key === ' ') toggleOverlay(e);
   });
   
-  headerClose?.addEventListener('click', closeOverlay);
+  headerClose?.addEventListener('click', dismissOverlay);
 
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeOverlay(e); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeOverlay(e); });
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) dismissOverlay(e); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') dismissOverlay(e); });
   mainItems.forEach(i => i.addEventListener('click', () => {
     const target = i.dataset.target;
 
     // Map should go straight to the grid (no submenu)
     if (target === 'map') {
-      goHome(); // goHome already closes the overlay menu
+      dismissOverlay();
+      goHome();
       return;
     }
 
@@ -13004,7 +13066,7 @@ function initOverlayMenu() {
     if (directLabel) {
       const route = SUBPAGE_ROUTES[directLabel];
       if (route && typeof openTextSubpage === 'function') {
-        closeOverlay();
+        beginOverlayMenuNavigation();
         openTextSubpage(route.id, route.header);
       }
       return;
@@ -13475,6 +13537,16 @@ function closeOverlayMenuIfOpen() {
   }
 }
 
+function beginOverlayMenuNavigation() {
+  closeOverlayMenuIfOpen();
+  pushViewState(VIEW.MENU, {}, '#home');
+
+  // Start the next page with a clean map beneath it.
+  if (document.getElementById('grid-shell')?.style.display === 'none') {
+    goHome({ skipHistory: true, preserveGridMode: true });
+  }
+}
+
 // Generic handler: any element with data-subpage-id will open that text subpage
 function initSubpageLinkShortcuts() {
   document.addEventListener('click', (event) => {
@@ -13499,9 +13571,9 @@ function initSubpageLinkShortcuts() {
 
     event.preventDefault();
 
-    // If the click comes from the overlay menu (e.g. Impress), close it first
-    closeOverlayMenuIfOpen();
-    
+    if (link.closest('#overlay-menu')) beginOverlayMenuNavigation();
+    else closeOverlayMenuIfOpen();
+
     openTextSubpage(sectionId, headerText);
   });
 }
@@ -14363,13 +14435,9 @@ window.__dispatchViewChange = dispatchViewChange;
 // Centralised "Home" navigation: reset to grouped grid view
 function goHome(options = {}) {
   const gridShell   = document.getElementById('grid-shell');
-  const overlayMenu = document.getElementById('overlay-menu');
 
   // 1) Close overlay menu if it is open
-  if (overlayMenu && overlayMenu.classList.contains('active')) {
-    overlayMenu.classList.remove('active');
-    document.body.classList.remove('menu-open');
-  }
+  closeOverlayMenuIfOpen();
 
   // 2) Hide all text subpages
   document.querySelectorAll('.text-subpage').forEach((s) => {
@@ -14398,9 +14466,9 @@ function goHome(options = {}) {
     requestAnimationFrame(() => window.applyVisitedMarkers?.()); // ✅ ADD
   }
 
-  // 7) Force the grid into grouped state
+  // 7) Return to grouped mode on Home navigation.
   const g = window.gridObject;
-  if (g && typeof g.groupObjects === 'function') {
+  if (!options.preserveGridMode && g && typeof g.groupObjects === 'function') {
     g.groupObjects();
   }
 

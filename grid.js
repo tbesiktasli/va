@@ -187,6 +187,7 @@ export class Grid {
       }
       this.groups = groups || {};
       this.zoomLevel = 1;
+      this._buttonZoomQueue = [];
       this._updateGridTextPadding();
       // NEW: display config (initial/reset zoom)
       this._grid = [];
@@ -2732,6 +2733,7 @@ export class Grid {
     // Does *not* rebase world coords; only adjusts camera (zoom + pan).
     // Padding is in world units (same as your object positions/sizes).
     fitAll(padding = 120, animate = true) {
+      this._clearButtonZoomQueue();
       // Choose which bounds to use based on active state
       const view = (this.currentState === 'pre-cluster') ? 'grouped' : this.currentState;
       const b = this.getBoundsFor(view);
@@ -2758,6 +2760,7 @@ export class Grid {
 
     // NEW: set zoom to an absolute value (not a multiplier), then optionally center
     setZoomAbsolute(targetZoom, { center = true, animate = true, source = '' } = {}) {
+      this._clearButtonZoomQueue();
       const current = this.zoomLevel || 1;
       if (!isFinite(targetZoom) || targetZoom <= 0) return;
       const factor = targetZoom / current;
@@ -2811,14 +2814,11 @@ export class Grid {
     }
 
     zoom(factor, { anchor = 'center', anchorX = null, anchorY = null, source = '' } = {}) {
+      if (source !== 'button') this._clearButtonZoomQueue();
+
       // Preserve transform animation when leaving cluster view.
-      // For all other zoom operations, keep the existing behavior.
       const suppressTransformTransitions = source !== 'cluster-exit';
-    
-      if (suppressTransformTransitions) {
-        document.body.classList.add('zooming');
-      }
-    
+
       // --- NEW: respect configurable min/max zoom ---
       const cfg   = this.display || {};
       const minZ  = cfg.minZoom ?? 0.25;
@@ -2838,12 +2838,18 @@ export class Grid {
         }));
       };      
 
+      const next = Math.max(minZ, Math.min(maxZ, prev * factor));
+      if (Math.abs(next / prev - 1) < 1e-6) {
+        emitZoom(true);
+        return;
+      }
+
+      document.body.classList.toggle('zooming', suppressTransformTransitions);
+
       // --- Keep camera anchored while zooming (default: viewport center) ---
       // Compute the world point currently under the chosen anchor,
       // then re-position the camera after changing zoom so that world point stays put.
-      const cs = getComputedStyle(this.htmlGridElement);
-      const prevLeft = parseFloat(this.htmlGridElement.style.left || cs.left || "0") || 0;
-      const prevTop  = parseFloat(this.htmlGridElement.style.top  || cs.top  || "0") || 0;
+      const { left: prevLeft, top: prevTop } = this._getCameraLeftTop();
 
       const vw = this._vw();
       const vh = this._vh();
@@ -2862,20 +2868,6 @@ export class Grid {
       const worldX = (ax - prevLeft) / prev;
       const worldY = (ay - prevTop) / prev;
     
-      // Proposed new zoom, clamped to [minZ, maxZ]
-      let next = prev * factor;
-      next = Math.max(minZ, Math.min(maxZ, next));
-    
-      // If clamping means "no effective change", bail early
-      const appliedFactor = next / prev;
-      if (Math.abs(appliedFactor - 1) < 1e-6) {
-        emitZoom(true);
-        if (suppressTransformTransitions) {
-          document.body.classList.remove('zooming');
-        }
-        return;
-      }
-
       // If inline detail is open, close it before zooming.
       // Otherwise zoom will resize the focused tile back to base size
       // while leaving the “pushed away” space behind.
@@ -2883,17 +2875,19 @@ export class Grid {
         this.exitDetail({ instant: true, restoreCamera: false });
       }
       
-      // Capture the currently visible rectangles before changing zoom.
-      // This includes any animation already in progress.
-      const previousRects = new Map();
-      
+      const duration = Math.max(0, cfg.zoomAnimationMs ?? 400);
+      const easing = cfg.zoomAnimationEasing ?? 'ease';
+      const animateTiles = suppressTransformTransitions && duration > 0;
+
+      // Sample every tile before cancelling animations so layout reads stay together.
+      const tiles = [];
       for (const obj of this.objects) {
         const el = document.getElementById(obj.id);
         if (!el) continue;
-      
-        previousRects.set(obj.id, el.getBoundingClientRect());
-      
-        // A new zoom supersedes any previous zoom animation.
+        const from = animateTiles ? el.getBoundingClientRect() : null;
+        tiles.push({ obj, el, from });
+      }
+      for (const { el } of tiles) {
         el._zoomAnimation?.cancel();
         el._zoomAnimation = null;
       }
@@ -2916,10 +2910,7 @@ export class Grid {
       this._syncPanStateFromDom?.();
     
       // Resize and reposition objects in screen space
-      for (const obj of this.objects) {
-        const el = document.getElementById(obj.id);
-        if (!el) continue;
-    
+      for (const { obj, el } of tiles) {
         const scaledWidth  = obj.width  * this.zoomLevel;
         const scaledHeight = obj.height * this.zoomLevel;
         const scaledLeft   = obj.grid_x * this.zoomLevel;
@@ -2929,10 +2920,6 @@ export class Grid {
         el.style.height = `${scaledHeight}px`;
         el.style.left   = `${scaledLeft}px`;
         el.style.top    = `${scaledTop}px`;
-    
-        if (obj.type === 'text') {
-          this._fitText(el);
-        }
       }
     
       // Recompute transforms from world deltas × current zoom
@@ -2941,92 +2928,85 @@ export class Grid {
       // --- NEW: keep the camera in legal bounds at this zoom ---
       // (no animation here; we just correct the position immediately)
       this.clampCameraToBounds(false, 'zoom');
-    
-// Animate each object between its previous and new visual rectangle.
-// Scale is centered on the object, independently of its existing
-// grouped/clustered CSS transform.
-const duration = Math.max(0, cfg.zoomAnimationMs ?? 400);
-const easing = cfg.zoomAnimationEasing ?? 'ease';
-const animations = [];
 
-if (suppressTransformTransitions) {
-  for (const obj of this.objects) {
-    const el = document.getElementById(obj.id);
-    const from = previousRects.get(obj.id);
-    if (!el || !from) continue;
+      this._refitAllText();
 
-    const to = el.getBoundingClientRect();
-    if (!to.width || !to.height) continue;
-
-    const fromCenterX = from.left + from.width / 2;
-    const fromCenterY = from.top + from.height / 2;
-    const toCenterX = to.left + to.width / 2;
-    const toCenterY = to.top + to.height / 2;
-
-    const dx = fromCenterX - toCenterX;
-    const dy = fromCenterY - toCenterY;
-
-    const scaleX = from.width / to.width;
-    const scaleY = from.height / to.height;
-
-    const animation = el.animate(
-      [
-        {
-          translate: `${dx}px ${dy}px`,
-          scale: `${scaleX} ${scaleY}`
-        },
-        {
-          translate: '0px 0px',
-          scale: '1'
+      // Animate from the on-screen position, independently of the tile's view transform.
+      const animations = [];
+      if (animateTiles) {
+        for (const tile of tiles) {
+          tile.to = tile.el.getBoundingClientRect();
         }
-      ],
-      {
-        duration,
-        easing,
-        fill: 'none'
-      }
-    );
+        for (const { el, from, to } of tiles) {
+          if (!to.width || !to.height) continue;
 
-    el._zoomAnimation = animation;
-    animations.push(animation.finished.catch(() => {}));
-  }
-}
+          const dx = from.left + from.width / 2 - (to.left + to.width / 2);
+          const dy = from.top + from.height / 2 - (to.top + to.height / 2);
+          const scaleX = from.width / to.width;
+          const scaleY = from.height / to.height;
+          const animation = el.animate(
+            [
+              { translate: `${dx}px ${dy}px`, scale: `${scaleX} ${scaleY}` },
+              { translate: '0px 0px', scale: '1' }
+            ],
+            { duration, easing, fill: 'none' }
+          );
+
+          el._zoomAnimation = animation;
+          animations.push(animation.finished.catch(() => {}));
+        }
+      }
 
       // Finish only the most recent zoom.
       // Older zoom animations may have been cancelled by subsequent zooms.
-      Promise.all(animations).then(() => {
+      const finished = Promise.all(animations).then(() => {
         if (zoomToken !== this._zoomToken) return;
 
-        for (const obj of this.objects) {
-          const el = document.getElementById(obj.id);
-          if (!el) continue;
-
+        for (const { el } of tiles) {
           el._zoomAnimation = null;
-
-          if (obj.type === 'text') {
-            this._fitText(el);
-          }
         }
 
+        if (source !== 'button') this._refitAllText();
         if (suppressTransformTransitions) {
           document.body.classList.remove('zooming');
         }
       });
 
-      emitZoom(false);                  // NEW: normal zoom update
+      emitZoom(false);
+      return finished;
     }    
 
+    async _queueButtonZoom(factor) {
+      this._buttonZoomQueue.push(factor);
+      if (this._buttonZoomRunning) return;
+
+      this._buttonZoomRunning = true;
+      try {
+        while (this._buttonZoomQueue.length) {
+          const nextFactor = this._buttonZoomQueue.shift();
+          await this.zoom(nextFactor, { source: 'button' });
+        }
+      } finally {
+        this._buttonZoomRunning = false;
+      }
+    }
+
+    _clearButtonZoomQueue() {
+      this._buttonZoomQueue.length = 0;
+    }
+
     zoomIn() {
-      this.zoom(1.1, { source: 'button' });
+      this._queueButtonZoom(1.1);
     }
 
     zoomOut() {
-      this.zoom(0.9, { source: 'button' });
+      this._queueButtonZoom(0.9);
     }
       
   
     groupObjects(event) {
       if (event) event.preventDefault();
+      this._clearButtonZoomQueue();
       if (this._clusterTimer) { clearTimeout(this._clusterTimer); this._clusterTimer = null; }
       if (this._detail?.active) { this.exitDetail(); }
     
@@ -3268,6 +3248,7 @@ if (suppressTransformTransitions) {
 
     clusterGroupedObjects(event, opts = {}) {
       if (event) event.preventDefault();
+      this._clearButtonZoomQueue();
 
       const onComplete =
       typeof opts.onComplete === 'function'
@@ -3496,6 +3477,7 @@ if (suppressTransformTransitions) {
     ungroupObjects(event) {
 
       if (event) event.preventDefault();
+      this._clearButtonZoomQueue();
       if (this._detail?.active) { this.exitDetail(); }
     
       const prev = this.currentState;
